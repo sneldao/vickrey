@@ -14,6 +14,9 @@ repos:
     rev: v6.0.0
     hooks:
       - id: trailing-whitespace
+        # Unified diffs keep blank context lines and upstream trailing
+        # spaces. Stripping them makes `patch` fail.
+        exclude: ^patches/.*\.diff$
       - id: end-of-file-fixer
       - id: check-yaml
       - id: check-json

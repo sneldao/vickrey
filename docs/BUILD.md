@@ -87,6 +87,16 @@ Goal: every insert is searchable, with a solid verdict and a content verdict.
 4. REST: `GET /messages?blockId=`, `?tag=`, `?from=&to=` (ISO-8601). Return the enriched row, including both flags.
 5. Replay the day-1 curl. Search by tag returns `solid=true` and `content_match=true`.
 
+Shipped for the evidence layer (run notes in the README section "Day 2 — evidence ledger"):
+
+- [x] `services/ledger` stores the app payload and independently GETs Hornet block + metadata
+- [x] Flags: `solid`, `content_match`, `milestone_index`, status `VERIFIED|PENDING|PAYLOAD_MISMATCH|NOT_SOLID`. Also stored: `ledger_payload_json` (decoded from Hornet) and `verified_at`
+- [x] `POST /ingest`, `GET /messages`, `GET /messages/{blockId}`, `POST .../reverify`, `POST .../tamper` (demo). Tamper overwrites only `payload_json`; the Hornet block stays original so reverify can show `PAYLOAD_MISMATCH`
+- [x] `patches/iota-messages-api-send_data.py.diff` fans out to `LEDGER_URL` after a successful Hornet upload
+- [x] Compose on port 8088, `scripts/demo_day2.sh` verify-then-tamper path
+
+`content_match` compares tag plus semantic JSON (key order does not count). Hornet URL defaults to `http://127.0.0.1:14265` on the host and `http://iota-hornet:14265` when the ledger joins `iota-net` (`docker-compose.iotanet.yml`).
+
 ## Day 3 — explorer, freeze, pitch
 
 Goal: the Incident Evidence Explorer on the day-2 checks, then stop changing the ledger.

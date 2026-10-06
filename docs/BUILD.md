@@ -1,124 +1,55 @@
-# Build plan — 6–8 October
+# Build log — Oct 6–8 (as it happened)
 
-Linux, Docker, and Docker Compose. One machine. This repository is the submission. Clone upstream **beside** it; our apps stay under `apps/` and `services/`.
-
-```bash
-git clone https://github.com/eclipse-aerios/iota-tangle.git ../iota-tangle
-git clone https://github.com/eclipse-aerios/iota-messages-api.git ../iota-messages-api
-```
-
-Leave the sample coordinator keys in `startup.yaml` and `hornet-main.yaml` alone. They match each other and the public keys in `config_private_tangle.json`. Editing one file breaks milestones.
-
-`bootstrap.sh` calls the `docker-compose` binary. Install that, or run the two `docker compose -f startup.yaml run …` steps from the script yourself.
+Challenge 2 (O-CEI): verified incident evidence for a private IOTA Tangle.
+Product: `services/ledger` evidence database + `apps/explorer` Incident
+Evidence Explorer on a private Hornet network.
 
 ## Compliance
 
-Done:
+- [x] Public repo `sneldao/vickrey` created at event start — fresh code
+- [x] Apache-2.0 license (`LICENSE`)
+- [x] README: setup, run, strategy, endpoints
+- [ ] 6-minute pitch — run of show in [`PITCH.md`](PITCH.md)
 
-- [x] Public submission repo: https://github.com/sneldao/vickrey
-- [x] Apache-2.0 chosen and committed (`LICENSE`, SPDX `Apache-2.0`)
+## Day 1 — private Tangle
 
-Still open:
+- [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle)
+  up on the Vultr host: Hornet 2.0, INX coordinator, INX dashboard.
+- Challenge-sheet port mapping sorted: Hornet REST on both 14265
+  (`send_data.py` default) and 14625 (sheet).
+- Insert path via sibling clone
+  [eclipse-aerios/iota-messages-api](https://github.com/eclipse-aerios/iota-messages-api).
 
-- [ ] Private Tangle up locally (dashboard and Hornet API answering)
-- [ ] Discord category **Challenge 2** selected
+## Day 2 — evidence ledger
 
-## Day 1 — node, insert, read-back
+- `services/ledger` (FastAPI + SQLite, port 8088): stores the application
+  copy at ingest, then independently GETs the Hornet block + metadata.
+- Status truth table: `VERIFIED / PENDING / NOT_SOLID / PAYLOAD_MISMATCH`
+  (payload mismatch outranks solidity).
+- `patches/iota-messages-api-send_data.py.diff` fans every upstream insert
+  into the ledger — write-path contract unchanged.
+- Demo-only `POST /messages/{id}/tamper` mutates only the application copy.
+- `scripts/demo_day2.sh` runs verify-then-tamper against a mock Hornet.
 
-Goal: one block on the private Tangle, read back from Hornet. No database yet.
+## Day 3 — explorer + deploy
 
-1. Bootstrap and start the main tangle:
+- `apps/explorer`: static page, timeline grouped by `flow_id`, trust
+  checklist (payload match / solid / milestone / tag), status filters,
+  side-by-side mismatch view, links out to the INX dashboard and the raw
+  Hornet block.
+- Deployed on the Vultr host via `docker-compose.yml` (+ `iotanet` overlay):
+  explorer :8090, ledger :8088. Bare-IP `http://45.76.242.245` proxies to
+  the explorer through the host Caddy.
+- Seeded state: fresh VERIFIED `incident.critical` alarm
+  (`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, plus a
+  standing `PAYLOAD_MISMATCH` exhibit. `./scripts/restore_demo.sh`
+  restores all rows if anything touches them early.
+- Tests: 28 ledger (pytest) + 12 explorer (node --test).
+- Pitch: [`PITCH.md`](PITCH.md).
 
-   ```bash
-   cd ../iota-tangle/docker/main
-   sudo ./bootstrap.sh
-   docker compose -f hornet-main.yaml up -d
-   ```
+## Cuts / non-goals
 
-   Bootstrap builds the genesis snapshot and coordinator state. Compose then starts Hornet, the coordinator, and the dashboard on network `iota-net`.
-
-2. Confirm the challenge URLs:
-   - http://localhost:31011 loads and milestones advance. Login `admin` / `admin`.
-   - Hornet REST answers. Stock compose publishes **14265**. The sheet says **14625**. Probe both:
-
-     ```bash
-     curl -sf http://localhost:14265/api/core/v2/info
-     curl -sf http://localhost:14625/api/core/v2/info
-     ```
-
-     If 14625 is closed, add `"14625:14265"` beside `"14265:14265"` on `iota-hornet` and recreate that container. Keep 14265, because the Messages API posts to port 14265.
-
-3. Start the Messages API on the same Docker network:
-
-   ```bash
-   cd ../iota-messages-api
-   docker compose up -d --build
-   ```
-
-   A missing-network error means Hornet is not up yet (`iota-net` is external).
-
-4. Insert, then verify. The API wraps Hornet's body as `return_payload` (a JSON string containing `blockId`):
-
-   ```bash
-   curl -sS -X POST 'http://localhost:5555/upload?node=iota-hornet' \
-     -H 'Content-Type: application/json' \
-     -d '{"tag":"incident.demo","message":{"flowId":"line-7","kind":"alarm","detail":"day-1"}}'
-   ```
-
-   ```bash
-   curl -sS http://localhost:14265/api/core/v2/blocks/<blockId>
-   curl -sS http://localhost:14265/api/core/v2/blocks/<blockId>/metadata
-   ```
-
-   Done when `isSolid` is true and the block body carries the same tag and payload. Open the block id in the dashboard too.
-
-   If upload fails on proof-of-work, `config_private_tangle.json` has `restAPI.pow.enabled: true`. For the hack, set it to `false`, recreate Hornet, and retry.
-
-## Day 2 — traceability DB and the two checks
-
-Goal: every insert is searchable, with a solid verdict and a content verdict.
-
-1. `services/ledger`. SQLite is enough. Columns: `block_id`, `tag`, `flow_id`, `payload_json`, `inserted_at`, `solid`, `content_match`, `milestone_index`, `raw_block`.
-2. Patch sibling `send_data.py`: after Hornet accepts the block, POST `{blockId, tag, message, hornetStatus}` to the ledger. Save the diff under `patches/` in this repo.
-3. On ingest, store the row, then:
-   - `GET /api/core/v2/blocks/<blockId>/metadata` → set `solid` from `isSolid`, copy `referencedByMilestoneIndex` when present.
-   - `GET /api/core/v2/blocks/<blockId>` → strip `0x`, hex-decode tag and data, set `content_match` when they equal the stored tag and `json.dumps` of `message`.
-4. REST: `GET /messages?blockId=`, `?tag=`, `?from=&to=` (ISO-8601). Return the enriched row, including both flags.
-5. Replay the day-1 curl. Search by tag returns `solid=true` and `content_match=true`.
-
-Shipped for the evidence layer (run notes in the README section "Day 2 — evidence ledger"):
-
-- [x] `services/ledger` stores the app payload and independently GETs Hornet block + metadata
-- [x] Flags: `solid`, `content_match`, `milestone_index`, status `VERIFIED|PENDING|PAYLOAD_MISMATCH|NOT_SOLID`. Also stored: `ledger_payload_json` (decoded from Hornet) and `verified_at`
-- [x] `POST /ingest`, `GET /messages`, `GET /messages/{blockId}`, `POST .../reverify`, `POST .../tamper` (demo). Tamper overwrites only `payload_json`; the Hornet block stays original so reverify can show `PAYLOAD_MISMATCH`
-- [x] `patches/iota-messages-api-send_data.py.diff` fans out to `LEDGER_URL` after a successful Hornet upload
-- [x] Compose on port 8088, `scripts/demo_day2.sh` verify-then-tamper path
-
-`content_match` compares tag plus semantic JSON (key order does not count). Hornet URL defaults to `http://127.0.0.1:14265` on the host and `http://iota-hornet:14265` when the ledger joins `iota-net` (`docker-compose.iotanet.yml`).
-
-## Day 3 — explorer, freeze, pitch
-
-Goal: the Incident Evidence Explorer on the day-2 checks, then stop changing the ledger.
-
-1. `apps/explorer`: a timeline of evidence states (group by `flowId` when present). Trust checklist on each open incident: payload match, solid, milestone, tag. Filter by VERIFIED, PENDING, MISMATCH, and NOT SOLID. When the payload differs, label the row PAYLOAD MISMATCH and show the application-side payload and the decoded ledger payload side by side. Highlight `tag` prefix `incident.` or `kind=alarm`. State rules are in `docs/STRATEGY.md`.
-2. Killer demo, one block id. Insert through the Messages API and show VERIFIED (fresh Hornet read matches the evidence DB). Deliberately mutate only the application-side payload. Re-run the content check and show PAYLOAD MISMATCH with both payloads side by side. The Hornet block stays as it was. The block id still opens on the Hornet dashboard.
-3. Freeze in the early afternoon. README commands must match what you ran. Six-minute pitch: Prove What Happened (the application records the incident, the private Tangle keeps the block, Vickrey checks the two still agree) → VERIFIED insert → mutate the application-side row → PAYLOAD MISMATCH side by side → how private-Hornet reconciliation differs from IOTA Audit Trails, Notarization, and the stock dashboard. Next, if asked: MQTT, a second node.
-
-Shipped for the explorer (run notes in the README section "Day 3 — explorer"):
-
-- [x] `apps/explorer` static page. Timeline grouped by `flow_id`. Trust checklist: payload match, solid, milestone, tag. Filters: VERIFIED, PENDING, MISMATCH (`PAYLOAD_MISMATCH`), NOT SOLID
-- [x] When the payloads differ, the incident is labeled PAYLOAD MISMATCH and the application copy sits beside the decoded Hornet payload, with changed fields called out
-- [x] Highlight when `tag` starts with `incident.` or payload `kind` is `alarm`
-- [x] Pitch controls call the existing reverify and tamper routes. The block id opens on the INX dashboard at `/explorer/block/<blockId>` (port 31011) and on Hornet `GET /api/core/v2/blocks/<blockId>`
-- [x] Compose service `explorer` on port 8090. `EXPLORER_LEDGER_URL` defaults to `http://localhost:8088`. `./scripts/demo_day3.sh` is the stand-in path
-- [x] Ledger verify and tamper behavior is unchanged. `LEDGER_CORS_ORIGINS` (default `*`) only adds the browser headers the explorer needs
-
-## Cuts if behind
-
-Cut in this order. Stop at the first cut that gets the demo honest.
-
-1. MQTT (idea #1). Do not start it unless day 2 is done.
-2. Alerts and `flowId` grouping. A flat verified table still meets the mandatory goal.
-3. Explorer polish. One HTML page, or the JSON API plus the IOTA dashboard, is enough to pitch.
-
-Keep through every cut: the Apache-2.0 `LICENSE`, a working insert, the parallel database, the solid check (block metadata), the content check (GET block), the PAYLOAD MISMATCH demo (both payloads side by side), and the 6-minute pitch.
+- No auth on the ledger or tamper routes — demo scope, stated openly in
+  the pitch. Not a production posture.
+- No block submission from our services — writes stay on the patched
+  upstream Messages API.

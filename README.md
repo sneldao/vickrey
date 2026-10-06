@@ -33,7 +33,7 @@ The demo the pitch repeats: one insert lands as VERIFIED, then a deliberate edit
 
 Day 2 is that evidence database: `services/ledger` on port 8088. Run, the Messages API fan-out, and the tamper path are in [Day 2 — evidence ledger](#day-2--evidence-ledger). Day 3 is the Incident Evidence Explorer: `apps/explorer` on port 8090. Run notes are in [Day 3 — explorer](#day-3--explorer).
 
-Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Three-day plan: [`docs/BUILD.md`](docs/BUILD.md).
+Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Build log: [`docs/BUILD.md`](docs/BUILD.md). Six-minute pitch run of show: [`docs/PITCH.md`](docs/PITCH.md).
 
 ## Endpoints
 

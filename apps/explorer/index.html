@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Vickrey — Incident Evidence Explorer</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23171512'/%3E%3Cpath d='M9 8h3.2l3.8 10.2L19.8 8H23L16.8 24h-1.6z' fill='%23f3ead7'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="mast">
+      <div class="mast-inner">
+        <p class="eyebrow">Veles Hack · Challenge 2 · Private IOTA Stardust</p>
+        <div class="title-row">
+          <h1>Vickrey</h1>
+          <p class="motto">Prove what happened</p>
+        </div>
+        <p class="lede">
+          The application records the incident. The private Tangle keeps the
+          block. This page checks the two still agree.
+        </p>
+        <ol class="beats">
+          <li>Application evidence</li>
+          <li>Hornet block</li>
+          <li>Same payload, solid, milestone</li>
+        </ol>
+      </div>
+    </header>
+    <main id="app"></main>
+    <footer class="colophon">
+      Vickrey compares the application row with a fresh Hornet read. The stock
+      dashboard is where the block id itself opens. Apache-2.0.
+    </footer>
+    <noscript
+      >This explorer needs JavaScript to read the evidence ledger.</noscript
+    >
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

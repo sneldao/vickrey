@@ -38,7 +38,6 @@ Goal: one block on the private Tangle, read back from Hornet. No database yet.
    Bootstrap builds the genesis snapshot and coordinator state. Compose then starts Hornet, the coordinator, and the dashboard on network `iota-net`.
 
 2. Confirm the challenge URLs:
-
    - http://localhost:31011 loads and milestones advance. Login `admin` / `admin`.
    - Hornet REST answers. Stock compose publishes **14265**. The sheet says **14625**. Probe both:
 
@@ -104,6 +103,15 @@ Goal: the Incident Evidence Explorer on the day-2 checks, then stop changing the
 1. `apps/explorer`: a timeline of evidence states (group by `flowId` when present). Trust checklist on each open incident: payload match, solid, milestone, tag. Filter by VERIFIED, PENDING, MISMATCH, and NOT SOLID. When the payload differs, label the row PAYLOAD MISMATCH and show the application-side payload and the decoded ledger payload side by side. Highlight `tag` prefix `incident.` or `kind=alarm`. State rules are in `docs/STRATEGY.md`.
 2. Killer demo, one block id. Insert through the Messages API and show VERIFIED (fresh Hornet read matches the evidence DB). Deliberately mutate only the application-side payload. Re-run the content check and show PAYLOAD MISMATCH with both payloads side by side. The Hornet block stays as it was. The block id still opens on the Hornet dashboard.
 3. Freeze in the early afternoon. README commands must match what you ran. Six-minute pitch: Prove What Happened (the application records the incident, the private Tangle keeps the block, Vickrey checks the two still agree) → VERIFIED insert → mutate the application-side row → PAYLOAD MISMATCH side by side → how private-Hornet reconciliation differs from IOTA Audit Trails, Notarization, and the stock dashboard. Next, if asked: MQTT, a second node.
+
+Shipped for the explorer (run notes in the README section "Day 3 — explorer"):
+
+- [x] `apps/explorer` static page. Timeline grouped by `flow_id`. Trust checklist: payload match, solid, milestone, tag. Filters: VERIFIED, PENDING, MISMATCH (`PAYLOAD_MISMATCH`), NOT SOLID
+- [x] When the payloads differ, the incident is labeled PAYLOAD MISMATCH and the application copy sits beside the decoded Hornet payload, with changed fields called out
+- [x] Highlight when `tag` starts with `incident.` or payload `kind` is `alarm`
+- [x] Pitch controls call the existing reverify and tamper routes. The block id opens on the INX dashboard at `/explorer/block/<blockId>` (port 31011) and on Hornet `GET /api/core/v2/blocks/<blockId>`
+- [x] Compose service `explorer` on port 8090. `EXPLORER_LEDGER_URL` defaults to `http://localhost:8088`. `./scripts/demo_day3.sh` is the stand-in path
+- [x] Ledger verify and tamper behavior is unchanged. `LEDGER_CORS_ORIGINS` (default `*`) only adds the browser headers the explorer needs
 
 ## Cuts if behind
 

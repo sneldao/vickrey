@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from fastapi.testclient import TestClient
+
 from app.hornet import HornetFetch
+from app.main import create_app
 from app.tamper import mutate_application_payload
 from tests.support import BLOCK_ID, MESSAGE, TAG, matching_fetch
 
@@ -176,6 +179,40 @@ def test_health(client):
     assert health.status_code == 200
     assert health.json()["status"] == "ok"
     assert health.json()["hornet_url"]
+
+
+def test_default_cors_allows_explorer_origin(client):
+    http, _hornet = client
+    response = http.get("/health", headers={"Origin": "http://localhost:8090"})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_cors_can_be_limited_to_the_explorer(tmp_path, hornet):
+    app = create_app(
+        database_path=str(tmp_path / "ledger.db"),
+        hornet=hornet,
+        cors_origins="http://localhost:8090",
+    )
+    with TestClient(app) as http:
+        response = http.get("/messages", headers={"Origin": "http://localhost:8090"})
+        assert (
+            response.headers["access-control-allow-origin"] == "http://localhost:8090"
+        )
+        preflight = http.options(
+            f"/messages/{BLOCK_ID}/tamper",
+            headers={
+                "Origin": "http://localhost:8090",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "content-type",
+            },
+        )
+        assert preflight.status_code == 200
+        allow = preflight.headers["access-control-allow-methods"]
+        assert "POST" in allow
+        assert (
+            preflight.headers["access-control-allow-origin"] == "http://localhost:8090"
+        )
 
 
 def test_default_mutate_wraps_scalar():

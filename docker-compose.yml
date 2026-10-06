@@ -1,15 +1,21 @@
-# Day 2 evidence ledger.
+# Day 2 evidence ledger and Day 3 Incident Evidence Explorer.
 #
 # This does not start Hornet. The Day 1 private Tangle already runs on the
 # remote box. Point HORNET_URL at it.
 #
 #   docker compose up -d --build
+#   # Ledger   http://localhost:8088
+#   # Explorer http://localhost:8090
 #   # Hornet port published on the Docker host (default below):
 #   #   HORNET_URL=http://host.docker.internal:14265
 #
 # On the iota-net network created by Day 1, also use the overlay:
 #   docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
 #   # HORNET_URL=http://iota-hornet:14265
+#
+# EXPLORER_LEDGER_URL, DASHBOARD_URL, and HORNET_PUBLIC_URL are the URLs the
+# browser uses. They are not Docker DNS names. EXPLORER_LEDGER_URL is not the
+# messages-api LEDGER_URL (that one includes /ingest).
 
 services:
   ledger:
@@ -23,6 +29,7 @@ services:
       HORNET_URL: ${HORNET_URL:-http://host.docker.internal:14265}
       HORNET_TIMEOUT: ${HORNET_TIMEOUT:-5}
       DATABASE_PATH: /data/ledger.db
+      LEDGER_CORS_ORIGINS: "${LEDGER_CORS_ORIGINS:-*}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -39,6 +46,28 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+
+  explorer:
+    build: ./apps/explorer
+    image: veles-explorer:day3
+    container_name: explorer
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    environment:
+      EXPLORER_LEDGER_URL: ${EXPLORER_LEDGER_URL:-http://localhost:8088}
+      DASHBOARD_URL: ${DASHBOARD_URL:-http://localhost:31011}
+      HORNET_PUBLIC_URL: ${HORNET_PUBLIC_URL:-http://localhost:14265}
+    depends_on:
+      ledger:
+        condition: service_healthy
+    healthcheck:
+      test:
+        ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
 
 volumes:
   ledger-data:

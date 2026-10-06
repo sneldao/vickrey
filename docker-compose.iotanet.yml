@@ -1,6 +1,10 @@
 # Attach the ledger to the Day 1 private Tangle network.
 # Hornet's DNS name on that network is iota-hornet.
 #
+# The explorer from docker-compose.yml is unchanged. The browser opens it at
+# http://localhost:8090 and calls the ledger at EXPLORER_LEDGER_URL
+# (default http://localhost:8088), not the Docker DNS name.
+#
 #   docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
 #
 # iota-net is created by the Day 1 Hornet compose (external: true). This file

@@ -22,3 +22,7 @@ dist/
 .DS_Store
 .idea/
 .vscode/
+
+# Upstream clones belong beside this repo, never inside it
+/iota-tangle/
+/iota-messages-api/

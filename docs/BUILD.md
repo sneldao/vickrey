@@ -89,11 +89,11 @@ Goal: every insert is searchable, with a solid verdict and a content verdict.
 
 ## Day 3 — explorer, freeze, pitch
 
-Goal: one screen, then stop changing the ledger.
+Goal: the Incident Evidence Explorer on the day-2 checks, then stop changing the ledger.
 
-1. `apps/explorer`: rows of solid messages (tag, time, flow, both flags). Group by `flowId` into a timeline. Highlight `tag` prefix `incident.` or `kind=alarm`.
-2. Demo script, one flow: two ordinary events and one alarm on `flowId=line-7`. Timeline shows three verified blocks, the alarm is flagged, the block id opens on the Hornet dashboard.
-3. Freeze in the early afternoon. README commands must match what you ran. Six-minute pitch: private Tangle as trust ledger → insert → DB checks solid and content on Hornet → incident timeline → next (MQTT, a second node).
+1. `apps/explorer`: a timeline of evidence states (group by `flowId` when present). Trust checklist on each open incident: payload match, solid, milestone, tag. Filter by VERIFIED, PENDING, MISMATCH, and NOT SOLID. When the payload differs, label the row PAYLOAD MISMATCH and show the application-side payload and the decoded ledger payload side by side. Highlight `tag` prefix `incident.` or `kind=alarm`. State rules are in `docs/STRATEGY.md`.
+2. Killer demo, one block id. Insert through the Messages API and show VERIFIED (fresh Hornet read matches the evidence DB). Deliberately mutate only the application-side payload. Re-run the content check and show PAYLOAD MISMATCH with both payloads side by side. The Hornet block stays as it was. The block id still opens on the Hornet dashboard.
+3. Freeze in the early afternoon. README commands must match what you ran. Six-minute pitch: Prove What Happened (the application records the incident, the private Tangle keeps the block, Vickrey checks the two still agree) → VERIFIED insert → mutate the application-side row → PAYLOAD MISMATCH side by side → how private-Hornet reconciliation differs from IOTA Audit Trails, Notarization, and the stock dashboard. Next, if asked: MQTT, a second node.
 
 ## Cuts if behind
 
@@ -103,4 +103,4 @@ Cut in this order. Stop at the first cut that gets the demo honest.
 2. Alerts and `flowId` grouping. A flat verified table still meets the mandatory goal.
 3. Explorer polish. One HTML page, or the JSON API plus the IOTA dashboard, is enough to pitch.
 
-Keep through every cut: the Apache-2.0 `LICENSE`, a working insert, the parallel database, the solid check (block metadata), the content check (GET block), and the 6-minute pitch.
+Keep through every cut: the Apache-2.0 `LICENSE`, a working insert, the parallel database, the solid check (block metadata), the content check (GET block), the PAYLOAD MISMATCH demo (both payloads side by side), and the 6-minute pitch.

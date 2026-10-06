@@ -35,6 +35,19 @@ Day 2 is that evidence database: `services/ledger` on port 8088. Run, the Messag
 
 Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Build log: [`docs/BUILD.md`](docs/BUILD.md). Six-minute pitch run of show: [`docs/PITCH.md`](docs/PITCH.md).
 
+## Live demo
+
+Running on the challenge host during the hack:
+
+- **Incident Evidence Explorer: <http://45.76.242.245>** (also `:8090`)
+- Evidence ledger API + docs: <http://45.76.242.245:8088/docs>
+- Hornet dashboard: <http://45.76.242.245:31011> (`admin` / `admin`)
+
+Seeded for the pitch: a VERIFIED `incident.critical` alarm
+(`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, plus a
+standing `PAYLOAD_MISMATCH` row. If a row was touched early,
+`./scripts/restore_demo.sh` restores all three.
+
 ## Endpoints
 
 | Surface                                 | URL                                               |

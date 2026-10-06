@@ -18,6 +18,12 @@ dist/
 *.pem
 *.key
 
+# Ledger sqlite
+services/ledger/data/
+*.db
+*.db-wal
+*.db-shm
+
 # OS / editors
 .DS_Store
 .idea/

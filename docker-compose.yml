@@ -1,0 +1,44 @@
+# Day 2 evidence ledger.
+#
+# This does not start Hornet. The Day 1 private Tangle already runs on the
+# remote box. Point HORNET_URL at it.
+#
+#   docker compose up -d --build
+#   # Hornet port published on the Docker host (default below):
+#   #   HORNET_URL=http://host.docker.internal:14265
+#
+# On the iota-net network created by Day 1, also use the overlay:
+#   docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
+#   # HORNET_URL=http://iota-hornet:14265
+
+services:
+  ledger:
+    build: ./services/ledger
+    image: veles-ledger:day2
+    container_name: ledger
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      HORNET_URL: ${HORNET_URL:-http://host.docker.internal:14265}
+      HORNET_TIMEOUT: ${HORNET_TIMEOUT:-5}
+      DATABASE_PATH: /data/ledger.db
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ledger-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8088/health')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+volumes:
+  ledger-data:

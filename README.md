@@ -31,6 +31,8 @@ The mandatory loop stays: Messages API insert, a parallel evidence database, a s
 
 The demo the pitch repeats: one insert lands as VERIFIED, then a deliberate edit of the application-side payload makes the explorer show PAYLOAD MISMATCH with both payloads side by side.
 
+Day 2 is that evidence database: `services/ledger` on port 8088. Run, the Messages API fan-out, and the tamper path are in [Day 2 — evidence ledger](#day-2--evidence-ledger).
+
 Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Three-day plan: [`docs/BUILD.md`](docs/BUILD.md).
 
 ## Endpoints
@@ -41,6 +43,7 @@ Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/ST
 | Hornet REST, challenge sheet | http://localhost:14625 |
 | Hornet REST, stock `iota-tangle` docker | http://localhost:14265 |
 | Messages API | http://localhost:5555/upload?node=\<hornet-host\> |
+| Evidence ledger | http://localhost:8088 |
 
 `docker/main/hornet-main.yaml` publishes the dashboard on **31011** and Hornet REST on **14265**. The challenge sheet asks for Hornet on **14625**. Day 1 probes both and, if 14625 is closed, adds the host mapping `14625:14265`. Keep 14265: `send_data.py` posts to `http://<node>:14265/api/core/v2/blocks`.
 
@@ -56,6 +59,93 @@ Upload body:
   "tag": "incident.demo",
   "message": { "format": "any JSON object", "be_creative": true }
 }
+```
+
+## Day 2 — evidence ledger
+
+The ledger stores the application copy of one incident, then independently reads that Hornet block and sets `solid` and `content_match`. The Incident Evidence Explorer reads this API later. The mismatch demo mutates only the application copy.
+
+| Piece | Where |
+| --- | --- |
+| Ledger API + SQLite | `services/ledger` (port 8088) |
+| Messages API fan-out | `patches/iota-messages-api-send_data.py.diff` |
+| Verify then tamper demo | `scripts/demo_day2.sh` |
+
+Status is one of `VERIFIED`, `PENDING`, `PAYLOAD_MISMATCH`, `NOT_SOLID`.
+
+| Last Hornet read | Payload | Solidity | Status |
+| --- | --- | --- | --- |
+| Unreachable, or block missing | unknown | unknown | `PENDING` |
+| Tagged data differs from the app copy | no | any | `PAYLOAD_MISMATCH` |
+| Tagged data matches | yes | not solid | `NOT_SOLID` |
+| Tagged data matches, solid, no milestone yet | yes | solid | `PENDING` |
+| Tagged data matches, solid, milestone set | yes | solid + milestone | `VERIFIED` |
+
+`content_match` is semantic JSON equality plus an exact tag match. Key order does not matter. `PAYLOAD_MISMATCH` wins over solidity, so a later tamper of the application copy flips the flag while the Hornet payload stays the original.
+
+`POST /messages/{blockId}/tamper` is demo-only. It overwrites `payload_json` (or just `temperature`) and reverifies. It does not submit a block.
+
+### Run the ledger
+
+Host process, Hornet on localhost:
+
+```bash
+python3 -m venv services/ledger/.venv
+services/ledger/.venv/bin/pip install -r services/ledger/requirements.txt
+cd services/ledger
+HORNET_URL=http://127.0.0.1:14265 DATABASE_PATH=./data/ledger.db \
+  .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8088
+```
+
+Docker, Hornet port published on the host:
+
+```bash
+docker compose up -d --build
+# HORNET_URL defaults to http://host.docker.internal:14265
+```
+
+Docker on the Day 1 `iota-net` (Hornet DNS name `iota-hornet`):
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
+# HORNET_URL defaults to http://iota-hornet:14265
+```
+
+`HORNET_URL` is the Hornet root, for example `http://127.0.0.1:14265`. The ledger appends `/api/core/v2/blocks/...`. Optional `HORNET_TIMEOUT` seconds (default 5) and `DATABASE_PATH`.
+
+### Messages API sibling
+
+Keep `iota-messages-api` as a sibling clone. Apply `patches/iota-messages-api-send_data.py.diff` there and rebuild the image. Steps, `LEDGER_URL`, and the Apache-2.0 upstream commit are in `patches/README.md`.
+
+### Verify, then tamper
+
+`./scripts/demo_day2.sh` starts a mock Hornet and the ledger, then runs this flow. Against a ledger that is already up, the same curls are:
+
+```bash
+# Application copy. The real insert is the patched Messages API; this mocks that POST.
+curl -sS -X POST http://127.0.0.1:8088/ingest \
+  -H 'content-type: application/json' \
+  -d '{"blockId":"0x…","tag":"veles.evidence.temperature","message":{"flow_id":"flow-1","temperature":21.5},"hornetStatus":201}'
+
+curl -sS 'http://127.0.0.1:8088/messages?flowId=flow-1&status=VERIFIED'
+curl -sS http://127.0.0.1:8088/messages/0x…
+curl -sS -X POST http://127.0.0.1:8088/messages/0x…/reverify
+
+# Demo only. Application temperature changes; the Hornet block does not.
+curl -sS -X POST http://127.0.0.1:8088/messages/0x…/tamper \
+  -H 'content-type: application/json' \
+  -d '{"temperature":999.9}'
+```
+
+A matching solid, milestone-referenced block returns `status=VERIFIED` and `content_match=true`. After tamper, the same block returns `status=PAYLOAD_MISMATCH`, `content_match=false`, `payload_json.temperature=999.9`, and `ledger_payload_json` still holding the original tagged data.
+
+Ingest again with the original message to put the application copy back.
+
+### Tests
+
+```bash
+services/ledger/.venv/bin/pip install -r services/ledger/requirements-dev.txt
+(cd services/ledger && .venv/bin/python -m pytest)
 ```
 
 ## References

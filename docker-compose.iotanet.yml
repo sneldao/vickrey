@@ -1,0 +1,23 @@
+# Attach the ledger to the Day 1 private Tangle network.
+# Hornet's DNS name on that network is iota-hornet.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
+#
+# iota-net is created by the Day 1 Hornet compose (external: true). This file
+# is not used by `docker compose up` alone, so a machine without iota-net can
+# still start the ledger and reach Hornet via HORNET_URL.
+
+services:
+  ledger:
+    environment:
+      HORNET_URL: ${HORNET_URL:-http://iota-hornet:14265}
+    networks:
+      default: {}
+      iota-net:
+        aliases:
+          - ledger
+
+networks:
+  iota-net:
+    name: ${HORNET_NETWORK:-iota-net}
+    external: true

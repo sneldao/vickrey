@@ -1,0 +1,72 @@
+--- a/send_data.py
++++ b/send_data.py
+@@ -1,19 +1,40 @@
+-import json, codecs, requests
++import json, codecs, os, requests
+ from flask import Flask, jsonify, request
+ 
+ # Import the python iota client
+ # Make sure you have first installed it with `pip install iota_sdk`
+ 
++# Evidence fan-out (Veles Day 2). After Hornet accepts the block, POST the
++# application copy to the ledger. LEDGER_URL defaults to a ledger published on
++# the Docker host. On a shared compose network use http://ledger:8088/ingest.
++LEDGER_URL = os.environ.get("LEDGER_URL", "http://host.docker.internal:8088/ingest")
++
+ app = Flask(__name__)
+ app.debug = True
+ 
+ 
++def fanout_ledger(block_id, tag, message, hornet_status):
++    """Best-effort. A ledger outage must not fail the Tangle upload."""
++    body = {
++        "blockId": block_id,
++        "tag": tag,
++        "message": message,
++        "hornetStatus": hornet_status,
++    }
++    try:
++        ledger_response = requests.post(LEDGER_URL, json=body, timeout=5)
++        print("ledger fan-out", LEDGER_URL, ledger_response.status_code, ledger_response.text)
++    except Exception as exc:
++        print("ledger fan-out failed:", exc)
++
++
+ @app.route('/upload', methods=['POST'])
+ def post_clear():
+     node = "http://" + request.args.get("node") + ":14265/api/core/v2/blocks"
+     requestData = request.get_json()
+     tag = requestData["tag"]
+-    message = json.dumps(requestData["message"])
++    message_obj = requestData["message"]
++    message = json.dumps(message_obj)
+ 
+     tag_hex = "0x" + codecs.encode(tag, 'utf-8').hex()
+     message_hex = "0x" + codecs.encode(message, 'utf-8').hex()
+@@ -42,10 +63,23 @@
+     else:
+         print(response.status_code)
+         print(response.text)
++        if 200 <= response.status_code < 300:
++            block_id = None
++            try:
++                parsed = response.json()
++            except Exception:
++                parsed = None
++            if isinstance(parsed, dict):
++                block_id = parsed.get("blockId") or parsed.get("block_id")
++            if block_id:
++                fanout_ledger(block_id, tag, message_obj, response.status_code)
++            else:
++                print("ledger fan-out skipped: Hornet response had no blockId")
+         return jsonify(
+             status_code = response.status_code,
+             return_payload = response.text
+-        ) 
++        )
+ 
+ 
+-app.run(port=5555, host='0.0.0.0')
+\ No newline at end of file
++print("ledger fan-out URL", LEDGER_URL)
++app.run(port=5555, host='0.0.0.0')

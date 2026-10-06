@@ -1,6 +1,14 @@
-# Vickrey — IOTA Trust Ledger Traceability
+# Vickrey — Verified Incident Evidence for Private IOTA
 
-Veles Hack **Challenge 2** (O-CEI): a private IOTA Tangle as a trust ledger. Hornet nodes replicate blocks in a DAG; a coordinator plugin confirms them with signed milestones. This repo adds the missing observability layer: insert a message, keep an enriched copy in our own database, and prove the block is solid and that its payload matches the Tangle.
+**Prove What Happened.** Systems record incidents. Ledgers preserve evidence. Vickrey proves the two still agree.
+
+Veles Hack **Challenge 2** (O-CEI). Vickrey is the observability and evidence layer for a *private* IOTA Tangle:
+
+app event → upload → Hornet block → solid / milestone → payload integrity → Incident Evidence Explorer.
+
+Hornet nodes replicate blocks in a DAG. A coordinator plugin confirms them with signed milestones. Vickrey stores the incident in an application-side evidence database and compares that row with the block and metadata read back independently from Hornet. The Incident Evidence Explorer shows whether the two copies still agree.
+
+The product is verified incident evidence on that private network. IOTA Audit Trails and Notarization anchor data for audit use cases. The stock IOTA dashboard lists blocks, tags, and milestones. The explorer adds the investigation workflow: a timeline of evidence states, a trust checklist (payload match, solid, milestone, tag), mismatch detection, and filters for VERIFIED, PENDING, MISMATCH, and NOT SOLID.
 
 The repository name is historical. The work here is Challenge 2.
 
@@ -19,7 +27,11 @@ Use the **Stardust** Hornet builds shipped by the aeriOS images. Later IOTA docu
 
 ## What we build
 
-Mandatory insert-and-verify loop, then one product: an **Incident Explorer** (challenge ideas #4 and #2). Thesis and payload shape: [`docs/STRATEGY.md`](docs/STRATEGY.md). Three-day plan: [`docs/BUILD.md`](docs/BUILD.md).
+The mandatory loop stays: Messages API insert, a parallel evidence database, a solid check, and a content check. The product on that loop is the **Incident Evidence Explorer**.
+
+The demo the pitch repeats: one insert lands as VERIFIED, then a deliberate edit of the application-side payload makes the explorer show PAYLOAD MISMATCH with both payloads side by side.
+
+Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Three-day plan: [`docs/BUILD.md`](docs/BUILD.md).
 
 ## Endpoints
 

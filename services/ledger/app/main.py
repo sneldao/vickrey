@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException, Query, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.db import Database, load_json, normalize_block_id, parse_time_bound
@@ -177,11 +178,27 @@ def verify_stored(db: Database, hornet: Any, block_id: str) -> dict:
     return updated
 
 
+def _cors_origins(raw: str | None) -> list[str]:
+    """Browser origins allowed to call the ledger.
+
+    The explorer is a separate origin (port 8090 by default). Verify and
+    tamper bodies are unchanged; this only adds the CORS headers those
+    browser calls need. ``*`` is the pitch default. Set LEDGER_CORS_ORIGINS
+    to a comma-separated list, for example http://localhost:8090.
+    """
+    text = "*" if raw is None or not raw.strip() else raw.strip()
+    if text == "*":
+        return ["*"]
+    origins = [part.strip() for part in text.split(",") if part.strip()]
+    return origins or ["*"]
+
+
 def create_app(
     *,
     database_path: str | None = None,
     hornet: Any | None = None,
     hornet_url: str | None = None,
+    cors_origins: str | None = None,
 ) -> FastAPI:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     resolved_url = hornet_url or os.environ.get("HORNET_URL", DEFAULT_HORNET_URL)
@@ -210,6 +227,17 @@ def create_app(
     app.state.db = database
     app.state.hornet = reader
     app.state.hornet_url = resolved_url
+    origin_setting = (
+        os.environ.get("LEDGER_CORS_ORIGINS", "*")
+        if cors_origins is None
+        else cors_origins
+    )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins(origin_setting),
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
     @app.get("/")
     def root() -> dict:

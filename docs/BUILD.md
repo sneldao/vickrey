@@ -1,29 +1,106 @@
-# Build plan — Oct 6–8
+# Build plan — 6–8 October
 
-## Compliance (do first, Day 1 morning)
+Linux, Docker, and Docker Compose. One machine. This repository is the submission. Clone upstream **beside** it; our apps stay under `apps/` and `services/`.
 
-- [ ] Create the public GitHub repo AT event start (fresh-code rule — this `vickrey/` folder is prep only, nothing here submits)
-- [ ] Clone challenge boilerplate into it, add the required open-source license file (ineligible without it)
-- [ ] Confirm Discord access + mentor channel for Track 2
+```bash
+git clone https://github.com/eclipse-aerios/iota-tangle.git ../iota-tangle
+git clone https://github.com/eclipse-aerios/iota-messages-api.git ../iota-messages-api
+```
 
-## Day 1: baseline that bids
+Leave the sample coordinator keys in `startup.yaml` and `hornet-main.yaml` alone. They match each other and the public keys in `config_private_tangle.json`. Editing one file breaks milestones.
 
-- Truthful bidder + budget cap + logging (every bid, pool, outcome)
-- Null-baseline harness: beat random before anything clever
-- First leaderboard entry if early submission allowed
+`bootstrap.sh` calls the `docker-compose` binary. Install that, or run the two `docker compose -f startup.yaml run …` steps from the script yourself.
 
-## Day 2: herd + opponents
+## Compliance
 
-- Demand-aware sizing (skip dead pools), premium-pool targeting
-- Opponent history table; exploit deterministic rivals
-- Sim rounds locally; keep v1/v2/v3 all runnable
+Done:
 
-## Day 3: harden + pitch
+- [x] Public submission repo: https://github.com/sneldao/vickrey
+- [x] Apache-2.0 chosen and committed (`LICENSE`, SPDX `Apache-2.0`)
 
-- Freeze versions by noon; pick ladder-best
-- 6-min pitch: problem → truthful-bid thesis → live demo round → results → next (mainnet/real edge pools)
-- README: setup, run, strategy summary, license
+Still open:
+
+- [ ] Private Tangle up locally (dashboard and Hornet API answering)
+- [ ] Discord category **Challenge 2** selected
+
+## Day 1 — node, insert, read-back
+
+Goal: one block on the private Tangle, read back from Hornet. No database yet.
+
+1. Bootstrap and start the main tangle:
+
+   ```bash
+   cd ../iota-tangle/docker/main
+   sudo ./bootstrap.sh
+   docker compose -f hornet-main.yaml up -d
+   ```
+
+   Bootstrap builds the genesis snapshot and coordinator state. Compose then starts Hornet, the coordinator, and the dashboard on network `iota-net`.
+
+2. Confirm the challenge URLs:
+
+   - http://localhost:31011 loads and milestones advance. Login `admin` / `admin`.
+   - Hornet REST answers. Stock compose publishes **14265**. The sheet says **14625**. Probe both:
+
+     ```bash
+     curl -sf http://localhost:14265/api/core/v2/info
+     curl -sf http://localhost:14625/api/core/v2/info
+     ```
+
+     If 14625 is closed, add `"14625:14265"` beside `"14265:14265"` on `iota-hornet` and recreate that container. Keep 14265, because the Messages API posts to port 14265.
+
+3. Start the Messages API on the same Docker network:
+
+   ```bash
+   cd ../iota-messages-api
+   docker compose up -d --build
+   ```
+
+   A missing-network error means Hornet is not up yet (`iota-net` is external).
+
+4. Insert, then verify. The API wraps Hornet's body as `return_payload` (a JSON string containing `blockId`):
+
+   ```bash
+   curl -sS -X POST 'http://localhost:5555/upload?node=iota-hornet' \
+     -H 'Content-Type: application/json' \
+     -d '{"tag":"incident.demo","message":{"flowId":"line-7","kind":"alarm","detail":"day-1"}}'
+   ```
+
+   ```bash
+   curl -sS http://localhost:14265/api/core/v2/blocks/<blockId>
+   curl -sS http://localhost:14265/api/core/v2/blocks/<blockId>/metadata
+   ```
+
+   Done when `isSolid` is true and the block body carries the same tag and payload. Open the block id in the dashboard too.
+
+   If upload fails on proof-of-work, `config_private_tangle.json` has `restAPI.pow.enabled: true`. For the hack, set it to `false`, recreate Hornet, and retry.
+
+## Day 2 — traceability DB and the two checks
+
+Goal: every insert is searchable, with a solid verdict and a content verdict.
+
+1. `services/ledger`. SQLite is enough. Columns: `block_id`, `tag`, `flow_id`, `payload_json`, `inserted_at`, `solid`, `content_match`, `milestone_index`, `raw_block`.
+2. Patch sibling `send_data.py`: after Hornet accepts the block, POST `{blockId, tag, message, hornetStatus}` to the ledger. Save the diff under `patches/` in this repo.
+3. On ingest, store the row, then:
+   - `GET /api/core/v2/blocks/<blockId>/metadata` → set `solid` from `isSolid`, copy `referencedByMilestoneIndex` when present.
+   - `GET /api/core/v2/blocks/<blockId>` → strip `0x`, hex-decode tag and data, set `content_match` when they equal the stored tag and `json.dumps` of `message`.
+4. REST: `GET /messages?blockId=`, `?tag=`, `?from=&to=` (ISO-8601). Return the enriched row, including both flags.
+5. Replay the day-1 curl. Search by tag returns `solid=true` and `content_match=true`.
+
+## Day 3 — explorer, freeze, pitch
+
+Goal: one screen, then stop changing the ledger.
+
+1. `apps/explorer`: rows of solid messages (tag, time, flow, both flags). Group by `flowId` into a timeline. Highlight `tag` prefix `incident.` or `kind=alarm`.
+2. Demo script, one flow: two ordinary events and one alarm on `flowId=line-7`. Timeline shows three verified blocks, the alarm is flagged, the block id opens on the Hornet dashboard.
+3. Freeze in the early afternoon. README commands must match what you ran. Six-minute pitch: private Tangle as trust ledger → insert → DB checks solid and content on Hornet → incident timeline → next (MQTT, a second node).
 
 ## Cuts if behind
 
-Cut premium targeting first, then opponent modeling. Never cut: bidding + logging + license + pitch.
+Cut in this order. Stop at the first cut that gets the demo honest.
+
+1. MQTT (idea #1). Do not start it unless day 2 is done.
+2. Alerts and `flowId` grouping. A flat verified table still meets the mandatory goal.
+3. Explorer polish. One HTML page, or the JSON API plus the IOTA dashboard, is enough to pitch.
+
+Keep through every cut: the Apache-2.0 `LICENSE`, a working insert, the parallel database, the solid check (block metadata), the content check (GET block), and the 6-minute pitch.

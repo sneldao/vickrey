@@ -213,6 +213,77 @@ test("timeline groups by flow and orders flows by first record", () => {
   );
 });
 
+test("incident titles prefer payload detail, then a readable tag", () => {
+  const row = clone(verified, {
+    payload_json: Object.assign({}, verified.payload_json, {
+      detail: "reefer shipment storage temp",
+    }),
+  });
+  assert.equal(api.incidentTitle(row), "Reefer shipment storage temp");
+  assert.equal(api.incidentTitle(verified), "incident critical");
+  assert.equal(api.incidentTitle({}), "Incident");
+});
+
+test("the verdict line names the changed value in plain words", () => {
+  const row = clone(verified, {
+    payload_json: Object.assign({}, verified.payload_json, {
+      temperature: 8,
+      unit: "°C",
+    }),
+    ledger_payload_json: Object.assign({}, verified.ledger_payload_json, {
+      temperature: 2,
+      unit: "°C",
+    }),
+  });
+  assert.equal(
+    api.verdictLine(row),
+    "Your app says 8 °C — the network recorded 2 °C.",
+  );
+  assert.equal(api.verdictLine(verified), "");
+});
+
+test("the verdict line does not append a unit to a text change", () => {
+  const row = clone(verified, {
+    payload_json: Object.assign({}, verified.payload_json, {
+      sensorId: "temp-99",
+      unit: "°C",
+    }),
+    ledger_payload_json: Object.assign({}, verified.ledger_payload_json, {
+      unit: "°C",
+    }),
+  });
+  assert.equal(
+    api.verdictLine(row),
+    "Your app says temp-99 — the network recorded temp-12.",
+  );
+});
+
+test("relative time degrades to empty on bad input", () => {
+  assert.equal(api.relativeTime("not a date"), "");
+  assert.equal(api.relativeTime(""), "");
+  assert.match(api.relativeTime(new Date().toISOString()), /just now/);
+});
+
+test("tamper body scales a numeric field deterministically", () => {
+  assert.deepEqual(api.tamperBody(verified), { temperature: 86 });
+  const cold = clone(verified, {
+    payload_json: { temperature: 8, unit: "°C" },
+    ledger_payload_json: { temperature: 2, unit: "°C" },
+  });
+  assert.deepEqual(api.tamperBody(cold), { temperature: 8 });
+  const energy = clone(verified, {
+    payload_json: { kind: "reading", kwh: 82 },
+    ledger_payload_json: { kind: "reading", kwh: 82 },
+  });
+  assert.deepEqual(api.tamperBody(energy), {
+    payload: { kind: "reading", kwh: 328 },
+  });
+  assert.deepEqual(
+    api.tamperBody(clone(verified, { payload_json: { kind: "note" } })),
+    {},
+  );
+});
+
 test("block links open the Stardust dashboard and the Hornet block", () => {
   assert.equal(
     api.dashboardBlockUrl("http://localhost:31011/", "0xda720001"),

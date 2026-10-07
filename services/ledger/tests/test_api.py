@@ -166,6 +166,53 @@ def test_filters_and_unknown_status(client):
     assert bad_time.status_code == 400
 
 
+def test_restore_copies_the_anchored_payload_back(client):
+    http, hornet = client
+    anchored = {"flow_id": "flow-1", "sensor": "meter-03", "energy": 82.0}
+    hornet.default = matching_fetch(message=anchored)
+    created = http.post(
+        "/ingest",
+        json={"blockId": BLOCK_ID, "tag": TAG, "message": anchored},
+    )
+    assert created.json()["status"] == "VERIFIED"
+
+    tampered = http.post(
+        f"/messages/{BLOCK_ID}/tamper",
+        json={"payload": dict(anchored, energy=328)},
+    )
+    assert tampered.json()["message"]["status"] == "PAYLOAD_MISMATCH"
+
+    restored = http.post(f"/messages/{BLOCK_ID}/restore")
+    assert restored.status_code == 200
+    row = restored.json()
+    assert row["status"] == "VERIFIED"
+    assert row["content_match"] is True
+    assert row["payload_json"] == row["ledger_payload_json"]
+    assert row["payload_json"]["energy"] == 82.0
+
+
+def test_restore_keeps_float_shape_a_client_would_lose(client):
+    http, _hornet = client
+    ingest(http)
+    # A JSON client cannot round-trip 82.0 versus 82: it sends back the int.
+    http.post(
+        f"/messages/{BLOCK_ID}/tamper",
+        json={"payload": dict(MESSAGE, temperature=21)},
+    )
+    restored = http.post(f"/messages/{BLOCK_ID}/restore")
+    assert restored.json()["status"] == "VERIFIED"
+    assert restored.json()["payload_json"] == MESSAGE
+
+
+def test_restore_is_404_and_409_where_there_is_nothing_anchored(client):
+    http, hornet = client
+    assert http.post("/messages/0xmissing/restore").status_code == 404
+
+    hornet.default = HornetFetch(None, None, None, None, error="down")
+    ingest(http)
+    assert http.post(f"/messages/{BLOCK_ID}/restore").status_code == 409
+
+
 def test_missing_message_is_404(client):
     http, _hornet = client
     assert http.get("/messages/0xmissing").status_code == 404

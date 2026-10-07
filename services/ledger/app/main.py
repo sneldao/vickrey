@@ -390,6 +390,39 @@ def create_app(
             "message": message_out(row),
         }
 
+    @app.post(
+        "/messages/{block_id}/restore",
+        response_model=MessageOut,
+        summary="DEMO ONLY: restore the application payload from the anchored block",
+        description=(
+            "Copies the stored Hornet tagged data back into payload_json "
+            "byte-identically, then reverifies. This is the recovery half of "
+            "the tamper demo: the block never changed, so putting its payload "
+            "back restores VERIFIED."
+        ),
+    )
+    def restore(block_id: str) -> dict:
+        try:
+            _clean_block_id(block_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        current = app.state.db.get(block_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail="message not found")
+        anchored = load_json(current["ledger_payload_json"])
+        if anchored is None:
+            raise HTTPException(
+                status_code=409,
+                detail="no anchored Hornet payload to restore from",
+            )
+        app.state.db.update_payload(block_id, anchored)
+        logger.info(
+            "DEMO restore of application payload for %s from anchored block",
+            block_id,
+        )
+        row = verify_stored(app.state.db, app.state.hornet, block_id)
+        return message_out(row)
+
     return app
 
 

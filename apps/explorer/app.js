@@ -151,6 +151,127 @@
     return "";
   }
 
+  function incidentTitle(message) {
+    var payload = isPlainObject(message && message.payload_json)
+      ? message.payload_json
+      : {};
+    var detail = payload.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      var text = detail.trim();
+      return text.charAt(0).toUpperCase() + text.slice(1);
+    }
+    if (message && message.tag) {
+      return String(message.tag).replace(/[._-]+/g, " ");
+    }
+    return "Incident";
+  }
+
+  function valueWithUnit(message, value) {
+    var unit =
+      typeof value === "number" && isPlainObject(message.payload_json)
+        ? message.payload_json.unit
+        : undefined;
+    var rendered = formatCell(value);
+    return typeof unit === "string" && unit ? rendered + " " + unit : rendered;
+  }
+
+  function verdictLine(message) {
+    var keys = changedKeys(
+      message.payload_json,
+      message.ledger_payload_json,
+    ).filter(function (key) {
+      var app = message.payload_json[key];
+      var anchor = message.ledger_payload_json[key];
+      return app !== undefined || anchor !== undefined;
+    });
+    var key = null;
+    var i;
+    for (i = 0; i < keys.length; i++) {
+      if (
+        typeof message.payload_json[keys[i]] === "number" &&
+        typeof message.ledger_payload_json[keys[i]] === "number"
+      ) {
+        key = keys[i];
+        break;
+      }
+    }
+    if (!key) {
+      for (i = 0; i < keys.length; i++) {
+        if (
+          typeof message.payload_json[keys[i]] === "number" ||
+          typeof message.ledger_payload_json[keys[i]] === "number"
+        ) {
+          key = keys[i];
+          break;
+        }
+      }
+    }
+    if (!key && keys.length) {
+      key = keys[0];
+    }
+    if (!key) {
+      return "";
+    }
+    return (
+      "Your app says " +
+      valueWithUnit(message, message.payload_json[key]) +
+      " — the network recorded " +
+      valueWithUnit(message, message.ledger_payload_json[key]) +
+      "."
+    );
+  }
+
+  function relativeTime(iso) {
+    var date = new Date(iso);
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+    var seconds = Math.max(0, Math.round((Date.now() - date.getTime()) / 1000));
+    if (seconds < 60) {
+      return "just now";
+    }
+    var minutes = Math.floor(seconds / 60);
+    if (minutes < 60) {
+      return minutes + "m ago";
+    }
+    var hours = Math.floor(minutes / 60);
+    if (hours < 24) {
+      return hours + "h ago";
+    }
+    return Math.floor(hours / 24) + "d ago";
+  }
+
+  function tamperBody(message) {
+    var payload = isPlainObject(message.payload_json)
+      ? message.payload_json
+      : {};
+    var anchored = isPlainObject(message.ledger_payload_json)
+      ? message.ledger_payload_json
+      : {};
+    // Scale the anchored value so the edit is plausible in shape but plainly
+    // wrong in number — and re-tampering stays idempotent.
+    function scaled(key) {
+      var base =
+        typeof anchored[key] === "number" ? anchored[key] : payload[key];
+      return Math.round(base * 4 * 10) / 10;
+    }
+    if (typeof payload.temperature === "number") {
+      return { temperature: scaled("temperature") };
+    }
+    var keys = Object.keys(payload);
+    for (var i = 0; i < keys.length; i++) {
+      if (typeof payload[keys[i]] === "number") {
+        var patch = {};
+        keys.forEach(function (other) {
+          patch[other] = payload[other];
+        });
+        patch[keys[i]] = scaled(keys[i]);
+        return { payload: patch };
+      }
+    }
+    return {};
+  }
+
   function statusLabel(status) {
     switch (status) {
       case "VERIFIED":
@@ -592,7 +713,63 @@
       loaded: false,
       auto: true,
       rendered: "",
+      lastChecked: 0,
+      justTampered: null,
+      justReverified: null,
+      walk: { tampered: false, sawMismatch: false, reverified: false },
+      walkDismissed: storedFlag("vickrey.walk.dismissed"),
     };
+
+    function storedFlag(key) {
+      try {
+        return window.localStorage.getItem(key) === "1";
+      } catch (error) {
+        return false;
+      }
+    }
+
+    var toastTimer = null;
+    var toast = el("div", { class: "toast", role: "status" });
+    function showToast(text) {
+      toast.textContent = text;
+      toast.classList.add("show");
+      if (toastTimer) {
+        clearTimeout(toastTimer);
+      }
+      toastTimer = setTimeout(function () {
+        toast.classList.remove("show");
+      }, 1800);
+    }
+
+    function copyText(text, okLabel) {
+      var done = function () {
+        showToast(okLabel || "Copied");
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () {
+          legacyCopy(text);
+          done();
+        });
+      } else {
+        legacyCopy(text);
+        done();
+      }
+    }
+
+    function legacyCopy(text) {
+      var area = el("textarea", {
+        style: "position:fixed;top:0;left:0;opacity:0;pointer-events:none;",
+      });
+      area.value = text;
+      document.body.append(area);
+      area.select();
+      try {
+        document.execCommand("copy");
+      } catch (error) {
+        /* no clipboard — the text stays selectable in the field */
+      }
+      area.remove();
+    }
 
     var healthText = el("span", {
       id: "health-text",
@@ -714,6 +891,7 @@
       filterRow,
       el("div", { class: "workspace" }, [timeline, detail]),
       hint,
+      toast,
     );
 
     window.addEventListener("hashchange", function () {
@@ -839,12 +1017,21 @@
           state.health && state.health.hornet_url
             ? state.health.hornet_url
             : "an unknown Hornet";
+        var checked = "";
+        if (state.lastChecked) {
+          var ago = Math.max(
+            0,
+            Math.round((Date.now() - state.lastChecked) / 1000),
+          );
+          checked = " · checked " + (ago < 5 ? "just now" : ago + "s ago");
+        }
         healthText.textContent =
           "Ledger answering at " +
           state.ledgerUrl +
           ". It reads Hornet at " +
           hornet +
-          ".";
+          "." +
+          checked;
       }
       var counts = { ALL: state.messages.length };
       FILTERS.forEach(function (filter) {
@@ -882,6 +1069,10 @@
         actionError: state.actionError,
         busy: state.busy,
         loaded: state.loaded,
+        walk: state.walk,
+        walkDismissed: state.walkDismissed,
+        justTampered: state.justTampered,
+        justReverified: state.justReverified,
         messages: state.messages.map(function (message) {
           return [
             message.block_id,
@@ -909,9 +1100,11 @@
       timeline.replaceChildren();
       detail.replaceChildren();
       if (!state.loaded) {
-        timeline.append(
-          el("p", { class: "empty", text: "Reading the evidence ledger…" }),
-        );
+        var skeleton = el("ol", { class: "events skeleton" });
+        for (var row = 0; row < 4; row++) {
+          skeleton.append(el("li", { class: "skeleton-row" }));
+        }
+        timeline.append(skeleton);
         return;
       }
       if (state.error && !state.messages.length) {
@@ -931,9 +1124,19 @@
       }
       var visible = applyFilter(state.messages, state.filter, state.blockQuery);
       if (!visible.length) {
-        timeline.append(
-          el("p", { class: "empty", text: "No incidents in this filter." }),
-        );
+        var emptyText = "No incidents in this filter.";
+        if (String(state.blockQuery || "").trim()) {
+          emptyText = "No incident matches that block id.";
+        } else if (state.filter === "PAYLOAD_MISMATCH") {
+          emptyText = "No mismatches — every record agrees.";
+        } else if (state.filter === "VERIFIED") {
+          emptyText = "Nothing verified yet.";
+        } else if (state.filter === "NOT_SOLID") {
+          emptyText = "Everything is solid.";
+        } else if (state.filter === "PENDING") {
+          emptyText = "Nothing pending — every check has settled.";
+        }
+        timeline.append(el("p", { class: "empty", text: emptyText }));
       } else {
         groupByFlow(visible).forEach(function (group) {
           var countLabel =
@@ -958,6 +1161,10 @@
       var selected = state.messages.find(function (message) {
         return message.block_id === state.selectedId;
       });
+      var walk = renderWalkthrough(selected);
+      if (walk) {
+        detail.append(walk);
+      }
       if (!selected) {
         detail.append(
           el("p", {
@@ -978,7 +1185,55 @@
           }),
         );
       }
+      if (selected.status === "PAYLOAD_MISMATCH") {
+        state.walk.sawMismatch = true;
+      }
       detail.append(renderDetail(selected));
+    }
+
+    function renderWalkthrough(selected) {
+      if (state.walkDismissed) {
+        return null;
+      }
+      var steps = [
+        { text: "Open an incident", done: state.selectedId != null },
+        { text: "Tamper the application copy", done: state.walk.tampered },
+        {
+          text: "Watch the verdict flip to mismatch",
+          done:
+            state.walk.sawMismatch ||
+            (selected && selected.status === "PAYLOAD_MISMATCH"),
+        },
+        {
+          text: "Restore — the network copy wins",
+          done: state.walk.reverified,
+        },
+      ];
+      return el("section", { class: "walkthrough" }, [
+        el("div", { class: "walk-head" }, [
+          el("span", { class: "walk-kicker", text: "Try the demo" }),
+          el("button", {
+            type: "button",
+            class: "walk-dismiss",
+            text: "Hide",
+            onClick: function () {
+              state.walkDismissed = true;
+              store("vickrey.walk.dismissed", "1");
+              renderBoard();
+            },
+          }),
+        ]),
+        el(
+          "ol",
+          { class: "walk-steps" },
+          steps.map(function (step, index) {
+            return el("li", { class: step.done ? "done" : "" }, [
+              el("span", { class: "walk-num", text: String(index + 1) }),
+              el("span", { text: step.text }),
+            ]);
+          }),
+        ),
+      ]);
     }
 
     function renderEvent(message) {
@@ -1012,8 +1267,8 @@
                 text: statusLabel(message.status),
               }),
               el("span", {
-                class: "event-tag",
-                text: message.tag || "(no tag)",
+                class: "event-title",
+                text: incidentTitle(message),
               }),
               el("span", {
                 class: "event-id",
@@ -1034,20 +1289,43 @@
       );
       var dashboard = dashboardBlockUrl(state.dashboardUrl, message.block_id);
       var hornet = hornetBlockUrl(state.hornetUrl, message.block_id);
-      var meta =
-        message.block_id +
-        " · " +
-        formatTime(message.inserted_at) +
-        (message.flow_id ? " · " + message.flow_id : " · no flowId");
+      var flash = "";
+      if (state.justTampered === message.block_id) {
+        flash = " just-tampered";
+        state.justTampered = null;
+      } else if (state.justReverified === message.block_id) {
+        flash = " just-reverified";
+        state.justReverified = null;
+      }
+      var rel = relativeTime(message.inserted_at);
+      var verdict = differ ? verdictLine(message) : "";
       var nodes = [
         el("span", {
-          class: "stamp large",
+          class: "stamp large" + (flash ? " stamp-flip" : ""),
           "data-status": message.status || "",
           text: statusLabel(message.status),
         }),
         highlightedFlag(message),
-        el("h2", { text: message.tag || "(no tag)" }),
-        el("p", { class: "block-line mono", text: meta }),
+        el("h2", { text: incidentTitle(message) }),
+        el("p", { class: "block-line mono" }, [
+          el("button", {
+            type: "button",
+            class: "id-btn",
+            title: "Copy the full block id",
+            text: message.block_id,
+            onClick: function () {
+              copyText(message.block_id, "Block id copied");
+            },
+          }),
+          document.createTextNode(
+            " · " +
+              formatTime(message.inserted_at) +
+              (rel ? " (" + rel + ")" : "") +
+              (message.flow_id ? " · " + message.flow_id : "") +
+              (message.tag ? " · " + message.tag : ""),
+          ),
+        ]),
+        verdict ? el("p", { class: "verdict", text: verdict }) : null,
         renderChecklist(checks),
         renderDemo(message),
         el("p", { class: "pitch", text: pitchLine(message) }),
@@ -1068,15 +1346,28 @@
                 text: "Hornet block JSON",
               })
             : null,
+          el("button", {
+            type: "button",
+            class: "link-btn",
+            text: "Copy link to this incident",
+            onClick: function () {
+              var url =
+                window.location.origin +
+                window.location.pathname +
+                "#" +
+                encodeURIComponent(message.block_id);
+              copyText(url, "Incident link copied");
+            },
+          }),
         ]),
-        renderCompare(message, differ),
+        renderCompare(message, differ, flash),
       ];
       if (message.detail) {
         nodes.push(
           el("p", { class: "pitch", text: "Last check: " + message.detail }),
         );
       }
-      return el("article", {}, nodes);
+      return el("article", { class: flash ? flash.slice(1) : "" }, nodes);
     }
 
     function highlightedFlag(message) {
@@ -1106,13 +1397,13 @@
       ]);
     }
 
-    function renderCompare(message, differ) {
+    function renderCompare(message, differ, flash) {
       var ledgerKnown =
         message.ledger_payload_json !== null &&
         message.ledger_payload_json !== undefined;
       if (!ledgerKnown && message.status !== "PAYLOAD_MISMATCH") {
         return el("section", { class: "compare" }, [
-          el("h3", { text: "Application copy" }),
+          el("h3", { text: "Your app says" }),
           el("pre", { text: pretty(message.payload_json) }),
         ]);
       }
@@ -1136,8 +1427,8 @@
           el("thead", {}, [
             el("tr", {}, [
               el("th", { text: "Field" }),
-              el("th", { text: "Application" }),
-              el("th", { text: "Hornet" }),
+              el("th", { text: "Your app" }),
+              el("th", { text: "The network" }),
             ]),
           ]),
         ]);
@@ -1146,10 +1437,10 @@
           body.append(
             el("tr", { class: "diff" }, [
               el("th", { text: key }),
-              el("td", {}, [
+              el("td", { class: "cell-app" }, [
                 el("b", { text: formatCell(message.payload_json[key]) }),
               ]),
-              el("td", {}, [
+              el("td", { class: "cell-anchor" }, [
                 el("b", { text: formatCell(message.ledger_payload_json[key]) }),
               ]),
             ]),
@@ -1161,11 +1452,17 @@
       children.push(
         el("div", { class: "columns" }, [
           el("section", { class: differ ? "differs" : "" }, [
-            el("h4", { text: "Application copy" }),
+            el("h4", {}, [
+              document.createTextNode("Your app says "),
+              el("small", { text: "application copy" }),
+            ]),
             el("pre", { text: pretty(message.payload_json) }),
           ]),
           el("section", { class: differ ? "differs" : "" }, [
-            el("h4", { text: "Hornet tagged data" }),
+            el("h4", {}, [
+              document.createTextNode("The network recorded "),
+              el("small", { text: "Hornet tagged data" }),
+            ]),
             el("pre", {
               text: pretty(
                 ledgerKnown
@@ -1178,18 +1475,38 @@
       );
       return el(
         "section",
-        { class: "compare" + (differ ? " is-mismatch" : "") },
+        {
+          class:
+            "compare" +
+            (differ ? " is-mismatch" : "") +
+            (flash ? " pulse-once" : ""),
+        },
         children,
       );
     }
 
     function renderDemo(message) {
+      var mismatched = message.status === "PAYLOAD_MISMATCH";
+      var canRestore = mismatched && isPlainObject(message.ledger_payload_json);
       return el("div", { class: "demo" }, [
         el("div", { class: "row" }, [
+          canRestore
+            ? el("button", {
+                type: "button",
+                id: "restore",
+                class: "primary",
+                text: "Restore the app copy from the network",
+                disabled: state.busy,
+                onClick: function () {
+                  restore(message);
+                },
+              })
+            : null,
           el("button", {
             type: "button",
             id: "reverify",
-            text: "Re-check Hornet",
+            class: mismatched && !canRestore ? "primary" : "",
+            text: "Re-verify against the network",
             disabled: state.busy,
             onClick: function () {
               reverify(message.block_id);
@@ -1207,7 +1524,9 @@
           }),
         ]),
         el("p", {
-          text: "Tamper overwrites the application copy only. Hornet is not modified.",
+          text: mismatched
+            ? "The block never changed — restoring puts the anchored copy back in the app."
+            : "Tamper edits the application copy only — the anchored block is never modified.",
         }),
         state.notice
           ? el("p", { class: "notice", role: "status", text: state.notice })
@@ -1277,6 +1596,7 @@
           return;
         }
         state.health = pair[0];
+        state.lastChecked = Date.now();
         state.messages = (pair[1] && pair[1].messages) || [];
         state.total =
           pair[1] && typeof pair[1].total === "number"
@@ -1322,9 +1642,57 @@
             headers: { accept: "application/json" },
           },
         );
+        var wasMismatch =
+          body.status === "VERIFIED" &&
+          state.messages.some(function (row) {
+            return (
+              row.block_id === body.block_id &&
+              row.status === "PAYLOAD_MISMATCH"
+            );
+          });
         replaceMessage(body);
+        if (body.status === "VERIFIED") {
+          state.walk.reverified = true;
+          if (wasMismatch) {
+            state.justReverified = body.block_id;
+          }
+        }
         state.notice =
-          "Re-checked. Status is " + statusLabel(body.status) + ".";
+          "Re-verified. Status is " + statusLabel(body.status) + ".";
+      } catch (error) {
+        state.actionError =
+          error instanceof Error ? error.message : String(error);
+      } finally {
+        state.busy = false;
+        renderBoard();
+      }
+    }
+
+    async function restore(message) {
+      state.busy = true;
+      state.notice = "";
+      state.actionError = "";
+      renderBoard();
+      try {
+        var body = await requestJson(
+          apiUrl(
+            state.ledgerUrl,
+            "/messages/" + encodeURIComponent(message.block_id) + "/restore",
+          ),
+          {
+            method: "POST",
+            headers: { accept: "application/json" },
+          },
+        );
+        replaceMessage(body);
+        if (body.status === "VERIFIED") {
+          state.walk.reverified = true;
+          state.justReverified = body.block_id;
+        }
+        state.notice =
+          "Application copy restored from the anchored block. Status is " +
+          statusLabel(body.status) +
+          ".";
       } catch (error) {
         state.actionError =
           error instanceof Error ? error.message : String(error);
@@ -1339,10 +1707,7 @@
       state.notice = "";
       state.actionError = "";
       renderBoard();
-      var body = {};
-      if (isPlainObject(message.payload_json)) {
-        body = { temperature: 999.9 };
-      }
+      var body = tamperBody(message);
       try {
         var result = await requestJson(
           apiUrl(
@@ -1360,10 +1725,12 @@
         );
         var updated = result && result.message ? result.message : result;
         replaceMessage(updated);
+        state.walk.tampered = true;
+        state.justTampered = updated.block_id;
         state.notice =
           result && result.note
             ? result.note
-            : "Application copy overwritten. Status is " +
+            : "Only the application copy changed — the anchored block is byte-identical. Status is " +
               statusLabel(updated.status) +
               ".";
       } catch (error) {
@@ -1397,11 +1764,15 @@
     hornetBlockUrl: hornetBlockUrl,
     httpOrigin: httpOrigin,
     highlightLabel: highlightLabel,
+    incidentTitle: incidentTitle,
     isHighlighted: isHighlighted,
     mount: mount,
     normalizeFilter: normalizeFilter,
     payloadsDiffer: payloadsDiffer,
     pitchLine: pitchLine,
+    relativeTime: relativeTime,
     statusLabel: statusLabel,
+    tamperBody: tamperBody,
+    verdictLine: verdictLine,
   };
 });

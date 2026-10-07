@@ -37,14 +37,27 @@ Evidence Explorer on a private Hornet network.
   checklist (payload match / solid / milestone / tag), status filters,
   side-by-side mismatch view, links out to the INX dashboard and the raw
   Hornet block.
+- Delight pass: human incident titles from payload `detail`, one-line
+  verdict sentences on mismatches, plain-English source labels, a
+  self-ticking "Try the demo" checklist, tamper flip + restore
+  animations, `#<blockId>` deep links with copy-link/copy-hash controls,
+  OG/Twitter card meta (`og-cover.png`), skeleton/empty states,
+  liveness tick, `prefers-reduced-motion`.
+- `POST /messages/{id}/restore` (demo-only) copies the stored anchored
+  payload back byte-identically — needed because a JS client cannot
+  round-trip `82.0` versus `82` through JSON.
 - Deployed on the Vultr host via `docker-compose.yml` (+ `iotanet` overlay):
   explorer :8090, ledger :8088. Bare-IP `http://45.76.242.245` proxies to
-  the explorer through the host Caddy.
+  the explorer through the host Caddy. The box keeps `EXPLORER_LEDGER_URL`,
+  `DASHBOARD_URL`, `HORNET_PUBLIC_URL`, and `HORNET_URL` in
+  `/root/vickrey/.env` so a rebuild does not fall back to localhost URLs.
 - Seeded state: fresh VERIFIED `incident.critical` alarm
-  (`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, plus a
-  standing `PAYLOAD_MISMATCH` exhibit. `./scripts/restore_demo.sh`
+  (`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, a
+  standing `PAYLOAD_MISMATCH` exhibit (92 vs 82), a cold-chain reefer
+  mismatch (8 °C vs anchored 2 °C), and a VERIFIED substation meter
+  reading safe to tamper and restore. `./scripts/restore_demo.sh`
   restores all rows if anything touches them early.
-- Tests: 28 ledger (pytest) + 12 explorer (node --test).
+- Tests: 31 ledger (pytest) + 17 explorer (node --test).
 - Pitch: [`PITCH.md`](PITCH.md).
 
 ## Cuts / non-goals

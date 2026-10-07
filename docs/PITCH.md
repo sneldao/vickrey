@@ -27,10 +27,10 @@ The ledger stores the application copy at ingest, then _independently_ GETs the 
 
 ## 1:30–4:00 — Live demo (~2.5 min)
 
-1. **Timeline.** Open the explorer. Rows group by `flow_id`; filters on top (VERIFIED / PENDING / MISMATCH / NOT SOLID). Real rows on a real Hornet, not fixtures.
+1. **Timeline.** Open the explorer. Rows group by `flow_id` and lead with a human title, not a hash. Filters on top (VERIFIED / PENDING / MISMATCH / NOT SOLID). The "Try the demo" checklist narrates the rest — it ticks itself as you go. Real rows on a real Hornet, not fixtures.
 2. **Trust checklist.** Open the `incident.critical` alarm `0x6d90d792…5313f5` (flow `line-7`). Green checks: payload match, solid, milestone `749`, tag. Show **Hornet block JSON** — the raw `GET /api/core/v2/blocks/<id>` — and **Open on Hornet dashboard** for the same block in the stock INX explorer.
-3. **The mismatch.** Hit **Tamper application copy**. Only the application row changes — the Hornet block is untouched and unreadable as a write path. The stamp flips to **PAYLOAD MISMATCH**; `92.0` sits beside the original `82.0` side by side, changed fields called out.
-4. **Recovery.** Re-ingest the original message — the row goes back to VERIFIED because the block never changed. That _is_ the product: the ledger copy is the ground truth the app copy is measured against.
+3. **The mismatch.** Hit **Tamper application copy**. Only the application row changes — the Hornet block is untouched. The stamp flips to **PAYLOAD MISMATCH** and a one-line verdict says it in words: "Your app says 328 — the network recorded 82." The standing exhibits (92 vs 82 on `line-7`, 8 °C vs 2 °C on the cold-chain reefer) show the same story at rest.
+4. **Recovery.** Hit **Restore the app copy from the network** — the ledger copies the anchored payload back byte-identically and the row goes VERIFIED again, because the block never changed. That _is_ the product: the ledger copy is the ground truth the app copy is measured against.
 
 Fallback if live dies: `./scripts/demo_day3.sh` runs the same flow against a mock Hornet locally.
 
@@ -39,7 +39,7 @@ Fallback if live dies: `./scripts/demo_day3.sh` runs the same flow against a moc
 - Patched the upstream Messages API (`patches/`) to fan every insert into the ledger — no changes to the write path contract.
 - Semantic JSON equality, not byte equality — key order doesn't matter, content does.
 - `PAYLOAD_MISMATCH` outranks solidity on purpose: a solid block can still be a lying copy.
-- 28 ledger tests + 12 explorer tests; verify/tamper API unchanged since Day 2.
+- 31 ledger tests + 17 explorer tests; verify/tamper API unchanged since Day 2 (the restore route is additive).
 
 ## 4:45–5:30 — Next
 

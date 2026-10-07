@@ -44,9 +44,11 @@ Running on the challenge host during the hack:
 - Hornet dashboard: <http://45.76.242.245:31011> (`admin` / `admin`)
 
 Seeded for the pitch: a VERIFIED `incident.critical` alarm
-(`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, plus a
-standing `PAYLOAD_MISMATCH` row. If a row was touched early,
-`./scripts/restore_demo.sh` restores all three.
+(`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, a standing
+`PAYLOAD_MISMATCH` exhibit (92 vs 82), a cold-chain reefer record showing
+8 °C against the anchored 2 °C, and a substation meter reading that is
+safe to tamper and restore live. If a row was touched early,
+`./scripts/restore_demo.sh` restores all five.
 
 ## Endpoints
 
@@ -98,6 +100,8 @@ Status is one of `VERIFIED`, `PENDING`, `PAYLOAD_MISMATCH`, `NOT_SOLID`.
 `content_match` is semantic JSON equality plus an exact tag match. Key order does not matter. `PAYLOAD_MISMATCH` wins over solidity, so a later tamper of the application copy flips the flag while the Hornet payload stays the original.
 
 `POST /messages/{blockId}/tamper` is demo-only. It overwrites `payload_json` (or just `temperature`) and reverifies. It does not submit a block.
+
+`POST /messages/{blockId}/restore` is the recovery half, also demo-only. It copies the stored Hornet payload back into `payload_json` byte-identically and reverifies — the server does this because a JSON client cannot round-trip float shapes such as `82.0` versus `82`, and `content_match` compares canonical JSON.
 
 ### Run the ledger
 
@@ -155,7 +159,7 @@ curl -sS -X POST http://127.0.0.1:8088/messages/0x…/tamper \
 
 A matching solid, milestone-referenced block returns `status=VERIFIED` and `content_match=true`. After tamper, the same block returns `status=PAYLOAD_MISMATCH`, `content_match=false`, `payload_json.temperature=999.9`, and `ledger_payload_json` still holding the original tagged data.
 
-Ingest again with the original message to put the application copy back.
+Ingest again with the original message — or `POST /messages/0x…/restore` — to put the application copy back.
 
 ### Tests
 
@@ -168,9 +172,11 @@ services/ledger/.venv/bin/pip install -r services/ledger/requirements-dev.txt
 
 `apps/explorer` is a static page on the Day 2 ledger. It does not submit blocks and it does not change verify or tamper. The browser reads `GET /messages`, opens one incident, and the pitch buttons call the existing reverify and tamper routes.
 
-The timeline groups rows by `flow_id` (the stored `flowId`). Each open incident has a trust checklist: payload match, solid, milestone, tag. Filters are Verified, Pending, Mismatch (`PAYLOAD_MISMATCH`, also accepted as `MISMATCH`), and Not solid. A row whose tag starts with `incident.` or whose payload `kind` is `alarm` is marked on the timeline.
+The timeline groups rows by `flow_id` (the stored `flowId`) and leads each row with the payload's `detail` as a human title. Each open incident has a trust checklist: payload match, solid, milestone, tag. Filters are Verified, Pending, Mismatch (`PAYLOAD_MISMATCH`, also accepted as `MISMATCH`), and Not solid. A row whose tag starts with `incident.` or whose payload `kind` is `alarm` is marked on the timeline.
 
-When the application payload and the decoded Hornet payload differ, the incident is labeled **PAYLOAD MISMATCH** and the two documents sit side by side, with the changed fields called out. Tamper still changes only `payload_json`. The Hornet block stays the original. **Open on Hornet dashboard** goes to `http://localhost:31011/explorer/block/<blockId>` (INX dashboard 1.0). **Hornet block JSON** is `GET /api/core/v2/blocks/<blockId>` on the public Hornet URL.
+When the application payload and the decoded Hornet payload differ, the incident is labeled **PAYLOAD MISMATCH**, a one-line verdict names the changed value in plain words ("Your app says 8 °C — the network recorded 2 °C"), and the two documents sit side by side ("Your app says" / "The network recorded") with the changed fields called out. Tamper still changes only `payload_json`. The Hornet block stays the original. **Open on Hornet dashboard** goes to `http://localhost:31011/explorer/block/<blockId>` (INX dashboard 1.0). **Hornet block JSON** is `GET /api/core/v2/blocks/<blockId>` on the public Hornet URL.
+
+A dismissible "Try the demo" checklist walks a visitor through open → tamper → mismatch → restore. **Restore the app copy from the network** calls the ledger's `/restore` route and returns the row to VERIFIED. Incidents deep-link by block-id hash (`/#0x…`), with copy-link and copy-hash controls on the detail view.
 
 ### Run the explorer
 

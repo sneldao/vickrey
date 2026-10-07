@@ -7,6 +7,8 @@
 #   0x6d90d792…5313f5  VERIFIED          incident.critical  temp 82.0 (the live-tamper row)
 #   0x39c16427…2afe49  VERIFIED          incident.demo      temp 21.5
 #   0x7b8062f1…3ecb657 PAYLOAD_MISMATCH  incident.critical  app temp 92.0 vs Hornet 82.0
+#   0x248b5d47…a0ef47   VERIFIED          incident.metering  energy 82.0 kWh (tamperable)
+#   0x2d6b8731…ad033b   PAYLOAD_MISMATCH  incident.coldchain app temp 8.0 vs Hornet 2.0°C
 #
 # Re-ingesting the original application copy makes the row VERIFIED again
 # (verify re-reads the real Hornet block). The mismatch row is restored by
@@ -49,6 +51,20 @@ ingest 0x7b8062f1d6530340f5cc47eeb3f86da5f3e569e635445d8d7585e20376ecb657 \
 
 post "${LEDGER}/messages/0x7b8062f1d6530340f5cc47eeb3f86da5f3e569e635445d8d7585e20376ecb657/tamper" \
   '{"temperature":92.0}' \
+  | python3 -c 'import json,sys; m=json.load(sys.stdin)["message"]; print(m["block_id"][:14], "->", m["status"])'
+
+# Row 4: the relatable tamperable record — substation meter reading.
+ingest 0x248b5d47a75cc24f88f326a8e0815abf02419f6ef8b6dcf079aba0f4fca0ef47 \
+  incident.metering \
+  '{"flowId":"substation-m3","kind":"reading","sensorId":"meter-03","energy":82.0,"unit":"kWh","detail":"substation meter reading"}'
+
+# Row 5: the cold-chain scenario — anchored 2°C, app copy claims 8°C.
+ingest 0x2d6b8731abf9f444ca579dc412240cf5aeb96d884f4193805d3f9911ecad033b \
+  incident.coldchain \
+  '{"flowId":"cold-chain-ch41","kind":"reading","sensorId":"reefer-ch41-temp","temperature":2.0,"unit":"°C","detail":"reefer shipment storage temp"}'
+
+post "${LEDGER}/messages/0x2d6b8731abf9f444ca579dc412240cf5aeb96d884f4193805d3f9911ecad033b/tamper" \
+  '{"temperature":8.0}' \
   | python3 -c 'import json,sys; m=json.load(sys.stdin)["message"]; print(m["block_id"][:14], "->", m["status"])'
 
 echo

@@ -24,6 +24,14 @@
     "Liberation Serif", "Nimbus Roman", "Palatino Linotype", Palatino, Georgia,
     serif;
   --mono: "Liberation Mono", "DejaVu Sans Mono", ui-monospace, monospace;
+
+  /* Brand palette — see docs/BRAND.md */
+  --bone: #f4efe4;
+  --iron: #1c1915;
+  --wax: #a32020;
+  --notary: #1e2a4a;
+  --moss: #3f5c3a;
+  --pencil: #8a8578;
 }
 
 * {
@@ -60,6 +68,27 @@ input {
   max-width: 1120px;
   margin: 0 auto;
   padding: 16px 24px 14px;
+}
+
+.mast-grid {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.mast-copy {
+  min-width: 0;
+}
+
+.seal-wrap {
+  flex: 0 0 auto;
+  color: var(--copper);
+}
+
+.seal {
+  width: 62px;
+  height: 62px;
+  display: block;
 }
 
 .eyebrow {

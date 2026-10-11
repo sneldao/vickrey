@@ -1,4 +1,4 @@
-/* Incident Evidence Explorer.
+/* Vickrey field logbook.
  *
  * Reads the Day 2 ledger and shows whether the application row still matches
  * the Hornet block. It does not submit blocks. Re-check and tamper call the
@@ -163,7 +163,7 @@
     if (message && message.tag) {
       return String(message.tag).replace(/[._-]+/g, " ");
     }
-    return "Incident";
+    return "Observation";
   }
 
   function valueWithUnit(message, value) {
@@ -426,7 +426,7 @@
       return "";
     }
     if (message.status === "VERIFIED") {
-      return "This incident agrees. The application copy matches the Hornet block, the block is solid, and a milestone references it.";
+      return "This observation agrees. The application copy matches the Hornet block, the block is solid, and a milestone references it.";
     }
     if (
       message.status === "PAYLOAD_MISMATCH" &&
@@ -1053,7 +1053,7 @@
           state.messages.length +
           " of " +
           state.total +
-          " stored incidents. The ledger page size stops at 500.";
+          " stored observations. The ledger page size stops at 500.";
       } else {
         hint.textContent = "";
       }
@@ -1124,9 +1124,9 @@
       }
       var visible = applyFilter(state.messages, state.filter, state.blockQuery);
       if (!visible.length) {
-        var emptyText = "No incidents in this filter.";
+        var emptyText = "No observations in this filter.";
         if (String(state.blockQuery || "").trim()) {
-          emptyText = "No incident matches that block id.";
+          emptyText = "No observation matches that block id.";
         } else if (state.filter === "PAYLOAD_MISMATCH") {
           emptyText = "No mismatches — every record agrees.";
         } else if (state.filter === "VERIFIED") {
@@ -1141,8 +1141,8 @@
         groupByFlow(visible).forEach(function (group) {
           var countLabel =
             group.messages.length === 1
-              ? "1 incident"
-              : group.messages.length + " incidents";
+              ? "1 observation"
+              : group.messages.length + " observations";
           var title = el("h2", { class: "flow-label" }, [
             el("span", {}, [
               el("span", { class: "flow-kicker", text: "flow" }),
@@ -1169,7 +1169,7 @@
         detail.append(
           el("p", {
             class: "empty",
-            text: "Open an incident to see the trust checklist.",
+            text: "Open an observation to see the trust checklist.",
           }),
         );
         return;
@@ -1181,7 +1181,7 @@
         detail.append(
           el("p", {
             class: "hint",
-            text: "This incident is outside the current filter. The checklist stays open.",
+            text: "This observation is outside the current filter. The checklist stays open.",
           }),
         );
       }
@@ -1196,7 +1196,7 @@
         return null;
       }
       var steps = [
-        { text: "Open an incident", done: state.selectedId != null },
+        { text: "Open an observation", done: state.selectedId != null },
         { text: "Tamper the application copy", done: state.walk.tampered },
         {
           text: "Watch the verdict flip to mismatch",
@@ -1349,14 +1349,14 @@
           el("button", {
             type: "button",
             class: "link-btn",
-            text: "Copy link to this incident",
+            text: "Copy link to this observation",
             onClick: function () {
               var url =
                 window.location.origin +
                 window.location.pathname +
                 "#" +
                 encodeURIComponent(message.block_id);
-              copyText(url, "Incident link copied");
+              copyText(url, "Observation link copied");
             },
           }),
         ]),

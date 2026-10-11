@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Vickrey Field — identify what you saw with a swappable open-weight model, seal it on the device, and detect edits."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Vickrey Field — Seal what you saw" />
+    <meta
+      property="og:description"
+      content="Open-weight identification, sealed with a device signature and a hash chain. Model inference can run locally or on a reachable server; editing a record cracks the seal."
+    />
+    <title>Vickrey Field — Seal what you saw</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23171512'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23a32020' stroke-width='2'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="mast">
+      <div class="mast-inner mast-grid">
+        <div class="seal-wrap" aria-hidden="true">
+          <svg class="seal" viewBox="0 0 48 48" role="img">
+            <circle cx="24" cy="24" r="21" fill="none" stroke="currentColor" stroke-width="2.5" />
+            <circle cx="24" cy="24" r="16.5" fill="none" stroke="currentColor" stroke-width="1" opacity="0.55" />
+            <path d="M16 24h16M24 16v16" stroke="currentColor" stroke-width="1" opacity="0.35" />
+            <text x="24" y="30" text-anchor="middle" font-family="Georgia, serif" font-size="18" font-weight="600" fill="currentColor">V</text>
+          </svg>
+        </div>
+        <div class="mast-copy">
+          <p class="eyebrow">Hacktoberfest 2026 · Week 1 · Touch Grass</p>
+          <div class="title-row">
+            <h1>Vickrey Field</h1>
+            <p class="motto">Seal what you saw</p>
+          </div>
+          <p class="lede">
+            Identify with a swappable open-weight model, seal the observation
+            with your device key, and chain it to the one before. Sync later to
+            anchor a commitment, signature, timestamp, coarse location, and
+            species summary; the raw photo and notes are not anchored. A hosted
+            model receives the photo for inference.
+          </p>
+          <ol class="beats">
+            <li>Open-weight ID, local or hosted</li>
+            <li>Signed and chained on the device</li>
+            <li>Anchored and verified together</li>
+          </ol>
+        </div>
+      </div>
+    </header>
+    <main id="app"></main>
+    <footer class="colophon">
+      Vickrey seals the observation at capture; the ledger keeps the commitment.
+      Editing the log cracks the seal — the ledger never changes, the copy does.
+      Apache-2.0.
+    </footer>
+    <noscript>This field client needs JavaScript to seal an observation.</noscript>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="config.js"></script>
+    <script src="trust.js"></script>
+    <script src="queue.js"></script>
+    <script src="infer.js"></script>
+    <script src="logbook.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,68 +1,87 @@
-# Build log — Oct 6–8 (as it happened)
+# Build log — Hacktoberfest 2026, Week 1: Touch Grass
 
-Challenge 2 (O-CEI): verified incident evidence for a private IOTA Tangle.
-Product: `services/ledger` evidence database + `apps/explorer` Incident
-Evidence Explorer on a private Hornet network.
+**Vickrey — Prove What You Saw.** Offline, open-source AI field identification
+with a tamper-evident ecological logbook. Entry period: October 5, 2026
+at 9:00 AM PDT through October 11, 2026 at 11:59 PM PDT
+([Week 1 rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules)).
+The first commit in this repository is dated October 6; the ledger/explorer
+started as Veles Hack work inside that window and is reused for the field
+client. Describe that reuse transparently in the entry; the organizer decides
+eligibility.
+
+> **History.** The repository began at the Veles Hack (Challenge 2) as verified
+> _incident_ evidence for a private IOTA Tangle. That engine — the two-source
+> check, statuses, `flow_id` grouping, trust checklist, mismatch view, deep
+> links — is reused unchanged as the commons/anchor verifier. The domain moved
+> from incidents to field observations; the primitive did not.
+
+## The pivot
+
+- **Old:** app event → Messages API → Hornet → solid/milestone → incident evidence.
+- **New:** offline AI ID → signed observation → hash chain → (optional) ledger
+  anchor → open, citable ecological commons.
+
+What is new and load-bearing: on-device open-weight identification, the
+capture-time device signature, the local hash chain, and the **anchor
+commitments, not observations** rule.
+
+## What is reused as-is
+
+- `services/ledger` — two-source truth table, `VERIFIED / PENDING /
+PAYLOAD_MISMATCH / NOT_SOLID`, ingest fan-out, tamper + restore (demo-only).
+- `apps/explorer` — timeline grouped by `flow_id`, trust checklist, side-by-side
+  mismatch, `#<blockId>` deep links.
+
+## Current local demo vs planned production
+
+**Verified end-to-end locally** (`bash scripts/demo_field.sh`): sample
+identification → Ed25519 seal → hash chain verifies → anchor relay → mock
+Hornet → ledger `VERIFIED`; a tampered queue entry cracks the seal and sync
+refuses to send it. Everything below is the build plan against the _planned_
+production architecture, with status per item.
+
+## Build plan → status
+
+1. **Model-backed ID.** `apps/field/infer.js` calls an OpenAI-compatible
+   endpoint. Real Gemma 3 4B vision inference ran on `snapflip-vultr` over a
+   private SSH tunnel using a credited Wikimedia robin image; the model
+   returned "Robin" with `model_id: gemma3:4b`. The browser sealed that result
+   and reached `VERIFIED` against a mock Hornet. The remote model received the
+   photo; no phone/offline or outdoors model run is verified. A labelled sample
+   still works without a model.
+2. **Signed observation.** Done — WebCrypto/Ed25519 device key, hash-chained
+   log (`apps/field/trust.js`, `apps/field/logbook.js`); the chain head resumes
+   from the persisted queue across page reloads.
+3. **Offline queue.** Done — buffers entries, verifies the chain, and drains to
+   the local anchor relay (`scripts/anchor_relay.py`, a stand-in for the
+   Messages API). A cracked chain refuses to send. Caveat: there is no service
+   worker — offline identification needs the page already loaded and a local
+   model running, and none of this is proved on a real phone.
+4. **Anchor.** Done locally — `commitment + signature + observed_at + coarse
+location + model_id + species summary`, never the raw record, reaching
+   `VERIFIED` against the mock Hornet via the relay. The real Messages API /
+   public Hornet path is unrun.
+5. **Commons.** Atlas observation store + vector-search code exists and is
+   unit-tested against a fake store; `MONGODB_URI` was unset in the live demo,
+   so similar-sightings reported "no observation store configured". Darwin
+   Core export: not implemented.
+6. **Write-up.** DEV post per `PITCH.md` (not yet published); partner stack per
+   `SPONSORS.md` (targets, not realised integrations).
 
 ## Compliance
 
-- [x] Public repo `sneldao/vickrey` created at event start — fresh code
-- [x] Apache-2.0 license (`LICENSE`)
-- [x] README: setup, run, strategy, endpoints
-- [ ] 6-minute pitch — run of show in [`PITCH.md`](PITCH.md)
+- [x] Public repo under Apache-2.0 (`LICENSE`).
+- [ ] Confirm the October 6 repository/project timeline and disclose Veles code reuse in the DEV entry; organizer determines eligibility.
+- [ ] Publish an accessible demo video or deployed demo and link the code repository in the entry.
+- [x] Docs: strategy, pitch, sponsors, build log.
+- [ ] DEV post published with `#devchallenge` + `#hf26challenge`.
+- [ ] Take it outside and write up how it went.
 
-## Day 1 — private Tangle
+## Non-goals
 
-- [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle)
-  up on the Vultr host: Hornet 2.0, INX coordinator, INX dashboard.
-- Challenge-sheet port mapping sorted: Hornet REST on both 14265
-  (`send_data.py` default) and 14625 (sheet).
-- Insert path via sibling clone
-  [eclipse-aerios/iota-messages-api](https://github.com/eclipse-aerios/iota-messages-api).
-
-## Day 2 — evidence ledger
-
-- `services/ledger` (FastAPI + SQLite, port 8088): stores the application
-  copy at ingest, then independently GETs the Hornet block + metadata.
-- Status truth table: `VERIFIED / PENDING / NOT_SOLID / PAYLOAD_MISMATCH`
-  (payload mismatch outranks solidity).
-- `patches/iota-messages-api-send_data.py.diff` fans every upstream insert
-  into the ledger — write-path contract unchanged.
-- Demo-only `POST /messages/{id}/tamper` mutates only the application copy.
-- `scripts/demo_day2.sh` runs verify-then-tamper against a mock Hornet.
-
-## Day 3 — explorer + deploy
-
-- `apps/explorer`: static page, timeline grouped by `flow_id`, trust
-  checklist (payload match / solid / milestone / tag), status filters,
-  side-by-side mismatch view, links out to the INX dashboard and the raw
-  Hornet block.
-- Delight pass: human incident titles from payload `detail`, one-line
-  verdict sentences on mismatches, plain-English source labels, a
-  self-ticking "Try the demo" checklist, tamper flip + restore
-  animations, `#<blockId>` deep links with copy-link/copy-hash controls,
-  OG/Twitter card meta (`og-cover.png`), skeleton/empty states,
-  liveness tick, `prefers-reduced-motion`.
-- `POST /messages/{id}/restore` (demo-only) copies the stored anchored
-  payload back byte-identically — needed because a JS client cannot
-  round-trip `82.0` versus `82` through JSON.
-- Deployed on the Vultr host via `docker-compose.yml` (+ `iotanet` overlay):
-  explorer :8090, ledger :8088. Bare-IP `http://45.76.242.245` proxies to
-  the explorer through the host Caddy. The box keeps `EXPLORER_LEDGER_URL`,
-  `DASHBOARD_URL`, `HORNET_PUBLIC_URL`, and `HORNET_URL` in
-  `/root/vickrey/.env` so a rebuild does not fall back to localhost URLs.
-- Seeded state: fresh VERIFIED `incident.critical` alarm
-  (`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, a
-  standing `PAYLOAD_MISMATCH` exhibit (92 vs 82), a cold-chain reefer
-  mismatch (8 °C vs anchored 2 °C), and a VERIFIED substation meter
-  reading safe to tamper and restore. `./scripts/restore_demo.sh`
-  restores all rows if anything touches them early.
-- Tests: 31 ledger (pytest) + 17 explorer (node --test).
-- Pitch: [`PITCH.md`](PITCH.md).
-
-## Cuts / non-goals
-
-- No auth on the ledger or tamper routes — demo scope, stated openly in
-  the pitch. Not a production posture.
-- No block submission from our services — writes stay on the patched
-  upstream Messages API.
+- No auth on the demo ledger or tamper routes — demo scope, stated openly.
+- No raw or precise-location data on-chain — the anchor is a commitment plus
+  coarse location and species summary.
+- No block submission from our services — in the local demo the stand-in
+  anchor relay writes to a mock Hornet; the intended production path keeps
+  writes on the patched upstream Messages API.

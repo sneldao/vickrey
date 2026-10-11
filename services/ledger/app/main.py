@@ -17,6 +17,8 @@ from fastapi import Body, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
+from app.atlas import ObservationStore
+from app.atlas import connect as connect_observations
 from app.db import Database, load_json, normalize_block_id, parse_time_bound
 from app.hornet import DEFAULT_HORNET_URL, HornetClient
 from app.tamper import mutate_application_payload
@@ -80,6 +82,26 @@ class MessageList(BaseModel):
     count: int
     total: int
     messages: list[MessageOut]
+
+
+class ObservationHit(BaseModel):
+    block_id: str
+    tag: str
+    flow_id: str | None = None
+    label: str | None = None
+    kind: str | None = None
+    species: str | None = None
+    observed_at: str | None = None
+    model_id: str | None = None
+    commitment: str | None = None
+    location: dict | None = None
+    score: float | None = None
+
+
+class ObservationList(BaseModel):
+    count: int
+    store: str
+    observations: list[ObservationHit]
 
 
 # FastAPI treats a Body() default as the request body. Kept at module scope so
@@ -193,12 +215,42 @@ def _cors_origins(raw: str | None) -> list[str]:
     return origins or ["*"]
 
 
+def _open_observation_store(explicit: Any | None) -> ObservationStore | None:
+    """Resolve the Atlas observation store, if one is configured.
+
+    An injected store always wins (tests pass a fake). Otherwise MONGODB_URI
+    turns it on. A missing driver or an unreachable cluster must not stop the
+    evidence ledger from serving: the ledger is the source of truth, the store
+    is a searchable mirror. Failure is logged and the store stays off.
+    """
+    if explicit is not None:
+        return explicit
+    uri = os.environ.get("MONGODB_URI")
+    if not uri:
+        return None
+    try:
+        store = connect_observations(uri)
+    except Exception:
+        logger.exception("Atlas observation store disabled: connect failed")
+        return None
+    try:
+        store.ensure_indexes()
+    except Exception:
+        logger.exception("Atlas observation store: index setup failed")
+    logger.info(
+        "Atlas observation store enabled (db=%s)",
+        os.environ.get("MONGODB_DB", "vickrey"),
+    )
+    return store
+
+
 def create_app(
     *,
     database_path: str | None = None,
     hornet: Any | None = None,
     hornet_url: str | None = None,
     cors_origins: str | None = None,
+    observation_store: Any | None = None,
 ) -> FastAPI:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     resolved_url = hornet_url or os.environ.get("HORNET_URL", DEFAULT_HORNET_URL)
@@ -211,6 +263,7 @@ def create_app(
     reader = (
         hornet if hornet is not None else HornetClient(resolved_url, timeout=timeout)
     )
+    observations = _open_observation_store(observation_store)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -227,6 +280,7 @@ def create_app(
     app.state.db = database
     app.state.hornet = reader
     app.state.hornet_url = resolved_url
+    app.state.observations = observations
     origin_setting = (
         os.environ.get("LEDGER_CORS_ORIGINS", "*")
         if cors_origins is None
@@ -251,11 +305,17 @@ def create_app(
             "docs": "/docs",
             "ingest": "/ingest",
             "messages": "/messages",
+            "observations": "/observations/similar" if observations else None,
         }
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "service": "ledger", "hornet_url": app.state.hornet_url}
+        return {
+            "status": "ok",
+            "service": "ledger",
+            "hornet_url": app.state.hornet_url,
+            "observations": observations is not None,
+        }
 
     @app.post("/ingest", response_model=MessageOut)
     def ingest(body: IngestIn, response: Response) -> dict:
@@ -266,9 +326,63 @@ def create_app(
             payload=body.message,
             hornet_status=body.hornet_status,
         )
+        if observations is not None:
+            try:
+                observations.put(
+                    block_id=body.block_id,
+                    tag=body.tag,
+                    flow_id=extract_flow_id(body.message, body.flow_id),
+                    message=body.message,
+                )
+            except Exception:
+                # The ledger is the source of truth. A searchable-mirror miss is
+                # logged, not fatal: the anchor and its verification still land.
+                logger.exception(
+                    "Atlas observation store: mirror failed for %s", body.block_id
+                )
         row = verify_stored(app.state.db, app.state.hornet, body.block_id)
         response.status_code = 201 if created else 200
         return message_out(row)
+
+    @app.get("/observations/similar", response_model=ObservationList)
+    def observations_similar(
+        q: str,
+        limit: int = Query(default=5, ge=1, le=50),
+        tag: str | None = None,
+        flowId: str | None = None,
+        flow_id: str | None = None,
+    ) -> dict:
+        """Vector search over observation anchors, nearest first.
+
+        Returns anchors only: label, coarse location, commitment. Never the raw
+        observation. 503 when no Atlas store is configured.
+        """
+        if observations is None:
+            raise HTTPException(
+                status_code=503,
+                detail="no observation store configured; set MONGODB_URI",
+            )
+        chosen_flow = flowId if flowId is not None else flow_id
+        hits = observations.similar_to_text(
+            q, limit=limit, tag=tag, flow_id=chosen_flow
+        )
+        return {"count": len(hits), "store": "mongodb-atlas", "observations": hits}
+
+    @app.get("/observations/recent", response_model=ObservationList)
+    def observations_recent(
+        limit: int = Query(default=20, ge=1, le=200),
+        tag: str | None = None,
+        flowId: str | None = None,
+        flow_id: str | None = None,
+    ) -> dict:
+        if observations is None:
+            raise HTTPException(
+                status_code=503,
+                detail="no observation store configured; set MONGODB_URI",
+            )
+        chosen_flow = flowId if flowId is not None else flow_id
+        hits = observations.recent(limit=limit, tag=tag, flow_id=chosen_flow)
+        return {"count": len(hits), "store": "mongodb-atlas", "observations": hits}
 
     @app.get("/messages", response_model=MessageList)
     def list_messages(

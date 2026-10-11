@@ -221,7 +221,7 @@ test("incident titles prefer payload detail, then a readable tag", () => {
   });
   assert.equal(api.incidentTitle(row), "Reefer shipment storage temp");
   assert.equal(api.incidentTitle(verified), "incident critical");
-  assert.equal(api.incidentTitle({}), "Incident");
+  assert.equal(api.incidentTitle({}), "Observation");
 });
 
 test("the verdict line names the changed value in plain words", () => {

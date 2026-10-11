@@ -1,109 +1,140 @@
-# Vickrey — Verified Incident Evidence for Private IOTA
+# Vickrey — Prove What You Saw
 
-**Prove What Happened.** Systems record incidents. Ledgers preserve evidence. Vickrey proves the two still agree.
+**A sealed bid on what you saw.** Vickrey is an offline, open-source AI field
+identifier with a tamper-evident ecological logbook — for
+[Hacktoberfest 2026, Week 1: **Touch Grass**](https://hacktoberfest.com).
 
-Veles Hack **Challenge 2** (O-CEI). Vickrey is the observability and evidence layer for a _private_ IOTA Tangle:
+The name is the metaphor: **Vickrey** is named for William Vickrey's **sealed-bid
+auction** — a mechanism that makes truth the winning strategy. We point the same
+mechanism at the world: your phone **seals** what you saw, the network
+countersigns it, and tampering **cracks the seal**. See
+[`docs/BRAND.md`](docs/BRAND.md).
 
-app event → upload → Hornet block → solid / milestone → payload integrity → Incident Evidence Explorer.
+The vision: point your phone at a bird, a plant, or a fall tree with **no
+signal**. An open-weight model running **on the device** names what you saw.
+Vickrey signs the
+observation, chains it into a tamper-evident log, and — when you are back in
+range — anchors the _commitment_ to a shared ledger. The result is a field record
+you can later prove nobody edited, and a shared, citable commons for research.
 
-Hornet nodes replicate blocks in a DAG. A coordinator plugin confirms them with signed milestones. Vickrey stores the incident in an application-side evidence database and compares that row with the block and metadata read back independently from Hornet. The Incident Evidence Explorer shows whether the two copies still agree.
+The screen is the shortest part of the experience. The model is meant to run
+locally, the record is yours, and the proof survives the walk.
 
-The product is verified incident evidence on that private network. IOTA Audit Trails and Notarization anchor data for audit use cases. The stock IOTA dashboard lists blocks, tags, and milestones. The explorer adds the investigation workflow: a timeline of evidence states, a trust checklist (payload match, solid, milestone, tag), mismatch detection, and filters for VERIFIED, PENDING, MISMATCH, and NOT SOLID.
+## Status — what runs today vs the plan
 
-The repository name is historical. The work here is Challenge 2.
+**Week 1 entry cutoff:** October 11, 2026 at 11:59 PM PDT ([official rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules)). An eligible entry needs a published DEV post using the challenge template and tags, a demo link or video, a code repository link, and an explanation of why open innovation matters. The project and repository must have begun during October 5–11. This repository's initial commit was October 6; the Veles ledger/explorer began during that window and is reused for the field client. Disclose that reuse; eligibility is the organizer's call.
 
-- **Hack:** 6–8 October 2026. Fresh code in this public repo, Apache-2.0, 6-minute pitch.
-- **Mentors:** Rafa Vaño (`ravagar2@upv.es`) and Salvador Cuñat (`salcuane@upv.es`), Universitat Politècnica de València.
-- **License:** [Apache-2.0](LICENSE) (`SPDX-License-Identifier: Apache-2.0`). Copyright 2026 Vickrey contributors.
+**Verified end-to-end, all local:** sample identification → Ed25519 seal →
+hash-chained queue that verifies → anchor relay → mock Hornet → ledger
+`VERIFIED`; editing a queued entry cracks the seal and **sync refuses to send
+it**. Run it with `bash scripts/demo_field.sh`.
 
-Use the **Stardust** Hornet builds shipped by the aeriOS images. Later IOTA documentation describes a different API.
+The opening vision describes the _planned_ production architecture. Not yet
+verified or built:
+
+- A real **on-device/offline** model run is still unverified. A real
+  server-hosted Gemma 3 4B vision inference through the field client did run
+  over a private SSH tunnel: on a credited Wikimedia Commons European robin
+  photo it returned "Robin" (`model_id: gemma3:4b`), and the sealed entry
+  reached `VERIFIED` against the mock Hornet. The remote model received the
+  photo; this does not demonstrate phone/offline operation.
+- The real Messages API / public Hornet anchor (the demo uses
+  `scripts/anchor_relay.py` + `scripts/mock_hornet.py`).
+- MongoDB Atlas commons search — the code is unit-tested against a fake store;
+  `MONGODB_URI` was unset in the live demo.
+- The Temporal sync workflow (scaffold only), Darwin Core export, the field
+  walk, and the DEV post.
+
+## The loop
+
+```
+see it ──► on-device open-weight model IDs it   (no signal, no upload)
+       ──► sign {observed_at, coarse location, model_id, payload} on the device
+       ──► append to a local hash-chained log
+       ──► (back in range) Messages API ──► Hornet block ──► solid / milestone
+       ──► anchor the commitment + signature + timestamp + coarse location
+           + species summary — never the raw photo, notes, or precise GPS
+       ──► commons API + explorer: trust checklist, mismatch detection,
+           (planned) Darwin Core export
+```
+
+## Three layers
+
+1. **Identify — on-device, open-weight AI.** The model is the product's core.
+   The design runs it locally (bird audio → BirdNET-class model; photo → a
+   small Gemma VLM) to enable eventual airplane-mode identification without
+   uploading photos. Today's field client talks to any
+   OpenAI-compatible endpoint — verified with the built-in sample, a
+   stubbed reply, and with real Gemma 3 4B on a remote server; the real test
+   sent a photo over a private SSH tunnel, not offline/on-phone. Open weights are what
+   make this possible: no per-call API, runs on a laptop, swappable,
+   inspectable.
+2. **Prove — tamper-evident log.** Every observation is signed at capture time
+   and hash-chained to the one before it. Editing a past entry breaks the chain;
+   the device signature proves the observation **predates the upload**. This is
+   the Vickrey two-source check, now between your device and the ledger.
+3. **Share — an open commons.** The anchor makes a record citable and
+   contributor-owned without a platform gatekeeper. Raw data stays off-chain;
+   the anchor is a commitment — hash, signature, coarse location, summary —
+   you can publish.
+
+## The anchoring rule (what makes this responsible)
+
+**Anchor commitments, not observations.** Put a hash + signature + timestamp +
+coarse location + species summary on the ledger; keep the record (exact
+location, photo, notes) off-chain and mutable. One inversion, three payoffs:
+
+- **Precise location stays off the ledger.** An immutable public map of a rare
+  bird is a poaching map; the anchor carries only a coarse location and a
+  species summary — raw photos, notes, and exact GPS are not anchored. Hosted
+  inference transmits the photo to the model server.
+- **Science can still retract.** Wrong IDs get corrected off-chain while the
+  anchor still proves the record's early state (a `superseded by` pointer).
+- **Interop survives.** The ledger is the trust wrapper; the plan is for
+  records to export as [Darwin Core](https://dwc.tdwg.org/) so researchers can
+  actually use them (export is not yet implemented).
+
+Integrity is not accuracy: a ledger proves a record was not altered, not that the
+ID was right. The model's quality carries accuracy; the ledger carries provenance.
+
+## What is reused
+
+Vickrey's existing evidence ledger (`services/ledger`) and explorer
+(`apps/explorer`) already implement the second half of the loop, and are reused
+as-is as the **commons / anchor verifier**:
+
+- The two-source check and its truth table —
+  `VERIFIED / PENDING / PAYLOAD_MISMATCH / NOT_SOLID`.
+- `flow_id` grouping (a walk, a patrol, a garden bed).
+- Trust checklist, side-by-side mismatch view, deep-links.
+
+The reused engine keeps its own demo: a **VERIFIED** row, then the demo-only
+tamper route edits the application copy → **PAYLOAD MISMATCH** with both
+payloads side by side. The block never changed. That is the legacy
+ledger/explorer path — separate from the field client, where a locally edited
+entry cracks the seal and **sync refuses to send it** instead.
 
 ## Stack
 
-- Docker and Docker Compose on Linux (WSL if the host is Windows).
-- Private Tangle: [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle) — Hornet 2.0, INX coordinator, INX dashboard.
-- Insert path: [eclipse-aerios/iota-messages-api](https://github.com/eclipse-aerios/iota-messages-api) — `POST /upload?node=<hornet-host>`.
-- Our applications live in this repo (`apps/`, `services/`). Clone the two upstream trees **beside** the repo. Do not copy them in.
+- **On-device AI:** open-weight model (see [`docs/SPONSORS.md`](docs/SPONSORS.md)).
+- **Commons / anchor verifier:** `services/ledger` — FastAPI + SQLite, port 8088.
+- **Explorer / logbook:** `apps/explorer` — static page, port 8090.
+- **Anchor (optional):** private Hornet via
+  [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle);
+  insert path through [iota-messages-api](https://github.com/eclipse-aerios/iota-messages-api).
+- **License:** [Apache-2.0](LICENSE).
 
-## What we build
+## Run the local field demo
 
-The mandatory loop stays: Messages API insert, a parallel evidence database, a solid check, and a content check. The product on that loop is the **Incident Evidence Explorer**.
-
-The demo the pitch repeats: one insert lands as VERIFIED, then a deliberate edit of the application-side payload makes the explorer show PAYLOAD MISMATCH with both payloads side by side.
-
-Day 2 is that evidence database: `services/ledger` on port 8088. Run, the Messages API fan-out, and the tamper path are in [Day 2 — evidence ledger](#day-2--evidence-ledger). Day 3 is the Incident Evidence Explorer: `apps/explorer` on port 8090. Run notes are in [Day 3 — explorer](#day-3--explorer).
-
-Positioning, the two-source rules, and competitors: [`docs/STRATEGY.md`](docs/STRATEGY.md). Build log: [`docs/BUILD.md`](docs/BUILD.md). Six-minute pitch run of show: [`docs/PITCH.md`](docs/PITCH.md).
-
-## Live demo
-
-Running on the challenge host during the hack:
-
-- **Incident Evidence Explorer: <http://45.76.242.245>** (also `:8090`)
-- Evidence ledger API + docs: <http://45.76.242.245:8088/docs>
-- Hornet dashboard: <http://45.76.242.245:31011> (`admin` / `admin`)
-
-Seeded for the pitch: a VERIFIED `incident.critical` alarm
-(`0x6d90d792…5313f5`, flow `line-7`) for the live tamper flip, a standing
-`PAYLOAD_MISMATCH` exhibit (92 vs 82), a cold-chain reefer record showing
-8 °C against the anchored 2 °C, and a substation meter reading that is
-safe to tamper and restore live. If a row was touched early,
-`./scripts/restore_demo.sh` restores all five.
-
-## Endpoints
-
-| Surface                                 | URL                                               |
-| --------------------------------------- | ------------------------------------------------- |
-| Dashboard (Advanced Explorer)           | http://localhost:31011 (login `admin` / `admin`)  |
-| Hornet REST, challenge sheet            | http://localhost:14625                            |
-| Hornet REST, stock `iota-tangle` docker | http://localhost:14265                            |
-| Messages API                            | http://localhost:5555/upload?node=\<hornet-host\> |
-| Evidence ledger                         | http://localhost:8088                             |
-| Incident Evidence Explorer              | http://localhost:8090                             |
-
-`docker/main/hornet-main.yaml` publishes the dashboard on **31011** and Hornet REST on **14265**. The challenge sheet asks for Hornet on **14625**. Day 1 probes both and, if 14625 is closed, adds the host mapping `14625:14265`. Keep 14265: `send_data.py` posts to `http://<node>:14265/api/core/v2/blocks`.
-
-Hornet checks (Stardust core API v2; the sheet's `/api/core/v2/<block-id>` shorthand is this path):
-
-- `GET /api/core/v2/blocks/<blockId>` — block body (tag + payload).
-- `GET /api/core/v2/blocks/<blockId>/metadata` — `isSolid` and milestone reference.
-
-Upload body:
-
-```json
-{
-  "tag": "incident.demo",
-  "message": { "format": "any JSON object", "be_creative": true }
-}
+```bash
+bash scripts/demo_field.sh
+# prints a field-client URL wired to a mock Hornet via the anchor relay;
+# seal a sample, verify the chain, edit it, watch the crack refuse to sync
 ```
 
-## Day 2 — evidence ledger
+For the optional **server-hosted Gemma** demo, start a private SSH tunnel from the browser machine to a host running Ollama on port 11434 (for example `ssh -fN -L 127.0.0.1:11435:127.0.0.1:11434 YOUR_HOST`). Append `&endpoint=http://127.0.0.1:11435&model=gemma3:4b` to the printed field-client URL, upload a credited photo, then choose **Identify & seal**. This sends the photo to the remote model server for inference; it is not an offline or on-phone demo. The mock Hornet/ledger are still local.
 
-The ledger stores the application copy of one incident, then independently reads that Hornet block and sets `solid` and `content_match`. The Incident Evidence Explorer reads this API. The mismatch demo mutates only the application copy.
-
-| Piece                   | Where                                         |
-| ----------------------- | --------------------------------------------- |
-| Ledger API + SQLite     | `services/ledger` (port 8088)                 |
-| Messages API fan-out    | `patches/iota-messages-api-send_data.py.diff` |
-| Verify then tamper demo | `scripts/demo_day2.sh`                        |
-
-Status is one of `VERIFIED`, `PENDING`, `PAYLOAD_MISMATCH`, `NOT_SOLID`.
-
-| Last Hornet read                             | Payload | Solidity          | Status             |
-| -------------------------------------------- | ------- | ----------------- | ------------------ |
-| Unreachable, or block missing                | unknown | unknown           | `PENDING`          |
-| Tagged data differs from the app copy        | no      | any               | `PAYLOAD_MISMATCH` |
-| Tagged data matches                          | yes     | not solid         | `NOT_SOLID`        |
-| Tagged data matches, solid, no milestone yet | yes     | solid             | `PENDING`          |
-| Tagged data matches, solid, milestone set    | yes     | solid + milestone | `VERIFIED`         |
-
-`content_match` is semantic JSON equality plus an exact tag match. Key order does not matter. `PAYLOAD_MISMATCH` wins over solidity, so a later tamper of the application copy flips the flag while the Hornet payload stays the original.
-
-`POST /messages/{blockId}/tamper` is demo-only. It overwrites `payload_json` (or just `temperature`) and reverifies. It does not submit a block.
-
-`POST /messages/{blockId}/restore` is the recovery half, also demo-only. It copies the stored Hornet payload back into `payload_json` byte-identically and reverifies — the server does this because a JSON client cannot round-trip float shapes such as `82.0` versus `82`, and `content_match` compares canonical JSON.
-
-### Run the ledger
+## Run the commons
 
 Host process, Hornet on localhost:
 
@@ -115,113 +146,44 @@ HORNET_URL=http://127.0.0.1:14265 DATABASE_PATH=./data/ledger.db \
   .venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8088
 ```
 
-Docker, Hornet port published on the host:
+Docker, beside the ledger:
 
 ```bash
 docker compose up -d --build
-# HORNET_URL defaults to http://host.docker.internal:14265
+# explorer http://localhost:8090
+# ledger   http://localhost:8088/docs
 ```
 
-Docker on the Day 1 `iota-net` (Hornet DNS name `iota-hornet`):
+Explorer alone against a running ledger:
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.iotanet.yml up -d --build
-# HORNET_URL defaults to http://iota-hornet:14265
+python3 -m http.server 8090 --bind 127.0.0.1 --directory apps/explorer
 ```
 
-`HORNET_URL` is the Hornet root, for example `http://127.0.0.1:14265`. The ledger appends `/api/core/v2/blocks/...`. Optional `HORNET_TIMEOUT` seconds (default 5) and `DATABASE_PATH`.
-
-`LEDGER_CORS_ORIGINS` defaults to `*`, so the explorer on another port can call this API from a browser. Set it to `http://localhost:8090` to narrow that. The verify and tamper JSON is unchanged.
-
-### Messages API sibling
-
-Keep `iota-messages-api` as a sibling clone. Apply `patches/iota-messages-api-send_data.py.diff` there and rebuild the image. Steps, `LEDGER_URL`, and the Apache-2.0 upstream commit are in `patches/README.md`.
-
-### Verify, then tamper
-
-`./scripts/demo_day2.sh` starts a mock Hornet and the ledger, then runs this flow. Against a ledger that is already up, the same curls are:
-
-```bash
-# Application copy. The real insert is the patched Messages API; this mocks that POST.
-curl -sS -X POST http://127.0.0.1:8088/ingest \
-  -H 'content-type: application/json' \
-  -d '{"blockId":"0x…","tag":"veles.evidence.temperature","message":{"flow_id":"flow-1","temperature":21.5},"hornetStatus":201}'
-
-curl -sS 'http://127.0.0.1:8088/messages?flowId=flow-1&status=VERIFIED'
-curl -sS http://127.0.0.1:8088/messages/0x…
-curl -sS -X POST http://127.0.0.1:8088/messages/0x…/reverify
-
-# Demo only. Application temperature changes; the Hornet block does not.
-curl -sS -X POST http://127.0.0.1:8088/messages/0x…/tamper \
-  -H 'content-type: application/json' \
-  -d '{"temperature":999.9}'
-```
-
-A matching solid, milestone-referenced block returns `status=VERIFIED` and `content_match=true`. After tamper, the same block returns `status=PAYLOAD_MISMATCH`, `content_match=false`, `payload_json.temperature=999.9`, and `ledger_payload_json` still holding the original tagged data.
-
-Ingest again with the original message — or `POST /messages/0x…/restore` — to put the application copy back.
+Endpoints and configuration are unchanged from the ledger/explorer design; the
+full table lives in [`docs/STRATEGY.md`](docs/STRATEGY.md).
 
 ### Tests
 
 ```bash
 services/ledger/.venv/bin/pip install -r services/ledger/requirements-dev.txt
 (cd services/ledger && .venv/bin/python -m pytest)
+node --test apps/field/*.test.mjs apps/explorer/app.test.mjs
 ```
 
-## Day 3 — explorer
+## Docs
 
-`apps/explorer` is a static page on the Day 2 ledger. It does not submit blocks and it does not change verify or tamper. The browser reads `GET /messages`, opens one incident, and the pitch buttons call the existing reverify and tamper routes.
-
-The timeline groups rows by `flow_id` (the stored `flowId`) and leads each row with the payload's `detail` as a human title. Each open incident has a trust checklist: payload match, solid, milestone, tag. Filters are Verified, Pending, Mismatch (`PAYLOAD_MISMATCH`, also accepted as `MISMATCH`), and Not solid. A row whose tag starts with `incident.` or whose payload `kind` is `alarm` is marked on the timeline.
-
-When the application payload and the decoded Hornet payload differ, the incident is labeled **PAYLOAD MISMATCH**, a one-line verdict names the changed value in plain words ("Your app says 8 °C — the network recorded 2 °C"), and the two documents sit side by side ("Your app says" / "The network recorded") with the changed fields called out. Tamper still changes only `payload_json`. The Hornet block stays the original. **Open on Hornet dashboard** goes to `http://localhost:31011/explorer/block/<blockId>` (INX dashboard 1.0). **Hornet block JSON** is `GET /api/core/v2/blocks/<blockId>` on the public Hornet URL.
-
-A dismissible "Try the demo" checklist walks a visitor through open → tamper → mismatch → restore. **Restore the app copy from the network** calls the ledger's `/restore` route and returns the row to VERIFIED. Incidents deep-link by block-id hash (`/#0x…`), with copy-link and copy-hash controls on the detail view.
-
-### Run the explorer
-
-Ledger already on port 8088:
-
-```bash
-python3 -m http.server 8090 --bind 127.0.0.1 --directory apps/explorer
-```
-
-Open http://localhost:8090 . The page calls http://localhost:8088 unless you change it under Endpoints.
-
-Docker, beside the ledger:
-
-```bash
-docker compose up -d --build
-# explorer http://localhost:8090
-# ledger   http://localhost:8088
-```
-
-The Day 1 `iota-net` overlay starts the explorer too. The browser still uses the published host ports.
-
-`./scripts/demo_day3.sh` starts a mock Hornet, the ledger, and the explorer, and inserts one VERIFIED `incident.critical` alarm (`0xda720001`, flow `line-7`) plus neighboring states for the filters. Leave it running, open the printed URL, and use **Tamper application copy**. The stamp becomes PAYLOAD MISMATCH and `999.9` sits beside the Hornet value `21.5`. Ctrl-C stops the three processes.
-
-### Explorer configuration
-
-These are URLs the **browser** calls. Docker DNS names such as `http://ledger:8088` or `http://iota-hornet:14265` do not resolve in the browser.
-
-| Variable              | Default                  | Meaning                                                                                                                |
-| --------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `EXPLORER_LEDGER_URL` | `http://localhost:8088`  | Ledger origin. Docker writes it into `config.js`. This is not the messages-api `LEDGER_URL`, which includes `/ingest`. |
-| `DASHBOARD_URL`       | `http://localhost:31011` | INX dashboard origin                                                                                                   |
-| `HORNET_PUBLIC_URL`   | `http://localhost:14265` | Browser link to the raw block                                                                                          |
-
-On a laptop pointed at the tangle host, set the three variables to that host before `docker compose up`, or type them into Endpoints and press Apply. Apply stores them in `localStorage`.
-
-The page also reads `?ledger=`, `?dashboard=`, and `?hornet=` (those win over a saved value). A block id in the hash (`http://localhost:8090/#0xda720001`) opens that incident. `?status=MISMATCH` selects the mismatch filter.
-
-`config.js` holds the same defaults when you serve the directory yourself. The container entrypoint rewrites that file from the variables above.
+- [`docs/BRAND.md`](docs/BRAND.md) — the seal narrative, colour and type system.
+- [`docs/STRATEGY.md`](docs/STRATEGY.md) — positioning, architecture, anchoring
+  design, ecological externalities, risks, interop.
+- [`docs/PITCH.md`](docs/PITCH.md) — Hacktoberfest submission plan and demo script.
+- [`docs/BUILD.md`](docs/BUILD.md) — build log.
+- [`docs/SPONSORS.md`](docs/SPONSORS.md) — partner stack mapped to prize categories.
 
 ## References
 
-- https://github.com/eclipse-aerios/iota-tangle
-- https://github.com/eclipse-aerios/iota-messages-api
-- https://github.com/iotaledger/hornet
-- https://github.com/iotaledger/hornet/tree/develop/private_tangle
-- https://github.com/iotaledger/inx-dashboard
-- https://github.com/iotaledger/iota-sdk
-- https://legacy.wiki.iota.org/iota-sdk/welcome
+- <https://github.com/eclipse-aerios/iota-tangle>
+- <https://github.com/eclipse-aerios/iota-messages-api>
+- <https://github.com/iotaledger/hornet>
+- <https://dwc.tdwg.org/>
+- <https://hacktoberfest.com>

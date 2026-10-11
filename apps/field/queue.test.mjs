@@ -98,3 +98,18 @@ test("a store adapter persists the queue across instances", () => {
     ["a", "b"],
   );
 });
+
+test("replace swaps one queued entry in place and persists", () => {
+  const saved = [];
+  const q = queue.createQueue({
+    store: { load: () => [], save: (items) => saved.push(items.length) },
+  });
+  entries.forEach((entry) => q.enqueue(entry));
+  assert.equal(
+    q.replace("b", { hash: "b", payload: { species: "magpie" } }),
+    true,
+  );
+  assert.equal(q.list()[1].payload.species, "magpie");
+  assert.equal(q.replace("zzz", { hash: "zzz" }), false);
+  assert.equal(q.size(), 3);
+});

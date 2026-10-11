@@ -15,6 +15,21 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (root) {
   "use strict";
 
+  /* What gets signed. A human review travels inside the payload, so the
+   * decision is sealed with the observation and cannot be added later. */
+  function payloadOf(id) {
+    var payload = {
+      kind: id.kind,
+      species: id.species,
+      confidence: id.confidence,
+      detail: id.detail,
+    };
+    if (id.review && typeof id.review === "object") {
+      payload.review = id.review;
+    }
+    return payload;
+  }
+
   function createLogbook(opts) {
     opts = opts || {};
     var trust = opts.trust || root.VickreyTrust;
@@ -45,12 +60,7 @@
         observedAt: input.observedAt,
         location: input.location,
         modelId: id.model_id || input.model || opts.modelId,
-        payload: {
-          kind: id.kind,
-          species: id.species,
-          confidence: id.confidence,
-          detail: id.detail,
-        },
+        payload: payloadOf(id),
       });
       head = entry.hash;
       queue.enqueue(entry);
@@ -91,5 +101,5 @@
     };
   }
 
-  return { createLogbook: createLogbook };
+  return { createLogbook: createLogbook, payloadOf: payloadOf };
 });

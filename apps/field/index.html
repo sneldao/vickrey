@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta
       name="description"
-      content="Vickrey Field — identify what you saw with a swappable open-weight model, seal it on the device, and detect edits."
+      content="Vickrey Field — a model suggests what you saw, you confirm it, and the record is sealed on your device so later edits show."
     />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Vickrey Field — Seal what you saw" />
@@ -32,31 +32,25 @@
           </svg>
         </div>
         <div class="mast-copy">
-          <p class="eyebrow">Hacktoberfest 2026 · Week 1 · Touch Grass</p>
+          <p class="eyebrow">Vickrey Field · a field journal that can be checked</p>
           <div class="title-row">
-            <h1>Vickrey Field</h1>
-            <p class="motto">Seal what you saw</p>
+            <h1>Seal what you saw</h1>
+            <span class="ledger-badge mono" id="ledger-label">Ledger: mock Hornet demo</span>
           </div>
           <p class="lede">
-            Identify with a swappable open-weight model, seal the observation
-            with your device key, and chain it to the one before. Sync later to
-            anchor a commitment, signature, timestamp, coarse location, and
-            species summary; the raw photo and notes are not anchored. A hosted
-            model receives the photo for inference.
+            A sighting written down today can be quietly changed tomorrow, and
+            nobody can tell. Here, a model suggests what you saw, you confirm or
+            correct it, and the record is signed on this device. Any later edit
+            cracks the seal.
           </p>
-          <ol class="beats">
-            <li>Open-weight ID, local or hosted</li>
-            <li>Signed and chained on the device</li>
-            <li>Anchored and verified together</li>
-          </ol>
         </div>
       </div>
     </header>
     <main id="app"></main>
     <footer class="colophon">
-      Vickrey seals the observation at capture; the ledger keeps the commitment.
-      Editing the log cracks the seal — the ledger never changes, the copy does.
-      Apache-2.0.
+      The model only suggests; the observer decides, and that decision is
+      sealed with the record. A seal proves the record was not edited since —
+      not that the identification is right. Apache-2.0.
     </footer>
     <noscript>This field client needs JavaScript to seal an observation.</noscript>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
@@ -65,6 +59,7 @@
     <script src="queue.js"></script>
     <script src="infer.js"></script>
     <script src="logbook.js"></script>
+    <script src="journal.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

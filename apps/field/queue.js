@@ -71,6 +71,19 @@
       return entry;
     }
 
+    /* Swap the queued copy of one entry (matched by hash). The demo uses this
+     * to edit a queued copy, and to put the sealed copy back. */
+    function replace(hash, entry) {
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].hash === hash) {
+          items[i] = entry;
+          persist();
+          return true;
+        }
+      }
+      return false;
+    }
+
     /* Try to send every queued entry, oldest first. Stop at the first failure
      * and keep the rest so nothing is dropped. */
     async function drain(send) {
@@ -94,6 +107,7 @@
       list: list,
       size: size,
       drain: drain,
+      replace: replace,
     };
   }
 

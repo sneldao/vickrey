@@ -37,7 +37,7 @@ PAYLOAD_MISMATCH / NOT_SOLID`, ingest fan-out, tamper + restore (demo-only).
 **Verified end-to-end locally** (`bash scripts/demo_field.sh`): sample
 identification → Ed25519 seal → hash chain verifies → anchor relay → mock
 Hornet → ledger `VERIFIED`; a tampered queue entry cracks the seal and sync
-refuses to send it. Everything below is the build plan against the _planned_
+refuses to send it. The public [GitHub Pages showcase](https://sneldao.github.io/vickrey/) embeds the YouTube film but hosts no inference or ledger service; the field client remains a locally run prototype. Everything below is the build plan against the _planned_
 production architecture, with status per item.
 
 ## Build plan → status

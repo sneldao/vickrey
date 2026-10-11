@@ -24,10 +24,14 @@ locally, the record is yours, and the proof survives the walk.
 
 **Week 1 entry cutoff:** October 11, 2026 at 11:59 PM PDT ([official rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules)). An eligible entry needs a published DEV post using the challenge template and tags, a demo link or video, a code repository link, and an explanation of why open innovation matters. The project and repository must have begun during October 5–11. This repository's initial commit was October 6; the Veles ledger/explorer began during that window and is reused for the field client. Disclose that reuse; eligibility is the organizer's call.
 
-**Verified end-to-end, all local:** sample identification → Ed25519 seal →
-hash-chained queue that verifies → anchor relay → mock Hornet → ledger
-`VERIFIED`; editing a queued entry cracks the seal and **sync refuses to send
-it**. Run it with `bash scripts/demo_field.sh`.
+**Verified end-to-end, all local:** photo → model **suggestion** → the
+observer **confirms or corrects** it → Ed25519 seal (the decision is part of
+the signed payload) → field journal + hash-chained outbox that verifies →
+anchor relay → mock Hornet → ledger `VERIFIED`. Editing the queued copy cracks
+the seal and **sync refuses to send it**; the journal keeps the sealed record,
+which can be put back. Sync never erases a sighting: the journal is the
+device's history and the outbox only holds what is still unsent. Run it with
+`bash scripts/demo_field.sh`.
 
 The opening vision describes the _planned_ production architecture. Not yet
 verified or built:
@@ -37,7 +41,10 @@ verified or built:
   over a private SSH tunnel: on a credited Wikimedia Commons European robin
   photo it returned "Robin" (`model_id: gemma3:4b`), and the sealed entry
   reached `VERIFIED` against the mock Hornet. The remote model received the
-  photo; this does not demonstrate phone/offline operation.
+  photo; this does not demonstrate phone/offline operation. The same model,
+  run with Ollama on a CPU cloud VM, again suggested "Robin" (self-reported
+  confidence 0.95, about 20 s); the observer confirmed it before sealing. A
+  model's confidence is its own score, not calibrated accuracy.
 - The real Messages API / public Hornet anchor (the demo uses
   `scripts/anchor_relay.py` + `scripts/mock_hornet.py`).
 - MongoDB Atlas commons search — the code is unit-tested against a fake store;
@@ -132,7 +139,13 @@ bash scripts/demo_field.sh
 # seal a sample, verify the chain, edit it, watch the crack refuse to sync
 ```
 
-For the optional **server-hosted Gemma** demo, start a private SSH tunnel from the browser machine to a host running Ollama on port 11434 (for example `ssh -fN -L 127.0.0.1:11435:127.0.0.1:11434 YOUR_HOST`). Append `&endpoint=http://127.0.0.1:11435&model=gemma3:4b` to the printed field-client URL, upload a credited photo, then choose **Identify & seal**. This sends the photo to the remote model server for inference; it is not an offline or on-phone demo. The mock Hornet/ledger are still local.
+For the optional **server-hosted Gemma** demo, run Ollama with `gemma3:4b` on a host the browser can reach — on the same machine (`ollama serve`, then `ollama pull gemma3:4b`) or through a private tunnel (for example `ssh -fN -L 127.0.0.1:11435:127.0.0.1:11434 YOUR_HOST`). Append `&endpoint=http://127.0.0.1:11434&model=gemma3:4b` (or the tunnel port) to the printed field-client URL, choose a credited photo, then **Ask the model for a suggestion**. Review it, then **Confirm & seal** or **Correct it**. The photo is sent to that model server for inference; it is not an offline or on-phone demo. The mock Hornet/ledger are still local. Add `&area=LAT,LON` to record a coarse area (rounded to about 1 km) with each sighting.
+
+### The field journal and the outbox
+
+- **Suggestion, then decision.** The model only suggests a name. Nothing is sealed until the observer confirms it or writes a correction; the decision, and the model's original suggestion, are inside the signed payload, so changing either later cracks the seal.
+- **Journal ≠ outbox.** Each sealed record is kept in a local field journal (`vickrey.journal` in `localStorage`, with a small local thumbnail that is never hashed or sent). The outbox (`vickrey.queue`) only holds records not yet synced. A successful sync empties the outbox and marks the journal record `Anchored · VERIFIED`; it never removes the sighting.
+- **The crack.** The demo control edits the copy waiting in the outbox. The chain no longer verifies, sync refuses, the journal record shows the cracked seal, and **Put the sealed copy back** restores the outbox from the journal.
 
 ## Run the commons
 

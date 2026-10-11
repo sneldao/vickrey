@@ -37,16 +37,22 @@ The [Week 1 FAQ](https://dev.to/challenges/hacktoberfest-week1-2026-10-05) says 
 `bash scripts/demo_field.sh` starts a mock Hornet, the ledger, the anchor
 relay (Messages API stand-in), and serves the field client on printed ports.
 
-1. **Seal.** Open the field URL; press **Use sample identification**. The entry
-   is signed with the device key, hash-chained, and queued — "1 sealed".
-2. **Verify.** **Verify chain** — "the seal holds: every hash recomputes,
-   every link is intact, every signature verifies."
-3. **Anchor.** **Sync to the ledger** — the queue drains through the relay to
-   the mock Hornet; the ledger countersigns and returns **VERIFIED** (solid,
-   milestone, commitment match).
-4. **The crack.** Seal a second entry, then **Edit the last entry** → **Verify
-   chain** reports the seal cracked at that entry, and **Sync is refused** —
-   the tampered record never leaves the device.
+1. **Suggest.** Open the field URL, choose a photo, and **Ask the model for a
+   suggestion** (or **Try a labelled sample suggestion** with no model). The
+   suggestion card names the model and its self-reported confidence — not
+   measured accuracy.
+2. **Decide and seal.** **Confirm & seal**, or **Correct it** and seal your
+   own name. The decision is signed with the device key and hash-chained; the
+   record lands in the field journal and the outbox.
+3. **The crack.** Open **Demo: tamper with a queued copy** → **Edit the queued
+   copy**. The journal row shows a cracked seal and the edited text;
+   **Sync to the ledger** is refused — the tampered copy never leaves the
+   device.
+4. **Restore and anchor.** **Put the sealed copy back**, then sync. The relay
+   writes to the mock Hornet; the ledger returns **VERIFIED** (solid,
+   milestone, commitment match). The outbox empties; the journal keeps the
+   sighting, now `Anchored · VERIFIED`, with model, hash, signature and block
+   under **Proof**.
 
 **Real-model evidence, separate from the sample run:** A browser test uploaded a [Wikimedia Commons European robin photo](https://commons.wikimedia.org/wiki/File:European_robin_on_a_branch.jpg) (Alexis LOURS, CC BY 2.0) to server-hosted Gemma 3 4B over a private SSH tunnel; it returned "Robin" and the signed entry reached `VERIFIED` on the mock Hornet. This is a real open-weight model run, not an offline/on-phone field test. The photo was sent to the model server for inference, but not anchored.
 
@@ -75,6 +81,14 @@ working today:
   carries accuracy; the ledger carries provenance.
 - **"Why a public ledger at all?"** Attribution, citability, and an open commons
   that no platform owns — plus cross-institution trust without a middleman.
+- **"How big is the space?"** For scale only: GBIF's 2025 guide to publishing
+  survey data reports more than 3 billion occurrence records from about 2,300
+  institutions ([source](https://docs.gbif.org/guide-publishing-survey-data/en/)).
+  That is the biodiversity-data ecosystem, not Vickrey's users or market, and
+  it is not evidence that those records lack provenance.
+- **"Doesn't the observer just rubber-stamp the model?"** They can, and the
+  record says so: the sealed payload keeps both the model's suggestion and
+  whether the person confirmed or corrected it.
 - **"Endangered species?"** Precise location, photos, and notes never go
   on-chain. The anchor carries the commitment hash, device signature,
   timestamp, a coarse (rounded) location, and a species summary — obscuring

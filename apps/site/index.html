@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vickrey — Prove What You Saw</title>
+<meta name="description" content="A field journal that seals what you saw with a device signature and a hash chain — so a changed record cracks the seal.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<nav class="nav" aria-label="Site">
+  <a class="brand" href="#top">Vickrey</a>
+  <div class="nav-links">
+    <a href="#film">Film</a>
+    <a href="#how">How it works</a>
+    <a href="#status">Status</a>
+    <a href="https://github.com/sneldao/vickrey">Repo</a>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <p class="kicker">A field journal that seals what you saw</p>
+  <h1>A record can change.<br><em>The seal shouldn't.</em></h1>
+  <p class="lede">Vickrey pairs a field observer's notes with an open-weight model that
+  <em>suggests</em> — and an observer who <em>decides</em>. The decision is sealed
+  on the device with a signature and a hash chain, so any later edit cracks the
+  seal instead of silently rewriting the past.</p>
+  <div class="cta-row">
+    <a class="btn btn-wax" href="#film">Watch the film</a>
+    <a class="btn btn-ghost" href="https://github.com/sneldao/vickrey#run-the-local-field-demo">Run locally</a>
+  </div>
+</header>
+
+<figure class="fieldnote" aria-label="Illustrative sealed field note">
+  <div class="note">
+    <p class="hand">European robin, on the hawthorn by the gate —</p>
+    <p class="hand strike">later edit: Magpie?</p>
+    <p class="mono stamp">EDIT DETECTED</p>
+  </div>
+  <div class="seal" aria-hidden="true"><span>V</span></div>
+  <figcaption>Illustrative field note — mechanism, not screenshot.</figcaption>
+</figure>
+
+<section class="section" id="film">
+  <h2>The film</h2>
+  <div class="frame">
+    <iframe
+      src="https://www.youtube-nocookie.com/embed/9BmpLblSHUM"
+      title="Vickrey — Prove What You Saw"
+      loading="lazy"
+      allow="accelerometer; encrypted-media; picture-in-picture"
+      allowfullscreen></iframe>
+  </div>
+  <p class="caption">92 seconds, hosted on YouTube (unlisted) —
+  <a href="https://youtu.be/9BmpLblSHUM">watch directly</a>. Shows a real
+  server-hosted Gemma 3 4B identification sealed and verified against a mock
+  Hornet ledger. The robin photo is illustrative:
+  <a href="https://commons.wikimedia.org/wiki/File:European_robin_on_a_branch.jpg">Alexis LOURS, CC BY 2.0, Wikimedia Commons</a>.</p>
+</section>
+
+<section class="section" id="how">
+  <h2>How it works</h2>
+  <ol class="phases">
+    <li>
+      <span class="phase-no mono">01</span>
+      <h3>Observe &amp; decide</h3>
+      <p>A photo, a suggestion from an open-weight model, and a human who
+      confirms or corrects it. The observer — not the model — signs.</p>
+    </li>
+    <li>
+      <span class="phase-no mono">02</span>
+      <h3>Seal on the device</h3>
+      <p>The decision is hashed, Ed25519-signed, and chained to the record
+      before it. The sealed journal is the source of truth.</p>
+    </li>
+    <li>
+      <span class="phase-no mono">03</span>
+      <h3>Compare later</h3>
+      <p>Sync anchors a commitment — never the raw photo — to a ledger. Edit a
+      queued record and the hashes stop recomputing: sync is refused.</p>
+    </li>
+  </ol>
+</section>
+
+<section class="section scale">
+  <h2>Why records like this matter</h2>
+  <p>Open biodiversity data is enormous: GBIF reports
+  <strong>&gt;3&nbsp;billion species occurrence records</strong> published by
+  <strong>~2,300 institutions</strong>
+  (<a href="https://docs.gbif.org/guide-publishing-survey-data/en/">GBIF, 2025</a>).
+  That is ecosystem context, not Vickrey usage — and nothing here claims those
+  records lack provenance. It is the scale that makes tamper-evident field
+  records worth having.</p>
+</section>
+
+<section class="section" id="status">
+  <h2>What is true today</h2>
+  <div class="truth">
+    <div class="col">
+      <h3 class="ok">Working demo</h3>
+      <ul>
+        <li>Server-hosted Gemma 3 4B identifies a photo through the field client.</li>
+        <li>Local signed journal: Ed25519 seal + hash chain, verified in the browser.</li>
+        <li>Edit → crack → sync refused; restore → mock Hornet <span class="mono">VERIFIED</span>.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 class="notyet">Not yet</h3>
+      <ul>
+        <li>On-phone / offline model inference.</li>
+        <li>Public ledger anchor (demo uses a mock Hornet + relay).</li>
+        <li>Actual outdoor field use.</li>
+        <li>Darwin Core export; live Atlas similarity search.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<footer class="footer">
+  <p>Open source, Apache-2.0 —
+  <a href="https://github.com/sneldao/vickrey">github.com/sneldao/vickrey</a>.</p>
+  <p class="mono">Run it locally: <code>bash scripts/demo_field.sh</code></p>
+</footer>
+
+</body>
+</html>

@@ -665,7 +665,7 @@
             : "") +
           '<figcaption class="mono">' +
           escapeHtml(state.image.name || "photo") +
-          " · stays on this device</figcaption>" +
+          " · photo not anchored</figcaption>" +
           "</figure>"
         );
       }

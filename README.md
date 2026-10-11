@@ -22,6 +22,11 @@ locally, the record is yours, and the proof survives the walk.
 
 ## Status — what runs today vs the plan
 
+**Film:** [watch the 92-second demo on YouTube](https://youtu.be/9BmpLblSHUM)
+(unlisted). The 92-second film is on YouTube; a GitHub Pages showcase will
+embed it once deployed. It demonstrates server-hosted Gemma against the mock
+Hornet — not outdoor, on-phone, or public-ledger use.
+
 **Week 1 entry cutoff:** October 11, 2026 at 11:59 PM PDT ([official rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules)). An eligible entry needs a published DEV post using the challenge template and tags, a demo link or video, a code repository link, and an explanation of why open innovation matters. The project and repository must have begun during October 5–11. This repository's initial commit was October 6; the Veles ledger/explorer began during that window and is reused for the field client. Disclose that reuse; eligibility is the organizer's call.
 
 **Verified end-to-end, all local:** photo → model **suggestion** → the

@@ -54,6 +54,11 @@ relay (Messages API stand-in), and serves the field client on printed ports.
    sighting, now `Anchored · VERIFIED`, with model, hash, signature and block
    under **Proof**.
 
+**Hosted film:** the 92-second demo is on YouTube (unlisted):
+<https://youtu.be/9BmpLblSHUM>. It shows the same server-hosted Gemma + mock
+Hornet path; a hosted video is not proof of outdoor, on-phone, or
+public-ledger deployment.
+
 **Real-model evidence, separate from the sample run:** A browser test uploaded a [Wikimedia Commons European robin photo](https://commons.wikimedia.org/wiki/File:European_robin_on_a_branch.jpg) (Alexis LOURS, CC BY 2.0) to server-hosted Gemma 3 4B over a private SSH tunnel; it returned "Robin" and the signed entry reached `VERIFIED` on the mock Hornet. This is a real open-weight model run, not an offline/on-phone field test. The photo was sent to the model server for inference, but not anchored.
 
 Conditional extras, only if they land before the deadline — do not present as

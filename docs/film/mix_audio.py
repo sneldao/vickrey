@@ -1,4 +1,5 @@
 import subprocess
+from pathlib import Path
 
 vo = [
     ("01", 0.8),
@@ -17,11 +18,18 @@ sfx = [
     ("sfx-crack", 47.7, 2.2),
     ("sfx-verify", 60.6, 0.9),
 ]
-inputs = ["-i", "bed.mp3", "-i", "sfx-ambience.mp3", "-i", "sfx-ambience.mp3"]
+inputs = [
+    "-i",
+    "audio/bed.mp3",
+    "-i",
+    "audio/sfx-ambience.mp3",
+    "-i",
+    "audio/sfx-ambience.mp3",
+]
 for n, _ in vo:
-    inputs += ["-i", f"vo-{n}.mp3"]
+    inputs += ["-i", f"audio/vo-{n}.mp3"]
 for n, _, _ in sfx:
-    inputs += ["-i", f"{n}.mp3"]
+    inputs += ["-i", f"audio/{n}.mp3"]
 f = []
 f.append(
     "[0:a]volume=0.20,afade=t=in:d=2,afade=t=out:st=88:d=4,aformat=channel_layouts=stereo[bed]"
@@ -68,7 +76,8 @@ cmd = (
         "aac",
         "-b:a",
         "192k",
-        "../vickrey-launch/assets/mix.m4a",
+        "assets/mix.m4a",
     ]
 )
+Path("assets").mkdir(exist_ok=True)
 subprocess.run(cmd, check=True)

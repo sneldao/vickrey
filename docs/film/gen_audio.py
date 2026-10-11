@@ -24,10 +24,11 @@ def post(url, body, out):
         print("ERR", out, e.code, e.read()[:300])
 
 
+os.makedirs("audio", exist_ok=True)
 what = sys.argv[1]
 if what == "vo":
     prev = None
-    lines = json.load(open("lines.json"))
+    lines = json.load(open("narration.json"))
     for i, (n, t) in enumerate(lines):
         post(
             "https://api.elevenlabs.io/v1/text-to-speech/JBFqnCBsd6RMkjVDRZzb?output_format=mp3_44100_128",

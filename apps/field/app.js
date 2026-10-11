@@ -32,8 +32,16 @@
   var QUEUE_KEY = "vickrey.queue";
   var KEY_KEY = "vickrey.device_key";
   var FLOW_KEY = "vickrey.flow";
+  var JOURNAL_KEY = "vickrey.journal";
 
-  var CONFIG_KEYS = ["ledgerUrl", "commonsUrl", "modelEndpoint", "model"];
+  var CONFIG_KEYS = [
+    "ledgerUrl",
+    "commonsUrl",
+    "modelEndpoint",
+    "model",
+    "ledgerLabel",
+    "area",
+  ];
 
   /* Query-string names, short for a demo URL, mapped to config keys. Both
    * spellings are accepted so a hand-written link is hard to get wrong. */
@@ -45,6 +53,8 @@
     endpoint: "modelEndpoint",
     modelEndpoint: "modelEndpoint",
     model: "model",
+    ledgerLabel: "ledgerLabel",
+    area: "area",
   };
 
   /* Merge the file's config with URL overrides, so a demo can point one page at
@@ -133,12 +143,26 @@
       commitment: entry.hash,
       signature: entry.signature,
       prev: entry.prev || null,
-      summary: {
-        kind: summary.kind,
-        species: summary.species,
-        confidence: summary.confidence,
-      },
+      summary: reviewDecision(entry)
+        ? {
+            kind: summary.kind,
+            species: summary.species,
+            confidence: summary.confidence,
+            review: reviewDecision(entry),
+          }
+        : {
+            kind: summary.kind,
+            species: summary.species,
+            confidence: summary.confidence,
+          },
     };
+  }
+
+  function reviewDecision(entry) {
+    var review = entry && entry.payload && entry.payload.review;
+    return review && typeof review.decision === "string"
+      ? review.decision
+      : null;
   }
 
   function relayBody(entry, flowId) {
@@ -275,7 +299,167 @@
     return { status: row.status, note: statusNote(row.status) };
   }
 
+  /* ------------------------------------------------------------- review */
+
+  /* A model only ever suggests. A person confirms or corrects the suggestion,
+   * and that decision is sealed with the record. Nothing is sealed without it. */
+  function reviewedIdentification(suggestion, decision) {
+    if (!suggestion) {
+      throw new Error("there is no suggestion to review");
+    }
+    var action = decision && decision.action;
+    if (action !== "confirm" && action !== "correct") {
+      throw new Error(
+        "a person must confirm or correct the suggestion before it is sealed",
+      );
+    }
+    var suggestedSpecies =
+      typeof suggestion.species === "string" ? suggestion.species.trim() : "";
+    var suggestedKind = suggestion.kind || "other";
+    var modelConfidence =
+      typeof suggestion.confidence === "number" ? suggestion.confidence : null;
+    var species = suggestedSpecies;
+    var kind = suggestedKind;
+    if (action === "correct") {
+      species =
+        typeof decision.species === "string" ? decision.species.trim() : "";
+      kind = decision.kind || suggestedKind;
+    }
+    if (!species) {
+      throw new Error(
+        action === "confirm"
+          ? "the model named nothing — correct it before sealing"
+          : "write the name you are sure of before sealing",
+      );
+    }
+    var corrected =
+      action === "correct" &&
+      (species !== suggestedSpecies || kind !== suggestedKind);
+    return {
+      kind: kind,
+      species: species,
+      // A correction is the observer's call; the model's score belongs to its
+      // own suggestion, so it is kept in the review, not on the final name.
+      confidence: corrected ? null : modelConfidence,
+      detail: suggestion.detail || "",
+      model_id: suggestion.model_id || null,
+      sample: suggestion.sample === true,
+      review: {
+        decision: corrected ? "corrected" : "confirmed",
+        suggested_species: suggestedSpecies,
+        suggested_kind: suggestedKind,
+        model_confidence: modelConfidence,
+      },
+    };
+  }
+
+  /* ------------------------------------------------------------ journal */
+
+  function samePayload(a, b) {
+    return JSON.stringify(canonicalize(a)) === JSON.stringify(canonicalize(b));
+  }
+
+  function canonicalize(value) {
+    if (value === null || typeof value !== "object") {
+      return value;
+    }
+    if (Array.isArray(value)) {
+      return value.map(canonicalize);
+    }
+    var out = {};
+    Object.keys(value)
+      .sort()
+      .forEach(function (key) {
+        out[key] = canonicalize(value[key]);
+      });
+    return out;
+  }
+
+  /* One row per sighting, newest first: the journal's sealed copy, where it
+   * stands (waiting in the outbox, anchored, or cracked), and the outbox copy
+   * when it no longer matches what was sealed. */
+  function journalView(records, outboxEntries, verdict) {
+    var outbox = {};
+    (outboxEntries || []).forEach(function (entry, index) {
+      outbox[entry.hash] = { entry: entry, index: index };
+    });
+    var brokenHash =
+      verdict && !verdict.ok && outboxEntries && outboxEntries[verdict.brokenAt]
+        ? outboxEntries[verdict.brokenAt].hash
+        : null;
+    return (records || [])
+      .map(function (record) {
+        var hash = record.entry.hash;
+        var queued = outbox[hash] || null;
+        var edited = !!(
+          queued && !samePayload(queued.entry.payload, record.entry.payload)
+        );
+        var state;
+        if (record.sync && record.sync.state === "anchored") {
+          state = "anchored";
+        } else if (edited || hash === brokenHash) {
+          state = "cracked";
+        } else if (queued) {
+          state = "waiting";
+        } else {
+          state = "local";
+        }
+        return {
+          hash: hash,
+          entry: record.entry,
+          thumb: record.thumb || null,
+          sync: record.sync || { state: "pending" },
+          state: state,
+          refused: !!(record.sync && record.sync.state === "refused"),
+          queuedCopy: edited ? queued.entry : null,
+        };
+      })
+      .reverse();
+  }
+
+  /* Write a sync outcome into the journal: every sent entry is marked with
+   * its ledger row; a refusal is pinned to the entry that broke the chain. */
+  function settleSync(journal, drained, rows) {
+    rows = rows || {};
+    (drained.sent || []).forEach(function (entry) {
+      journal.markAnchored(entry.hash, rows[entry.hash] || null);
+    });
+    if (drained.verdict && !drained.verdict.ok) {
+      var broken = (drained.remaining || [])[drained.verdict.brokenAt];
+      if (broken) {
+        journal.markRefused(broken.hash, "the local chain no longer verifies");
+      }
+    }
+    return journal.list();
+  }
+
+  function parseArea(text) {
+    if (typeof text !== "string") {
+      return null;
+    }
+    var parts = text.split(",").map(function (part) {
+      return Number(part.trim());
+    });
+    if (
+      parts.length !== 2 ||
+      !isFinite(parts[0]) ||
+      !isFinite(parts[1]) ||
+      Math.abs(parts[0]) > 90 ||
+      Math.abs(parts[1]) > 180
+    ) {
+      return null;
+    }
+    return { lat: parts[0], lon: parts[1] };
+  }
+
   /* --------------------------------------------------------- browser half */
+
+  var STATE_LABEL = {
+    waiting: "In the outbox — waiting to sync",
+    anchored: "Anchored",
+    cracked: "Seal cracked",
+    local: "On this device only",
+  };
 
   function mount(el) {
     if (!el || typeof document === "undefined") {
@@ -287,6 +471,7 @@
       root.VickreyQueue,
       root.VickreyInfer,
       root.VickreyLogbook,
+      root.VickreyJournal,
     ];
     if (
       depend.some(function (part) {
@@ -300,7 +485,10 @@
 
     var store = root.VickreyQueue.localStore(QUEUE_KEY);
     var queue = root.VickreyQueue.createQueue({ store: store });
-    var settings = (function (resolved) {
+    var journal = root.VickreyJournal.createJournal({ key: JOURNAL_KEY });
+    journal.adopt(queue.list());
+    var resolved = config();
+    var settings = (function () {
       var ledger = resolved.ledgerUrl || "http://localhost:8088";
       return {
         ledgerUrl: ledger,
@@ -309,26 +497,34 @@
         commonsUrl: resolved.commonsUrl || ledger,
         endpoint: resolved.modelEndpoint || "http://127.0.0.1:11434",
         model: resolved.model || "gemma3",
+        ledgerLabel: resolved.ledgerLabel || "mock Hornet demo",
+        area: parseArea(resolved.area),
       };
-    })(config());
+    })();
     var flow =
       root.localStorage.getItem(FLOW_KEY) || "walk-" + Date.now().toString(36);
     root.localStorage.setItem(FLOW_KEY, flow);
 
     var state = {
       image: null,
-      identifying: false,
-      identifyingError: null,
+      step: "photo",
+      suggestion: null,
+      correcting: false,
+      identifyStarted: 0,
+      error: null,
       verdict: null,
-      results: {},
-      resultsError: null,
-      similar: null,
-      similarError: null,
-      similarQuery: "",
+      syncError: null,
       busy: false,
+      justSealed: null,
+      lastSealed: null,
+      justCracked: null,
+      open: {},
+      similar: {},
       publicKey: null,
       privateKey: null,
+      publicKeyText: "",
     };
+    var ticker = null;
 
     var logbook = root.VickreyLogbook.createLogbook({
       trust: trust,
@@ -336,7 +532,15 @@
       infer: root.VickreyInfer,
       privateKey: null,
       modelId: settings.model,
+      // Continue the chain from the journal, not the outbox: after a sync the
+      // outbox is empty but the next sighting still links to the last one.
+      head: journal.head(),
     });
+
+    var badge = document.getElementById("ledger-label");
+    if (badge) {
+      badge.textContent = "Ledger: " + settings.ledgerLabel;
+    }
 
     function keyStorage() {
       try {
@@ -389,282 +593,6 @@
       }, 2600);
     }
 
-    /* ------------------------------------------------------------ render */
-
-    function entryRow(entry, index) {
-      var summary = summaryOf(entry);
-      var confidence =
-        summary.confidence === null ? "—" : summary.confidence.toFixed(2);
-      return (
-        '<li class="seal-entry" data-index="' +
-        index +
-        '">' +
-        '<div class="seal-line">' +
-        '<b class="seal-title">' +
-        escapeHtml(entryTitle(entry)) +
-        "</b>" +
-        '<span class="seal-kind">' +
-        escapeHtml(summary.kind) +
-        "</span>" +
-        '<span class="seal-conf" title="model confidence">' +
-        confidence +
-        "</span>" +
-        "</div>" +
-        '<p class="mono seal-meta">' +
-        escapeHtml(entry.observed_at || "") +
-        " · prev " +
-        escapeHtml(shortHash(entry.prev, 8)) +
-        "</p>" +
-        '<p class="mono seal-hash">hash ' +
-        escapeHtml(shortHash(entry.hash, 14)) +
-        " · sig " +
-        escapeHtml(shortHash(entry.signature, 10)) +
-        "</p>" +
-        (entry.payload && entry.payload._demo_edited
-          ? '<span class="stamp" data-status="PAYLOAD_MISMATCH">EDITED AFTER SIGNING</span>'
-          : "") +
-        "</li>"
-      );
-    }
-
-    function chainPanel() {
-      var entries = queue.list();
-      var verdict = state.verdict;
-      var banner = "";
-      if (verdict) {
-        var tone = verdict.ok ? "verified" : "mismatch";
-        banner =
-          '<p class="verdict" data-tone="' +
-          tone +
-          '">' +
-          escapeHtml(verdictText(verdict)) +
-          "</p>";
-      }
-      return (
-        '<section class="card">' +
-        '<div class="card-head"><h2>The local log</h2>' +
-        '<span class="mono count">' +
-        entries.length +
-        " sealed</span></div>" +
-        '<p class="hint">Each entry is hashed, signed with this device key, and chained to the one before it. ' +
-        "Editing a past entry breaks the chain — that is the seal cracking.</p>" +
-        banner +
-        (entries.length
-          ? '<ul class="seal-list">' +
-            entries
-              .map(function (entry, index) {
-                return entryRow(entry, index);
-              })
-              .join("") +
-            "</ul>"
-          : '<p class="empty">Nothing sealed yet. Identify something to start the log.</p>') +
-        '<div class="row actions">' +
-        '<button type="button" data-act="verify"' +
-        (entries.length ? "" : " disabled") +
-        ">Verify chain</button>" +
-        '<button type="button" class="danger" data-act="tamper"' +
-        (entries.length ? "" : " disabled") +
-        ">Edit the last entry</button>" +
-        '<button type="button" class="primary" data-act="sync"' +
-        (entries.length ? "" : " disabled") +
-        ">Sync to the ledger</button>" +
-        "</div>" +
-        (state.resultsError
-          ? '<p class="action-error">' + escapeHtml(state.resultsError) + "</p>"
-          : "") +
-        resultsPanel() +
-        "</section>"
-      );
-    }
-
-    function resultsPanel() {
-      var entries = queue.list();
-      var keys = Object.keys(state.results);
-      if (!keys.length) {
-        return "";
-      }
-      return (
-        '<div class="results">' +
-        "<h3>Ledger countersignature</h3>" +
-        keys
-          .map(function (hash) {
-            var result = ledgerStatus(state.results[hash]);
-            var entry = null;
-            for (var i = 0; i < entries.length; i++) {
-              if (entries[i].hash === hash) {
-                entry = entries[i];
-              }
-            }
-            return (
-              '<div class="result">' +
-              '<div class="result-head">' +
-              '<span class="stamp" data-status="' +
-              escapeHtml(result.status) +
-              '">' +
-              escapeHtml(result.status) +
-              "</span>" +
-              '<span class="seal-title">' +
-              escapeHtml(entry ? entryTitle(entry) : shortHash(hash, 8)) +
-              "</span>" +
-              "</div>" +
-              '<p class="hint">' +
-              escapeHtml(result.note) +
-              "</p>" +
-              '<p class="mono seal-meta">block ' +
-              escapeHtml(
-                (state.results[hash] && state.results[hash].block_id) || "—",
-              ) +
-              " · milestone " +
-              escapeHtml(
-                String(
-                  state.results[hash] &&
-                    state.results[hash].milestone_index !== null
-                    ? state.results[hash].milestone_index
-                    : "—",
-                ),
-              ) +
-              "</p>" +
-              "</div>"
-            );
-          })
-          .join("") +
-        "</div>"
-      );
-    }
-
-    function similarPanel() {
-      var body;
-      if (state.similarError) {
-        body =
-          '<p class="action-error">' + escapeHtml(state.similarError) + "</p>";
-      } else if (state.similar === null) {
-        body =
-          '<p class="hint">When configured, Atlas Vector Search finds related anchored sightings. ' +
-          "It returns labels and commitments, never raw records.</p>";
-      } else if (!state.similar.length) {
-        body = '<p class="empty">No similar anchored sightings yet.</p>';
-      } else {
-        body =
-          '<ul class="similar">' +
-          state.similar
-            .map(function (hit) {
-              return (
-                "<li><b>" +
-                escapeHtml(hit.label || "unlabelled") +
-                "</b>" +
-                '<span class="mono"> · ' +
-                escapeHtml(shortHash(hit.commitment, 10)) +
-                " · " +
-                escapeHtml(hit.observed_at || "") +
-                (typeof hit.score === "number"
-                  ? " · " + hit.score.toFixed(3)
-                  : "") +
-                "</span></li>"
-              );
-            })
-            .join("") +
-          "</ul>";
-      }
-      return (
-        '<section class="card">' +
-        '<div class="card-head"><h2>Similar sightings</h2>' +
-        '<span class="mono count">atlas optional</span></div>' +
-        '<div class="row">' +
-        '<input type="search" id="similar-q" placeholder="species or kind" value="' +
-        escapeHtml(state.similarQuery) +
-        '" />' +
-        '<button type="button" data-act="similar">Search the commons</button>' +
-        "</div>" +
-        body +
-        "</section>"
-      );
-    }
-
-    function capturePanel() {
-      var preview = state.image
-        ? '<img class="shot" alt="captured observation" src="' +
-          state.image.preview +
-          '" />'
-        : '<div class="shot shot-empty">no photo yet</div>';
-      return (
-        '<section class="card">' +
-        '<div class="card-head"><h2>Identify &amp; seal</h2>' +
-        '<span class="mono count">device seal</span></div>' +
-        '<div class="capture">' +
-        preview +
-        '<div class="capture-side">' +
-        '<label class="file">' +
-        "<span>Take or choose a photo</span>" +
-        '<input type="file" accept="image/*" capture="environment" id="photo" />' +
-        "</label>" +
-        '<details class="endpoints"><summary>Model endpoint</summary>' +
-        '<form id="model-form">' +
-        '<label>Endpoint<input name="endpoint" value="' +
-        escapeHtml(settings.endpoint) +
-        '" /></label>' +
-        '<label>Model<input name="model" value="' +
-        escapeHtml(settings.model) +
-        '" /></label>' +
-        '<p class="hint">Any OpenAI-compatible endpoint, local or reachable through a private tunnel. ' +
-        "A hosted model receives the photo; choose local inference for offline privacy. " +
-        "If nothing answers, use the labelled sample identification.</p>" +
-        "</form></details>" +
-        '<div class="row">' +
-        '<button type="button" class="primary" data-act="identify"' +
-        (state.image && !state.identifying && state.privateKey
-          ? ""
-          : " disabled") +
-        ">" +
-        (state.identifying ? "Identifying…" : "Identify &amp; seal") +
-        "</button>" +
-        '<button type="button" class="ghost" data-act="sample"' +
-        (state.privateKey ? "" : " disabled") +
-        ">Use sample identification</button>" +
-        "</div>" +
-        (state.identifyingError
-          ? '<p class="action-error">' +
-            escapeHtml(state.identifyingError) +
-            "</p>"
-          : "") +
-        "</div></div>" +
-        '<p class="mono device">device key ' +
-        escapeHtml(shortHash(state.publicKeyText, 12)) +
-        "</p>" +
-        "</section>"
-      );
-    }
-
-    function render() {
-      el.innerHTML =
-        '<div class="field-grid">' +
-        '<div class="col">' +
-        capturePanel() +
-        chainPanel() +
-        "</div>" +
-        '<div class="col"><div class="detail">' +
-        similarPanel() +
-        helpPanel() +
-        "</div></div>" +
-        "</div>";
-      wire();
-    }
-
-    function helpPanel() {
-      return (
-        '<section class="card">' +
-        "<h2>How to read this</h2>" +
-        '<ul class="help">' +
-        "<li><b>Sealed.</b> The hash is the commitment; the signature proves this device sealed it before any upload.</li>" +
-        "<li><b>Cracked.</b> Edit a past entry and the hash no longer recomputes. Signatures prove who, hashes prove what.</li>" +
-        "<li><b>Anchored.</b> The commitment, signature, timestamp, coarse location and species summary reach the ledger. Raw photos and notes are not anchored; a hosted model receives the photo for inference.</li>" +
-        "<li><b>Countersigned.</b> The ledger independently reads the block: solid, milestone-referenced, and still matching.</li>" +
-        "</ul>" +
-        "</section>"
-      );
-    }
-
-    /* -------------------------------------------------------------- wiring */
-
     function escapeHtml(value) {
       return String(value === null || value === undefined ? "" : value)
         .replace(/&/g, "&amp;")
@@ -673,6 +601,557 @@
         .replace(/"/g, "&quot;");
     }
 
+    /* ------------------------------------------------------------ render */
+
+    function sealMark(kind, extraClass) {
+      return (
+        '<svg class="wax ' +
+        (extraClass || "") +
+        '" data-kind="' +
+        kind +
+        '" viewBox="0 0 48 48" aria-hidden="true" focusable="false">' +
+        '<circle class="wax-disc" cx="24" cy="24" r="21" />' +
+        '<circle class="wax-ring" cx="24" cy="24" r="16" />' +
+        '<text x="24" y="30.5" text-anchor="middle">V</text>' +
+        '<path class="wax-crack" d="M9 13 L19 21 L16 27 L25 31 L23 38 L31 44 M19 21 L27 17 L33 6 M25 31 L35 29 L44 34" />' +
+        "</svg>"
+      );
+    }
+
+    var STEPS = [
+      ["photo", "Photo"],
+      ["suggest", "Suggestion"],
+      ["review", "Your call"],
+      ["sealed", "Sealed"],
+    ];
+
+    function stepper() {
+      var current = state.step === "identifying" ? "suggest" : state.step;
+      var reached = true;
+      return (
+        '<ol class="steps" aria-label="Progress">' +
+        STEPS.map(function (step, index) {
+          var isCurrent = step[0] === current;
+          var html =
+            '<li data-reached="' +
+            (reached ? "yes" : "no") +
+            '"' +
+            (isCurrent ? ' aria-current="step"' : "") +
+            '><span class="step-n">' +
+            ["i", "ii", "iii", "iv"][index] +
+            ".</span> " +
+            step[1] +
+            "</li>";
+          if (isCurrent) {
+            reached = false;
+          }
+          return html;
+        }).join("") +
+        "</ol>"
+      );
+    }
+
+    function plate() {
+      if (state.image) {
+        return (
+          '<figure class="plate">' +
+          '<img alt="Your photo of the sighting" src="' +
+          state.image.preview +
+          '" />' +
+          (state.step === "sealed"
+            ? '<div class="plate-seal">' +
+              sealMark("intact", "press") +
+              "</div>"
+            : "") +
+          '<figcaption class="mono">' +
+          escapeHtml(state.image.name || "photo") +
+          " · stays on this device</figcaption>" +
+          "</figure>"
+        );
+      }
+      return (
+        '<figure class="plate plate-empty">' +
+        '<div class="plate-hint"><p class="script">Something worth noting?</p>' +
+        "<p>Photograph it. The model suggests a name, you decide, and the record is sealed.</p></div>" +
+        "</figure>"
+      );
+    }
+
+    function confidenceText(value) {
+      return typeof value === "number" ? value.toFixed(2) : "not given";
+    }
+
+    function reviewCard() {
+      var s = state.suggestion;
+      if (!s) {
+        return "";
+      }
+      var label = s.sample ? "Sample suggestion" : "Model suggestion";
+      var body =
+        '<div class="specimen" role="group" aria-labelledby="specimen-name">' +
+        '<p class="specimen-tag">' +
+        label +
+        (s.sample ? " · no model ran" : "") +
+        "</p>" +
+        '<p class="specimen-name" id="specimen-name">' +
+        escapeHtml(s.species || "Nothing named") +
+        "</p>" +
+        '<dl class="specimen-meta">' +
+        "<div><dt>Kind</dt><dd>" +
+        escapeHtml(s.kind || "other") +
+        "</dd></div>" +
+        "<div><dt>Model confidence</dt><dd>" +
+        confidenceText(s.confidence) +
+        ' <span class="aside">the model’s own score, not measured accuracy</span></dd></div>' +
+        '<div><dt>Model</dt><dd class="mono">' +
+        escapeHtml(s.model_id || settings.model) +
+        "</dd></div>" +
+        "</dl>" +
+        (s.detail
+          ? '<p class="specimen-detail">“' + escapeHtml(s.detail) + "”</p>"
+          : "") +
+        "</div>";
+      if (state.correcting) {
+        return (
+          body +
+          '<form class="correct" id="correct-form">' +
+          '<p class="hint">Write what you are sure you saw. The model’s suggestion is kept in the record beside your correction.</p>' +
+          '<label>Name<input name="species" id="correct-species" autocomplete="off" required value="' +
+          escapeHtml(s.species || "") +
+          '" /></label>' +
+          '<label>Kind<select name="kind">' +
+          ["bird", "plant", "tree", "hazard", "water", "garden", "other"]
+            .map(function (kind) {
+              return (
+                '<option value="' +
+                kind +
+                '"' +
+                (kind === (s.kind || "other") ? " selected" : "") +
+                ">" +
+                kind +
+                "</option>"
+              );
+            })
+            .join("") +
+          "</select></label>" +
+          '<div class="row">' +
+          '<button type="submit" class="primary" id="seal-correction">Seal my correction</button>' +
+          '<button type="button" class="ghost" data-act="cancel-correct">Back</button>' +
+          "</div></form>"
+        );
+      }
+      return (
+        body +
+        '<p class="hint">Is that what you saw? Nothing is sealed until you decide.</p>' +
+        '<div class="row">' +
+        '<button type="button" class="primary seal-btn" id="confirm-seal" data-act="confirm">Confirm &amp; seal</button>' +
+        '<button type="button" data-act="correct">Correct it</button>' +
+        '<button type="button" class="ghost" data-act="discard">Discard</button>' +
+        "</div>"
+      );
+    }
+
+    function sealedNote() {
+      var record = state.lastSealed ? journal.get(state.lastSealed) : null;
+      var sync = record ? record.sync : { state: "pending" };
+      if (sync.state === "anchored") {
+        return (
+          "<b>Sealed and anchored.</b> The ledger reports " +
+          escapeHtml(sync.status) +
+          ". The record is still in your field journal."
+        );
+      }
+      if (sync.state === "refused") {
+        return "<b>Sealed.</b> The queued copy was edited, so sync refused it. Your journal holds the sealed record.";
+      }
+      return "<b>Sealed.</b> Kept in your field journal, and waiting in the outbox until you sync.";
+    }
+
+    function actionArea() {
+      var keyReady = !!state.privateKey;
+      if (state.step === "identifying") {
+        return (
+          '<div class="working" role="status">' +
+          '<span class="quill" aria-hidden="true"></span>' +
+          "<p><b>" +
+          escapeHtml(settings.model) +
+          " is looking…</b> " +
+          '<span class="mono" id="elapsed">0 s</span></p>' +
+          '<p class="hint">A hosted model receives this photo. On a CPU this can take half a minute.</p>' +
+          "</div>"
+        );
+      }
+      if (state.step === "review") {
+        return reviewCard();
+      }
+      if (state.step === "sealed") {
+        return (
+          '<div class="sealed-note" role="status">' +
+          "<p>" +
+          sealedNote() +
+          "</p>" +
+          '<div class="row"><button type="button" class="primary" id="next-sighting" data-act="next">Note another sighting</button></div>' +
+          "</div>"
+        );
+      }
+      var choose =
+        '<label class="file' +
+        (state.image ? "" : " primary") +
+        '">' +
+        "<span>" +
+        (state.image ? "Choose a different photo" : "Take or choose a photo") +
+        "</span>" +
+        '<input type="file" accept="image/*" capture="environment" id="photo" />' +
+        "</label>";
+      if (!state.image) {
+        return (
+          '<div class="row">' +
+          choose +
+          "</div>" +
+          '<p class="hint">No model running? <button type="button" class="linklike" data-act="sample"' +
+          (keyReady ? "" : " disabled") +
+          ">Try a labelled sample suggestion</button></p>"
+        );
+      }
+      return (
+        '<div class="row">' +
+        '<button type="button" class="primary" id="ask-model" data-act="identify"' +
+        (keyReady ? "" : " disabled") +
+        ">Ask the model for a suggestion</button>" +
+        choose +
+        "</div>"
+      );
+    }
+
+    function capturePanel() {
+      return (
+        '<section class="card capture-card" aria-labelledby="capture-h">' +
+        '<h2 id="capture-h" class="visually-hidden">Note a sighting</h2>' +
+        stepper() +
+        plate() +
+        '<div class="act">' +
+        actionArea() +
+        (state.error
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.error) +
+            "</p>"
+          : "") +
+        "</div>" +
+        '<details class="fine" data-open-key="privacy"' +
+        (state.open.privacy ? " open" : "") +
+        "><summary>What leaves this device</summary>" +
+        '<ul class="help">' +
+        "<li><b>To the model:</b> the photo, when you ask for a suggestion. A hosted model receives it; only a model on this device would keep it here.</li>" +
+        "<li><b>To the ledger, on sync:</b> a hash of the record, the device signature, the time, a coarse area (rounded to about 1 km) and the species summary.</li>" +
+        "<li><b>Never anchored:</b> the photo, your notes, the exact location.</li>" +
+        "</ul></details>" +
+        '<details class="fine" data-open-key="model"' +
+        (state.open.model ? " open" : "") +
+        "><summary>Model endpoint · " +
+        escapeHtml(settings.model) +
+        "</summary>" +
+        '<form id="model-form" class="endpoints">' +
+        '<label>Endpoint<input name="endpoint" value="' +
+        escapeHtml(settings.endpoint) +
+        '" /></label>' +
+        '<label>Model<input name="model" value="' +
+        escapeHtml(settings.model) +
+        '" /></label>' +
+        '<p class="hint">Any OpenAI-compatible endpoint (Ollama, llama.cpp, LM Studio), local or over a private tunnel.</p>' +
+        "</form></details>" +
+        "</section>"
+      );
+    }
+
+    function outboxPanel() {
+      var entries = queue.list();
+      var verdict = state.verdict;
+      var banner = "";
+      if (verdict) {
+        banner =
+          '<p class="verdict" role="status" data-tone="' +
+          (verdict.ok ? "verified" : "mismatch") +
+          '">' +
+          escapeHtml(verdictText(verdict)) +
+          "</p>";
+      }
+      return (
+        '<section class="card outbox" aria-labelledby="outbox-h">' +
+        '<div class="card-head"><h2 id="outbox-h">Outbox</h2>' +
+        '<span class="mono count" id="outbox-count">' +
+        entries.length +
+        " waiting</span></div>" +
+        '<p class="hint">' +
+        (entries.length
+          ? "Sealed records wait here until there is signal. Sync checks the seal first and refuses to send anything that was edited."
+          : "Nothing waiting. Synced sightings stay in your journal.") +
+        "</p>" +
+        banner +
+        '<div class="row">' +
+        '<button type="button" class="primary" id="sync" data-act="sync"' +
+        (entries.length && !state.busy ? "" : " disabled") +
+        ">" +
+        (state.busy ? "Syncing…" : "Sync to the ledger") +
+        "</button>" +
+        '<button type="button" data-act="verify"' +
+        (entries.length ? "" : " disabled") +
+        ">Check the seal</button>" +
+        "</div>" +
+        (state.syncError
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.syncError) +
+            "</p>"
+          : "") +
+        '<details class="fine demo-tools" data-open-key="demo"' +
+        (state.open.demo ? " open" : "") +
+        "><summary>Demo: tamper with a queued copy</summary>" +
+        '<p class="hint">For the demo only. This edits the copy waiting in the outbox, as an attacker or a careless script might. Your journal keeps what you sealed.</p>' +
+        '<div class="row"><button type="button" class="danger" id="tamper" data-act="tamper"' +
+        (entries.length ? "" : " disabled") +
+        ">Edit the queued copy</button></div>" +
+        "</details>" +
+        "</section>"
+      );
+    }
+
+    function proofList(row) {
+      var entry = row.entry;
+      var sync = row.sync || {};
+      var items = [
+        ["Model", escapeHtml(entry.model_id || "—")],
+        ["Observed", escapeHtml(entry.observed_at || "—")],
+        [
+          "Coarse area",
+          entry.location
+            ? escapeHtml(entry.location.lat + ", " + entry.location.lon)
+            : "not recorded",
+        ],
+        [
+          "Commitment (hash)",
+          '<span class="mono wrap">' + escapeHtml(entry.hash) + "</span>",
+        ],
+        [
+          "Previous",
+          '<span class="mono wrap">' +
+            escapeHtml(entry.prev || "— first in chain") +
+            "</span>",
+        ],
+        [
+          "Device signature",
+          '<span class="mono wrap">' + escapeHtml(entry.signature) + "</span>",
+        ],
+        [
+          "Device key",
+          '<span class="mono wrap">' +
+            escapeHtml(state.publicKeyText || "—") +
+            "</span>",
+        ],
+      ];
+      if (sync.state === "anchored") {
+        items.push([
+          "Ledger status",
+          escapeHtml(sync.status) + " — " + escapeHtml(statusNote(sync.status)),
+        ]);
+        items.push([
+          "Block",
+          '<span class="mono wrap">' +
+            escapeHtml(sync.block_id || "—") +
+            "</span>",
+        ]);
+        items.push([
+          "Milestone",
+          '<span class="mono">' +
+            escapeHtml(
+              sync.milestone_index === null ||
+                sync.milestone_index === undefined
+                ? "—"
+                : sync.milestone_index,
+            ) +
+            "</span>",
+        ]);
+      }
+      return (
+        '<dl class="proof">' +
+        items
+          .map(function (item) {
+            return (
+              "<div><dt>" + item[0] + "</dt><dd>" + item[1] + "</dd></div>"
+            );
+          })
+          .join("") +
+        "</dl>"
+      );
+    }
+
+    function reviewLine(entry) {
+      var review = entry.payload && entry.payload.review;
+      if (!review) {
+        return "";
+      }
+      if (review.decision === "corrected") {
+        return (
+          '<p class="review-line">You corrected the model’s “' +
+          escapeHtml(review.suggested_species || "nothing") +
+          "”</p>"
+        );
+      }
+      return '<p class="review-line">You confirmed the model’s suggestion</p>';
+    }
+
+    function statusChip(row) {
+      var text = STATE_LABEL[row.state];
+      if (row.state === "anchored") {
+        text = "Anchored · " + row.sync.status;
+      }
+      if (row.state === "cracked" && row.refused) {
+        text = "Seal cracked · sync refused";
+      }
+      return (
+        '<span class="chip" data-state="' +
+        row.state +
+        '" data-status="' +
+        escapeHtml(row.sync.status || "") +
+        '">' +
+        escapeHtml(text) +
+        "</span>"
+      );
+    }
+
+    function similarBlock(row) {
+      var result = state.similar[row.hash];
+      var body = "";
+      if (result && result.error) {
+        body = '<p class="hint">' + escapeHtml(result.error) + "</p>";
+      } else if (result && result.hits) {
+        body = result.hits.length
+          ? '<ul class="similar">' +
+            result.hits
+              .map(function (hit) {
+                return (
+                  "<li><b>" +
+                  escapeHtml(hit.label || "unlabelled") +
+                  '</b> <span class="mono">' +
+                  escapeHtml(shortHash(hit.commitment, 8)) +
+                  "</span></li>"
+                );
+              })
+              .join("") +
+            "</ul>"
+          : '<p class="hint">No similar anchored sightings yet.</p>';
+      }
+      return (
+        '<div class="commons">' +
+        '<button type="button" class="linklike" data-act="similar" data-hash="' +
+        row.hash +
+        '">Find similar anchored sightings</button>' +
+        ' <span class="aside">optional · needs a configured Atlas commons</span>' +
+        body +
+        "</div>"
+      );
+    }
+
+    function journalRow(row) {
+      var entry = row.entry;
+      var summary = summaryOf(entry);
+      var cracked = row.state === "cracked";
+      var animate =
+        (state.justSealed === row.hash ? " press" : "") +
+        (state.justCracked === row.hash ? " cracking" : "");
+      return (
+        '<li class="sighting" data-state="' +
+        row.state +
+        '" id="s-' +
+        row.hash.slice(0, 12) +
+        '">' +
+        '<div class="sighting-main">' +
+        (row.thumb
+          ? '<img class="thumb" alt="" src="' + row.thumb + '" />'
+          : '<div class="thumb thumb-none" aria-hidden="true"></div>') +
+        '<div class="sighting-text">' +
+        '<h3 class="sighting-name">' +
+        escapeHtml(entryTitle(entry)) +
+        "</h3>" +
+        '<p class="sighting-meta">' +
+        escapeHtml(summary.kind) +
+        " · " +
+        escapeHtml((entry.observed_at || "").replace("T", " ").slice(0, 16)) +
+        (entry.model_id === "sample" ? " · sample" : "") +
+        "</p>" +
+        reviewLine(entry) +
+        statusChip(row) +
+        "</div>" +
+        sealMark(
+          cracked
+            ? "cracked"
+            : row.state === "anchored"
+              ? "verified"
+              : "intact",
+          animate,
+        ) +
+        "</div>" +
+        (cracked && row.queuedCopy
+          ? '<p class="crack-note">The queued copy now says “' +
+            escapeHtml(
+              row.queuedCopy.payload && row.queuedCopy.payload.species,
+            ) +
+            "”. Its hash no longer matches the seal, so sync will not send it. Your journal still holds what you sealed.</p>" +
+            '<div class="row"><button type="button" data-act="restore" data-hash="' +
+            row.hash +
+            '">Put the sealed copy back</button></div>'
+          : "") +
+        '<details class="proof-wrap" data-open-key="p-' +
+        row.hash +
+        '"' +
+        (state.open["p-" + row.hash] ? " open" : "") +
+        "><summary>Proof</summary>" +
+        proofList(row) +
+        (row.state === "anchored" ? similarBlock(row) : "") +
+        "</details>" +
+        "</li>"
+      );
+    }
+
+    function journalPanel() {
+      var rows = journalView(journal.list(), queue.list(), state.verdict);
+      return (
+        '<section class="card journal" aria-labelledby="journal-h">' +
+        '<div class="card-head"><h2 id="journal-h">Field journal</h2>' +
+        '<span class="mono count" id="journal-count">' +
+        rows.length +
+        " sealed</span></div>" +
+        (rows.length
+          ? '<ol class="sightings">' + rows.map(journalRow).join("") + "</ol>"
+          : '<p class="empty">Your sealed sightings will be listed here, and stay here after they sync.</p>') +
+        '<p class="mono device">device key ' +
+        escapeHtml(shortHash(state.publicKeyText, 12)) +
+        "</p>" +
+        "</section>"
+      );
+    }
+
+    function render(focusId) {
+      var active = document.activeElement && document.activeElement.id;
+      el.innerHTML =
+        '<div class="field-grid">' +
+        '<div class="col-main">' +
+        capturePanel() +
+        "</div>" +
+        '<div class="col-side">' +
+        outboxPanel() +
+        journalPanel() +
+        "</div>" +
+        "</div>";
+      wire();
+      var target = document.getElementById(focusId || active || "");
+      if (target && typeof target.focus === "function") {
+        target.focus({ preventScroll: !focusId });
+      }
+      state.justSealed = null;
+      state.justCracked = null;
+    }
+
+    /* -------------------------------------------------------------- wiring */
+
     function readFile(file) {
       return new Promise(function (resolve, reject) {
         var reader = new FileReader();
@@ -680,6 +1159,7 @@
           var text = String(reader.result || "");
           var comma = text.indexOf(",");
           resolve({
+            name: file.name,
             preview: text,
             base64: comma === -1 ? text : text.slice(comma + 1),
           });
@@ -688,6 +1168,31 @@
           reject(new Error("could not read the photo"));
         };
         reader.readAsDataURL(file);
+      });
+    }
+
+    /* A small local thumbnail for the journal. Never hashed, never sent. */
+    function thumbnail(preview) {
+      return new Promise(function (resolve) {
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var scale = Math.min(1, 160 / Math.max(img.width, img.height));
+            var canvas = document.createElement("canvas");
+            canvas.width = Math.round(img.width * scale);
+            canvas.height = Math.round(img.height * scale);
+            canvas
+              .getContext("2d")
+              .drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL("image/jpeg", 0.72));
+          } catch (err) {
+            resolve(null);
+          }
+        };
+        img.onerror = function () {
+          resolve(null);
+        };
+        img.src = preview;
       });
     }
 
@@ -701,11 +1206,12 @@
           }
           try {
             state.image = await readFile(file);
-            state.identifyingError = null;
+            state.error = null;
+            state.step = "photo";
           } catch (err) {
-            state.identifyingError = err.message;
+            state.error = err.message;
           }
-          render();
+          render("ask-model");
         });
       }
       var form = el.querySelector("#model-form");
@@ -715,27 +1221,65 @@
           settings.model = form.model.value.trim() || settings.model;
         });
       }
-      var query = el.querySelector("#similar-q");
-      if (query) {
-        query.addEventListener("input", function () {
-          state.similarQuery = query.value;
+      var correct = el.querySelector("#correct-form");
+      if (correct) {
+        correct.addEventListener("submit", function (event) {
+          event.preventDefault();
+          sealDecision({
+            action: "correct",
+            species: correct.species.value,
+            kind: correct.kind.value,
+          });
         });
       }
+      el.querySelectorAll("details[data-open-key]").forEach(function (node) {
+        node.addEventListener("toggle", function () {
+          state.open[node.getAttribute("data-open-key")] = node.open;
+        });
+      });
       el.querySelectorAll("[data-act]").forEach(function (node) {
         node.addEventListener("click", function () {
           var act = node.getAttribute("data-act");
-          if (act === "verify") {
-            verify();
-          } else if (act === "tamper") {
-            tamper();
-          } else if (act === "sync") {
-            sync();
-          } else if (act === "sample") {
-            seal(sampleIdentification());
-          } else if (act === "identify") {
-            identify();
-          } else if (act === "similar") {
-            similar();
+          var hash = node.getAttribute("data-hash");
+          var actions = {
+            identify: identify,
+            sample: function () {
+              suggest(sampleIdentification());
+            },
+            confirm: function () {
+              sealDecision({ action: "confirm" });
+            },
+            correct: function () {
+              state.correcting = true;
+              render("correct-species");
+            },
+            "cancel-correct": function () {
+              state.correcting = false;
+              render("confirm-seal");
+            },
+            discard: function () {
+              state.suggestion = null;
+              state.correcting = false;
+              state.step = "photo";
+              render(state.image ? "ask-model" : "photo");
+            },
+            next: function () {
+              state.image = null;
+              state.step = "photo";
+              render("photo");
+            },
+            verify: verify,
+            sync: sync,
+            tamper: tamper,
+            restore: function () {
+              restore(hash);
+            },
+            similar: function () {
+              similar(hash);
+            },
+          };
+          if (actions[act]) {
+            actions[act]();
           }
         });
       });
@@ -743,13 +1287,29 @@
 
     /* ------------------------------------------------------------ actions */
 
+    function stopTicker() {
+      if (ticker) {
+        root.clearInterval(ticker);
+        ticker = null;
+      }
+    }
+
     async function identify() {
       if (!state.image) {
         return;
       }
-      state.identifying = true;
-      state.identifyingError = null;
+      state.step = "identifying";
+      state.error = null;
+      state.identifyStarted = Date.now();
       render();
+      stopTicker();
+      ticker = root.setInterval(function () {
+        var node = document.getElementById("elapsed");
+        if (node) {
+          node.textContent =
+            Math.round((Date.now() - state.identifyStarted) / 1000) + " s";
+        }
+      }, 1000);
       var id;
       try {
         id = await root.VickreyInfer.identify({
@@ -758,56 +1318,78 @@
           model: settings.model,
         });
       } catch (err) {
-        state.identifying = false;
-        state.identifyingError =
-          "No local model answered at " +
+        stopTicker();
+        state.step = "photo";
+        state.error =
+          "No model answered at " +
           settings.endpoint +
-          ". Start one, or use the sample identification. (" +
+          ". Start one, or try the labelled sample suggestion. (" +
           err.message +
           ")";
+        render("ask-model");
+        return;
+      }
+      stopTicker();
+      suggest(id);
+    }
+
+    function suggest(id) {
+      state.suggestion = id;
+      state.correcting = false;
+      state.error = null;
+      state.step = "review";
+      render("confirm-seal");
+    }
+
+    async function sealDecision(decision) {
+      if (!state.privateKey) {
+        state.error =
+          "The device key is not ready yet — sealing needs it. Wait a moment, or reload the page.";
         render();
         return;
       }
-      state.identifying = false;
-      await seal(id);
-    }
-
-    async function seal(id) {
-      if (!state.privateKey) {
-        state.identifyingError =
-          "The device key is not ready yet — sealing needs it. Wait a moment, or reload the page if it never appears.";
+      var reviewed;
+      try {
+        reviewed = reviewedIdentification(state.suggestion, decision);
+      } catch (err) {
+        state.error = err.message;
         render();
         return;
       }
       try {
-        var entry = await logbook.seal(id, {
+        var entry = await logbook.seal(reviewed, {
           privateKey: state.privateKey,
           model: settings.model,
           observedAt: new Date().toISOString(),
-          location: coarseFromBrowser(),
+          location: settings.area
+            ? root.VickreyTrust.coarseLocation(settings.area, 2)
+            : null,
         });
+        var thumb = state.image ? await thumbnail(state.image.preview) : null;
+        journal.record(entry, { thumb: thumb });
+        state.justSealed = entry.hash;
+        state.lastSealed = entry.hash;
         state.verdict = null;
+        state.suggestion = null;
+        state.correcting = false;
+        state.error = null;
+        state.step = "sealed";
         toast("Sealed " + entryTitle(entry));
       } catch (err) {
-        state.identifyingError = err.message;
+        state.error = err.message;
       }
-      render();
-    }
-
-    function coarseFromBrowser() {
-      var location = config().location;
-      if (location && typeof location.lat === "number") {
-        return root.VickreyTrust.coarseLocation(location, 2);
-      }
-      return null;
+      render("next-sighting");
     }
 
     async function verify() {
-      var entries = queue.list();
       state.verdict = await root.VickreyTrust.verifyChain(
-        entries,
+        queue.list(),
         state.publicKey,
       );
+      if (!state.verdict.ok) {
+        var broken = queue.list()[state.verdict.brokenAt];
+        state.justCracked = broken ? broken.hash : null;
+      }
       render();
     }
 
@@ -818,61 +1400,59 @@
       }
       var last = entries.length - 1;
       var mutated = applyTamper(entries, last, "Misidentified magpie");
-      entries[last].payload = mutated[last].payload;
-      store.save(entries);
+      queue.replace(entries[last].hash, mutated[last]);
       state.verdict = null;
-      state.results = {};
-      toast("Edited the last entry — now verify the chain");
+      state.syncError = null;
+      state.justCracked = entries[last].hash;
+      toast("Edited the queued copy — the seal no longer matches");
       render();
+    }
+
+    function restore(hash) {
+      var record = journal.get(hash);
+      if (!record) {
+        return;
+      }
+      queue.replace(hash, record.entry);
+      journal.markPending(hash);
+      state.verdict = null;
+      state.syncError = null;
+      state.justSealed = hash;
+      toast("Sealed copy restored — the seal re-forms");
+      render("sync");
     }
 
     async function sync() {
       state.busy = true;
-      state.resultsError = null;
+      state.syncError = null;
       render();
+      var rows = {};
       var drained = await drainVerified(
         queue,
         state.publicKey,
         root.VickreyTrust,
-        function (entry) {
-          return postAnchor(entry);
+        async function (entry) {
+          rows[entry.hash] = await postAnchor(entry);
         },
       );
+      state.busy = false;
       if (drained.empty) {
-        state.busy = false;
         render();
         return;
       }
       if (drained.verdict) {
         state.verdict = drained.verdict;
       }
-      drained.sent.forEach(function (entry) {
-        if (entry.__ledger) {
-          state.results[entry.hash] = entry.__ledger;
-        }
-      });
-      // The queue keeps unsent entries; results are read from the sent ones.
+      settleSync(journal, drained, rows);
       var sent = drained.sent.length;
       if (drained.error) {
-        if (sent) {
-          state.resultsError =
-            "Sync stopped at " +
-            (sent + 1) +
-            " of " +
-            (sent + drained.remaining.length) +
-            ": " +
-            drained.error.message +
-            ". Unsent records stayed on the device.";
-        } else {
-          state.resultsError =
-            "Sync refused: " +
-            drained.error.message +
-            ". Nothing was sent; the records stayed on the device.";
-        }
+        state.syncError =
+          (sent ? "Sync stopped after " + sent + ": " : "Sync refused: ") +
+          drained.error.message +
+          ". Nothing unsent left the device.";
       } else {
-        toast("Anchored " + sent + " observation" + (sent === 1 ? "" : "s"));
+        toast("Anchored " + sent + " sighting" + (sent === 1 ? "" : "s"));
       }
-      state.busy = false;
       render();
     }
 
@@ -892,33 +1472,30 @@
       if (!response.ok) {
         throw new Error("ledger returned " + response.status);
       }
-      entry.__ledger = row;
       return row;
     }
 
-    async function similar() {
-      var query = state.similarQuery.trim();
-      if (!query) {
-        state.similarError = "Type something to search for.";
-        render();
+    async function similar(hash) {
+      var record = journal.get(hash);
+      if (!record) {
         return;
       }
-      state.similar = null;
-      state.similarError = null;
-      render();
+      var query = entryTitle(record.entry);
       try {
         var url =
           trimUrl(settings.commonsUrl) +
-          "/observations/similar?limit=8&q=" +
+          "/observations/similar?limit=6&q=" +
           encodeURIComponent(query);
         var response = await root.fetch(url);
         var body = await response.json();
         if (!response.ok) {
           throw new Error(body.detail || "ledger returned " + response.status);
         }
-        state.similar = body.observations || [];
+        state.similar[hash] = { hits: body.observations || [] };
       } catch (err) {
-        state.similarError = String(err.message || err);
+        state.similar[hash] = {
+          error: "Commons search unavailable: " + String(err.message || err),
+        };
       }
       render();
     }
@@ -927,7 +1504,7 @@
 
     ensureKey()
       .catch(function (err) {
-        state.identifyingError =
+        state.error =
           "Could not create a device key: " +
           err.message +
           ". Sealing needs Web Crypto — serve this page over https or localhost, then reload.";
@@ -942,11 +1519,16 @@
     TAG: TAG,
     SCHEMA: SCHEMA,
     QUEUE_KEY: QUEUE_KEY,
+    JOURNAL_KEY: JOURNAL_KEY,
     KEY_KEY: KEY_KEY,
     anchorMessage: anchorMessage,
     applyTamper: applyTamper,
     drainVerified: drainVerified,
     entryTitle: entryTitle,
+    journalView: journalView,
+    parseArea: parseArea,
+    reviewedIdentification: reviewedIdentification,
+    settleSync: settleSync,
     ledgerStatus: ledgerStatus,
     mount: mount,
     relayBody: relayBody,

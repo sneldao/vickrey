@@ -110,9 +110,9 @@ Vickrey field loop is up.
   mock Hornet    ${HORNET}
 
 Open the field client URL above: it already points at the relay for anchoring
-and at the ledger for the commons. Seal a sighting (sample identification works
-with no model running), verify the chain, edit the last entry, verify again,
-then sync.
+and at the ledger for the commons. Ask for a suggestion (a labelled sample
+works with no model running), confirm or correct it to seal, edit the queued
+copy and watch sync refuse it, put the sealed copy back, then sync.
 
 With MONGODB_URI unset the "Similar sightings" panel reports that no
 observation store is configured; export it to exercise Atlas Vector Search.

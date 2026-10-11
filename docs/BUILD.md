@@ -68,6 +68,23 @@ location + model_id + species summary`, never the raw record, reaching
 6. **Write-up.** DEV post per `PITCH.md` (not yet published); partner stack per
    `SPONSORS.md` (targets, not realised integrations).
 
+## Field review and journal (October 11)
+
+- Inference now produces a **suggestion**; sealing requires the observer to
+  confirm or correct it (`reviewedIdentification` in `apps/field/app.js`). The
+  review decision and the model's original suggestion are in the signed
+  payload; the anchor summary carries only the decision word.
+- New `apps/field/journal.js`: durable per-device history, separate from the
+  outbox queue. Sync marks journal records anchored with the ledger row; a
+  refused sync marks the cracked record; the sealed copy can be restored to
+  the outbox (`queue.replace`). Fixes the old behaviour where a verified sync
+  drained the only local copy and the UI showed "0 sealed".
+- Regression tests: `apps/field/journal.test.mjs` and a `queue.replace` test.
+- Re-ran Gemma 3 4B (Ollama, CPU cloud VM) on the credited Wikimedia robin
+  photo: suggestion "Robin", self-reported 0.95, ~20 s; confirmed, sealed,
+  tamper refused, restored, `VERIFIED` on the mock Hornet. Still server-hosted,
+  not on-phone, not outdoors.
+
 ## Compliance
 
 - [x] Public repo under Apache-2.0 (`LICENSE`).

@@ -19,7 +19,8 @@
   --solid-bg: #e4e9f0;
   --unknown: #6d655b;
   --shadow: 0 1px 0 rgba(28, 25, 21, 0.06);
-  --sans: "Liberation Sans", "Nimbus Sans", "DejaVu Sans", "Segoe UI", sans-serif;
+  --sans:
+    "Liberation Sans", "Nimbus Sans", "DejaVu Sans", "Segoe UI", sans-serif;
   --serif: "Liberation Serif", "Nimbus Roman", Palatino, Georgia, serif;
   --mono: "Liberation Mono", "DejaVu Sans Mono", ui-monospace, monospace;
 
@@ -611,4 +612,514 @@ pre {
     max-width: 92vw;
     text-align: center;
   }
+}
+
+/* ------------------------------------------------- field review & journal */
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.ledger-badge {
+  align-self: center;
+  border: 1px dashed rgba(246, 241, 230, 0.55);
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.col-main,
+.col-side {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+
+.col-main {
+  position: sticky;
+  top: 12px;
+}
+
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+  font-size: 0.82rem;
+  color: var(--pencil);
+}
+
+.steps li[data-reached="yes"] {
+  color: var(--ink);
+}
+
+.steps li[aria-current="step"] {
+  font-weight: 700;
+  border-bottom: 2px solid var(--wax);
+}
+
+.step-n {
+  font-family: var(--serif);
+  font-style: italic;
+}
+
+.plate {
+  position: relative;
+  margin: 0;
+  background: var(--paper-2);
+  border: 1px solid var(--line);
+}
+
+.plate img {
+  display: block;
+  width: 100%;
+  max-height: 62vh;
+  object-fit: cover;
+}
+
+.plate figcaption {
+  padding: 5px 8px;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+
+.plate-empty {
+  display: grid;
+  place-items: center;
+  min-height: 300px;
+  background:
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 27px,
+      rgba(28, 25, 21, 0.06) 27px 28px
+    ),
+    var(--sheet);
+}
+
+.plate-hint {
+  max-width: 34ch;
+  padding: 24px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.script {
+  margin: 0 0 6px;
+  font-family: "Segoe Print", "Bradley Hand", "URW Chancery L", cursive;
+  font-size: 1.5rem;
+  color: var(--ink);
+}
+
+.plate-seal {
+  position: absolute;
+  right: 14px;
+  bottom: 30px;
+  width: 84px;
+}
+
+.act {
+  margin-top: 12px;
+}
+
+.primary {
+  background: var(--ink);
+  color: var(--sheet);
+  border-color: var(--ink);
+  font-weight: 700;
+  padding: 10px 16px;
+}
+
+.primary:hover {
+  background: #000;
+}
+
+button.primary.seal-btn {
+  background: var(--wax);
+  border-color: var(--wax);
+}
+
+button.primary.seal-btn:hover {
+  background: #841a1a;
+}
+
+.danger {
+  border-color: var(--wax);
+  color: var(--wax);
+}
+
+.file.primary {
+  color: var(--sheet);
+}
+
+.file.primary span {
+  color: var(--sheet);
+}
+
+.linklike {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--notary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.linklike:hover {
+  background: none;
+}
+
+.aside {
+  font-size: 0.78rem;
+  color: var(--pencil);
+}
+
+.working {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+}
+
+.working p {
+  margin: 0;
+}
+
+.quill {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--wax);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.25;
+  }
+}
+
+.specimen {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--notary);
+  background: #fff;
+  padding: 12px 14px;
+}
+
+.specimen-tag {
+  margin: 0;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--notary);
+}
+
+.specimen-name {
+  margin: 2px 0 6px;
+  font-family: var(--serif);
+  font-size: 2rem;
+  font-style: italic;
+}
+
+.specimen-meta {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  font-size: 0.88rem;
+}
+
+.specimen-meta div,
+.proof div {
+  display: grid;
+  grid-template-columns: 9.5em minmax(0, 1fr);
+  gap: 8px;
+}
+
+.specimen-meta dt,
+.proof dt {
+  color: var(--ink-soft);
+}
+
+.specimen-meta dd,
+.proof dd {
+  margin: 0;
+}
+
+.specimen-detail {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  color: var(--ink-soft);
+}
+
+.correct {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.correct label {
+  display: grid;
+  gap: 3px;
+  font-size: 0.85rem;
+}
+
+.correct input,
+.correct select {
+  font: inherit;
+  padding: 8px;
+  border: 1px solid var(--ink);
+  background: #fff;
+}
+
+.sealed-note p {
+  margin: 0;
+}
+
+.fine {
+  margin-top: 12px;
+  font-size: 0.88rem;
+}
+
+.fine summary {
+  cursor: pointer;
+  color: var(--ink-soft);
+}
+
+.sightings {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sighting {
+  border: 1px solid var(--line);
+  background: #fff;
+  padding: 10px 12px;
+}
+
+.sighting[data-state="cracked"] {
+  border-color: var(--wax);
+  background: var(--mismatch-bg);
+}
+
+.sighting-main {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 52px;
+  gap: 10px;
+  align-items: center;
+}
+
+.thumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+
+.thumb-none {
+  background: var(--paper-2);
+}
+
+.card .sighting-name {
+  margin: 0;
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+  font-family: var(--serif);
+  font-size: 1.15rem;
+  font-style: italic;
+  font-weight: 500;
+}
+
+.sighting-meta,
+.review-line {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+}
+
+.chip {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 1px 7px;
+  font-size: 0.75rem;
+  border: 1px solid currentColor;
+  color: var(--pencil);
+}
+
+.chip[data-state="anchored"] {
+  color: var(--moss);
+  background: var(--verified-bg);
+}
+
+.chip[data-state="anchored"][data-status="PAYLOAD_MISMATCH"],
+.chip[data-state="cracked"] {
+  color: var(--wax);
+  background: #fff;
+}
+
+.chip[data-state="anchored"][data-status="PENDING"] {
+  color: var(--pending);
+  background: var(--pending-bg);
+}
+
+.crack-note {
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  color: var(--mismatch);
+}
+
+.proof-wrap {
+  margin-top: 8px;
+  font-size: 0.82rem;
+}
+
+.proof-wrap summary {
+  cursor: pointer;
+  color: var(--notary);
+}
+
+.proof {
+  display: grid;
+  gap: 4px;
+  margin: 8px 0 0;
+}
+
+.wrap {
+  overflow-wrap: anywhere;
+}
+
+.commons {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+
+/* The wax seal: pressed when sealed, moss when anchored, cracked when edited. */
+.wax {
+  width: 52px;
+  height: 52px;
+}
+
+.plate-seal .wax {
+  width: 84px;
+  height: 84px;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.35));
+}
+
+.wax-disc {
+  fill: var(--wax);
+}
+
+.wax-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.45);
+  stroke-width: 1.2;
+}
+
+.wax text {
+  fill: #f4efe4;
+  font-family: var(--serif);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.wax-crack {
+  fill: none;
+  stroke: var(--bone);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0;
+}
+
+.wax[data-kind="verified"] .wax-disc {
+  fill: var(--moss);
+}
+
+.wax[data-kind="cracked"] .wax-crack {
+  opacity: 1;
+}
+
+.wax.press {
+  animation: press 520ms cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.wax.cracking .wax-crack {
+  stroke-dasharray: 80;
+  animation: crack 380ms ease-out both;
+}
+
+@keyframes press {
+  0% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes crack {
+  from {
+    stroke-dashoffset: 80;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wax.press,
+  .wax.cracking .wax-crack,
+  .quill {
+    animation: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .col-main {
+    position: static;
+  }
+
+  .plate img {
+    max-height: 48vh;
+  }
+
+  .specimen-meta div,
+  .proof div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .row > button,
+  .row > .file {
+    flex: 1 1 auto;
+  }
+}
+
+.file input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.file {
+  position: relative;
+}
+
+.file:focus-within {
+  outline: 2px solid var(--copper);
+  outline-offset: 2px;
 }

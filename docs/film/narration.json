@@ -1,0 +1,38 @@
+[
+  [
+    "01",
+    "You saw a robin this morning. You wrote it down. By tonight, that note could say anything — and nobody would know."
+  ],
+  [
+    "02",
+    "Vickrey is a field journal that seals what you saw: a signed record anyone can check later."
+  ],
+  [
+    "03",
+    "Take a photo. An open model — Gemma, running on a server for this demo — looks for about twenty seconds, and suggests: Robin."
+  ],
+  [
+    "04",
+    "But a model only suggests. You decide. Confirm it, or correct it — and your decision is sealed into the record."
+  ],
+  [
+    "05",
+    "The record is signed on the device and chained to the one before it."
+  ],
+  [
+    "06",
+    "Now, change it. Edit the copy waiting to sync, and the seal cracks. Sync refuses to send it. Your journal still holds what you sealed."
+  ],
+  [
+    "07",
+    "Put it back, and sync. The ledger — a mock in this demo — checks the seal. Verified. Only a hash, a coarse area and the species leave the device. Never the photo."
+  ],
+  [
+    "08",
+    "Nature data is a shared effort. GBIF reports more than three billion occurrence records, from around twenty-three hundred institutions. Records you can check are worth having."
+  ],
+  [
+    "09",
+    "Vickrey is open source, and early. Next: models on the phone, a public ledger, and a proper walk outside."
+  ]
+]

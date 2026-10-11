@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Caveat";
+        src: url("assets/caveat.ttf") format("truetype");
+      }
+      :root {
+        --bone: #f4efe3;
+        --ink: #1c1a17;
+        --wax: #a32020;
+        --notary: #1e2a4a;
+        --moss: #3f5c3a;
+        --pencil: #8a8578;
+        --serif: "Liberation Serif", "DejaVu Serif", serif;
+        --sans: "Liberation Sans", "DejaVu Sans", sans-serif;
+        --mono: "JetBrains Mono", "Liberation Mono", monospace;
+        --hand: "Caveat", cursive;
+      }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); }
+      #root { position: relative; width: 1920px; height: 1080px; overflow: hidden; background: var(--ink); font-family: var(--sans); color: var(--ink); }
+      .scene { position: absolute; inset: 0; overflow: hidden; }
+      .paper { background: radial-gradient(ellipse at 50% 40%, #f8f4ea 0%, var(--bone) 55%, #e6dfcf 100%); }
+      .paper::after { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 47px, rgba(28,26,23,0.045) 47px 48px); pointer-events: none; }
+      .darkstage { background: #24211c; }
+      /* scene A */
+      #a-photo { position: absolute; inset: -40px; width: calc(100% + 80px); height: calc(100% + 80px); object-fit: cover; transform-origin: 40% 45%; }
+      #a-shade { position: absolute; inset: 0; background: linear-gradient(90deg, rgba(20,18,15,0) 35%, rgba(20,18,15,0.55) 100%); }
+      .note { position: absolute; right: 120px; top: 250px; width: 600px; padding: 34px 40px 40px; background: var(--bone); box-shadow: 0 18px 50px rgba(0,0,0,0.45); transform: rotate(-2deg); }
+      .note::before { content: ""; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 51px, rgba(30,42,74,0.13) 51px 52px); }
+      .note p { position: relative; font-family: var(--hand); font-size: 58px; line-height: 52px; color: var(--notary); }
+      .note .when { font-size: 40px; color: var(--pencil); }
+      .strike { position: relative; display: inline-block; }
+      .strike i { position: absolute; left: -6px; right: -6px; top: 54%; height: 5px; background: var(--wax); transform-origin: 0 50%; transform: scaleX(0); }
+      #a-new { position: absolute; left: 4px; top: -52px; font-family: var(--hand); font-size: 62px; color: var(--wax); transform: rotate(-4deg); opacity: 0; }
+      .credit { position: absolute; left: 40px; top: 34px; font-family: var(--mono); font-size: 19px; color: rgba(244,239,227,0.88); background: rgba(20,18,15,0.55); padding: 7px 12px; letter-spacing: 0.02em; }
+      /* seal */
+      .wax { position: absolute; }
+      .wax .disc { fill: var(--wax); }
+      .wax .ring { fill: none; stroke: rgba(255,255,255,0.45); stroke-width: 1.2; }
+      .wax text { fill: var(--bone); font-family: var(--serif); font-weight: 700; font-size: 17px; }
+      /* scene B */
+      .center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+      .eyebrow { font-family: var(--mono); font-size: 24px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--pencil); }
+      h1.big { font-family: var(--serif); font-weight: 400; font-size: 150px; letter-spacing: -0.02em; line-height: 1; margin-top: 26px; }
+      .sub { font-family: var(--serif); font-style: italic; font-size: 54px; color: #3a352d; margin-top: 30px; }
+      /* product scenes */
+      .shotbox { position: absolute; left: 0; top: 0; width: 1440px; height: 900px; transform-origin: 0 0; box-shadow: 0 30px 80px rgba(0,0,0,0.5); }
+      .shotbox img { position: absolute; inset: 0; width: 1440px; height: 900px; }
+      .badge { position: absolute; right: 40px; top: 34px; font-family: var(--mono); font-size: 20px; color: var(--bone); background: rgba(20,18,15,0.82); border: 1px dashed rgba(244,239,227,0.6); padding: 9px 14px; letter-spacing: 0.04em; z-index: 40; }
+      .badge b { color: #e9c46a; font-weight: 600; }
+      .tag { position: absolute; font-family: var(--mono); font-size: 24px; padding: 10px 16px; background: var(--ink); color: var(--bone); z-index: 30; }
+      .hand { position: absolute; font-family: var(--hand); color: var(--bone); text-shadow: 0 3px 18px rgba(0,0,0,0.6); z-index: 30; }
+      .ringhl { position: absolute; border: 5px solid #e9c46a; border-radius: 10px; z-index: 30; box-shadow: 0 0 0 9999px rgba(20,18,15,0.35); }
+      .crackfx { position: absolute; inset: 0; z-index: 35; pointer-events: none; }
+      .crackfx path { fill: none; stroke: var(--bone); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 6px rgba(163,32,32,0.9)); }
+      .flash { position: absolute; inset: 0; background: var(--wax); opacity: 0; z-index: 34; mix-blend-mode: multiply; }
+      .panel { position: absolute; right: 70px; top: 170px; width: 640px; padding: 34px 38px; background: var(--bone); z-index: 30; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+      .panel h3 { font-family: var(--mono); font-size: 21px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--pencil); font-weight: 400; margin-bottom: 12px; }
+      .panel ul { list-style: none; margin-bottom: 26px; }
+      .panel li { font-family: var(--serif); font-size: 33px; line-height: 1.32; }
+      .panel .muted { font-family: var(--sans); font-size: 22px; color: #5a5348; line-height: 1.4; }
+      /* GBIF */
+      .stat { font-family: var(--serif); font-size: 170px; line-height: 1; color: var(--notary); }
+      .statlabel { font-family: var(--serif); font-size: 46px; font-style: italic; color: #3a352d; margin-top: 10px; }
+      .source { font-family: var(--mono); font-size: 22px; color: var(--pencil); margin-top: 46px; }
+      .caveat { font-family: var(--sans); font-size: 25px; color: #5a5348; margin-top: 14px; }
+      /* close */
+      .cols { display: flex; gap: 90px; margin-top: 50px; text-align: left; }
+      .cols h3 { font-family: var(--mono); font-size: 22px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 400; margin-bottom: 14px; }
+      .cols li { font-family: var(--serif); font-size: 34px; line-height: 1.45; list-style: none; }
+      .yes h3 { color: var(--moss); } .no h3 { color: var(--wax); }
+      .repo { font-family: var(--mono); font-size: 44px; margin-top: 54px; color: var(--ink); }
+      .credits { position: absolute; left: 0; right: 0; bottom: 34px; text-align: center; font-family: var(--mono); font-size: 17px; color: var(--pencil); z-index: 5; }
+      /* captions */
+      #captions { position: absolute; left: 0; right: 0; bottom: 64px; height: 90px; z-index: 60; display: flex; justify-content: center; }
+      .cap { position: absolute; bottom: 0; max-width: 1500px; padding: 14px 28px; background: rgba(20,18,15,0.84); color: #f4efe3; font-family: var(--sans); font-size: 40px; line-height: 1.25; text-align: center; opacity: 0; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="92" data-width="1920" data-height="1080">
+      <audio id="mix" src="assets/mix.m4a" data-start="0" data-duration="92" data-track-index="9" data-volume="1"></audio>
+
+      <!-- A: hook (illustrative photo) -->
+      <section id="sA" class="scene clip" data-start="0" data-duration="10.3" data-track-index="0">
+        <img id="a-photo" src="assets/robin.jpg" alt="" />
+        <div id="a-shade"></div>
+        <div class="note" id="a-note">
+          <p class="when">Sun 11 Oct · 07:12</p>
+          <p><span class="strike" id="a-word">Robin<i id="a-line"></i><span id="a-new">Magpie</span></span>, on the hawthorn.</p>
+          <p>Breast bright orange.</p>
+        </div>
+        <div class="credit">Illustrative photo, not a field test · “European robin on a branch” · Alexis LOURS · CC BY 2.0 · Wikimedia Commons</div>
+      </section>
+
+      <!-- B: value -->
+      <section id="sB" class="scene paper clip" data-start="10.3" data-duration="8.1" data-track-index="0">
+        <div class="center">
+          <svg class="wax" id="b-seal" viewBox="0 0 48 48" style="position: relative; width: 190px; height: 190px">
+            <circle class="disc" cx="24" cy="24" r="21" /><circle class="ring" cx="24" cy="24" r="16" /><text x="24" y="30.5" text-anchor="middle">V</text>
+          </svg>
+          <p class="eyebrow" id="b-eye">Vickrey Field · open source</p>
+          <h1 class="big" id="b-title">Seal what you saw.</h1>
+          <p class="sub" id="b-sub">A signed field record anyone can check later.</p>
+        </div>
+      </section>
+
+      <!-- C–G: real product captures -->
+      <section id="sP" class="scene darkstage clip" data-start="18.4" data-duration="50.4" data-track-index="0">
+        <div class="badge">Real app capture · Ledger: <b>mock Hornet demo</b></div>
+        <div class="shotbox" id="box">
+          <img id="i02" src="assets/desk-02-photo.png" alt="" />
+          <img id="i03" src="assets/desk-03-identifying.png" alt="" style="opacity: 0" />
+          <img id="i04" src="assets/desk-04-suggestion.png" alt="" style="opacity: 0" />
+          <img id="i05" src="assets/desk-05-sealed.png" alt="" style="opacity: 0" />
+          <img id="i06" src="assets/desk-06-cracked.png" alt="" style="opacity: 0" />
+          <img id="i07" src="assets/desk-07-refused.png" alt="" style="opacity: 0" />
+          <img id="i09" src="assets/desk-09-anchored.png" alt="" style="opacity: 0" />
+          <img id="i10" src="assets/desk-10-proof.png" alt="" style="opacity: 0" />
+          <div class="ringhl" id="hl" style="left: 196px; top: 851px; width: 158px; height: 52px; opacity: 0"></div>
+        </div>
+        <div class="tag" id="t-compress" style="left: 60px; top: 34px; opacity: 0; background: var(--notary)">Time compressed · real wait ≈ 20 s · Gemma 3 4B, server-hosted</div>
+        <div class="tag" id="t-conf" style="left: 60px; top: 100px; opacity: 0">Confidence is the model’s own score, not measured accuracy</div>
+        <p class="hand" id="h-suggest" style="left: 120px; top: 150px; font-size: 96px; opacity: 0">The model suggests.</p>
+        <p class="hand" id="h-decide" style="left: 160px; top: 260px; font-size: 120px; color: #e9c46a; opacity: 0">You decide.</p>
+        <svg class="wax" id="p-seal" viewBox="0 0 48 48" style="left: 760px; top: 300px; width: 400px; height: 400px; z-index: 31; opacity: 0">
+          <circle class="disc" cx="24" cy="24" r="21" /><circle class="ring" cx="24" cy="24" r="16" /><text x="24" y="30.5" text-anchor="middle">V</text>
+        </svg>
+        <p class="hand" id="h-signed" style="left: 560px; top: 730px; font-size: 64px; opacity: 0; color: var(--ink); background: var(--bone); padding: 4px 24px; text-shadow: none">signed on this device · chained to the last</p>
+        <div class="flash" id="flash"></div>
+        <svg class="crackfx" id="crack" viewBox="0 0 1920 1080" style="opacity: 0">
+          <path d="M1010 120 L960 330 L1040 420 L930 560 L990 700 L900 960" /><path d="M960 330 L820 300 L700 380" /><path d="M1040 420 L1210 470 L1330 430" /><path d="M930 560 L780 640" /><path d="M990 700 L1150 760 L1240 900" />
+        </svg>
+        <div class="tag" id="t-refused" style="left: 60px; top: 34px; opacity: 0; background: var(--wax)">Edited after sealing → sync refused</div>
+        <svg class="wax" id="v-seal" viewBox="0 0 48 48" style="left: 120px; top: 560px; width: 260px; height: 260px; z-index: 31; opacity: 0">
+          <circle cx="24" cy="24" r="21" fill="#3f5c3a" /><circle class="ring" cx="24" cy="24" r="16" /><text x="24" y="30.5" text-anchor="middle">V</text>
+        </svg>
+        <div class="panel" id="leaves" style="opacity: 0">
+          <h3>Sent to the ledger on sync</h3>
+          <ul><li>commitment hash · device signature</li><li>time · coarse area (≈1 km)</li><li>species summary + your decision</li></ul>
+          <h3>Never anchored</h3>
+          <ul><li>the photo · your notes · exact location</li></ul>
+          <p class="muted">A hosted model does receive the photo to make its suggestion.</p>
+        </div>
+      </section>
+
+      <!-- H: GBIF -->
+      <section id="sH" class="scene paper clip" data-start="68.8" data-duration="12.5" data-track-index="0">
+        <div class="center">
+          <p class="eyebrow" id="h-eye">The biodiversity data ecosystem</p>
+          <p class="stat" id="h-stat" style="margin-top: 30px">3 billion+</p>
+          <p class="statlabel" id="h-l1">occurrence records</p>
+          <p class="statlabel" id="h-l2" style="margin-top: 26px">from about <b style="font-style: normal; color: var(--notary)">2,300</b> institutions</p>
+          <p class="source" id="h-src">Source: GBIF, Guide to publishing survey data (2025) · docs.gbif.org</p>
+          <p class="caveat" id="h-cav">Context for scale only — not Vickrey users, and not a claim that these records lack provenance.</p>
+        </div>
+      </section>
+
+      <!-- I: close -->
+      <section id="sI" class="scene paper clip" data-start="81.3" data-duration="10.7" data-track-index="0">
+        <div class="center">
+          <h1 class="big" id="i-title" style="font-size: 104px">Open source. Early.</h1>
+          <div class="cols" id="i-cols">
+            <div class="yes"><h3>Runs today, in a local demo</h3><ul><li>model suggestion → your decision</li><li>signed and chained on the device</li><li>edits refused at sync</li><li>VERIFIED against a mock ledger</li></ul></div>
+            <div class="no"><h3>Not yet</h3><ul><li>a model running on the phone</li><li>a public ledger anchor</li><li>Darwin Core export</li><li>a real walk outside</li></ul></div>
+          </div>
+          <p class="repo" id="i-repo">github.com/sneldao/vickrey</p>
+        </div>
+        <p class="credits">Narration, music &amp; sound: ElevenLabs · Robin photo: Alexis LOURS, CC BY 2.0, via Wikimedia Commons · Model: Gemma 3 4B (open weights) · Apache-2.0</p>
+      </section>
+
+      <div id="captions"></div>
+    </div>
+    <script>
+      const tl = gsap.timeline({ paused: true });
+      const CAPS = [
+        [0.8, 3.7, "You saw a robin this morning."], [4.16, 4.83, "You wrote it down."], [5.05, 6.44, "By tonight, that note could say anything —"], [6.94, 8.7, "and nobody would know."],
+        [10.3, 12.99, "Vickrey is a field journal that seals what you saw:"], [13.62, 16.4, "a signed record anyone can check later."],
+        [18.4, 19.2, "Take a photo."], [19.7, 22.84, "An open model — Gemma, running on a server for this demo —"], [23.21, 25.52, "looks for about twenty seconds,"], [26.16, 27.4, "and suggests: Robin."],
+        [29.0, 30.58, "But a model only suggests."], [31.3, 31.99, "You decide."], [32.3, 33.59, "Confirm it, or correct it —"], [34.21, 36.5, "and your decision is sealed into the record."],
+        [38.4, 41.9, "The record is signed on the device and chained to the one before it."],
+        [44.2, 45.06, "Now, change it."], [45.47, 48.2, "Edit the copy waiting to sync, and the seal cracks."], [48.65, 50.16, "Sync refuses to send it."], [51.04, 53.1, "Your journal still holds what you sealed."],
+        [55.0, 56.52, "Put it back, and sync."], [57.29, 60.23, "The ledger — a mock in this demo — checks the seal."], [60.65, 61.31, "Verified."], [61.66, 65.27, "Only a hash, a coarse area and the species leave the device."], [65.6, 66.6, "Never the photo."],
+        [68.8, 70.65, "Nature data is a shared effort."], [71.25, 74.6, "GBIF reports more than three billion occurrence records,"], [74.91, 77.21, "from around twenty-three hundred institutions."], [77.88, 79.9, "Records you can check are worth having."],
+        [81.3, 83.28, "Vickrey is open source, and early."], [83.85, 87.9, "Next: models on the phone, a public ledger, and a proper walk outside."],
+      ];
+      const capRoot = document.getElementById("captions");
+      CAPS.forEach(([s, e, text], i) => {
+        const el = document.createElement("div");
+        el.className = "cap";
+        el.id = "cap" + i;
+        el.textContent = text;
+        capRoot.appendChild(el);
+        tl.fromTo(el, { opacity: 0 }, { opacity: 1, duration: 0.12 }, s);
+        tl.to(el, { opacity: 0, duration: 0.12 }, Math.max(s + 0.4, e + 0.15));
+      });
+
+      // A — hook
+      tl.fromTo("#a-photo", { scale: 1.02 }, { scale: 1.12, duration: 10.3, ease: "none" }, 0);
+      tl.from("#a-note", { y: 40, opacity: 0, duration: 0.9, ease: "power2.out" }, 1.2);
+      tl.to("#a-line", { scaleX: 1, duration: 0.35, ease: "power2.in" }, 5.2);
+      tl.fromTo("#a-new", { opacity: 0, y: 8 }, { opacity: 1, y: 0, duration: 0.5 }, 5.6);
+      tl.to("#sA", { opacity: 0.0, duration: 0.5 }, 9.8);
+
+      // B — value
+      tl.fromTo("#b-seal", { scale: 1.6, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.55, ease: "back.out(2.2)" }, 10.5);
+      tl.from("#b-eye", { opacity: 0, y: 12, duration: 0.5 }, 11.0);
+      tl.from("#b-title", { opacity: 0, y: 24, duration: 0.7, ease: "power3.out" }, 11.2);
+      tl.from("#b-sub", { opacity: 0, y: 16, duration: 0.7 }, 13.6);
+
+      // product framing helper: put region (x,y,w,h) of the 1440x900 capture at stage centre
+      const frame = (x, y, w, h, cy = 480) => {
+        const s = Math.min(1760 / w, 800 / h, 2.6);
+        return { x: 960 - s * (x + w / 2), y: cy - s * (y + h / 2), scale: s };
+      };
+      const show = (id, at, d = 0.5) => tl.to(id, { opacity: 1, duration: d }, at);
+      tl.set("#box", frame(0, 0, 1440, 900), 18.4);
+      tl.from("#box", { opacity: 0, duration: 0.6 }, 18.4);
+      tl.to("#box", { ...frame(185, 150, 620, 600), duration: 2.6, ease: "power2.inOut" }, 19.4);
+      show("#i03", 22.0);
+      tl.to("#box", { ...frame(185, 540, 620, 220), duration: 1.4, ease: "power2.inOut" }, 22.0);
+      tl.to("#t-compress", { opacity: 1, duration: 0.3 }, 22.3);
+      show("#i04", 25.3, 0.6);
+      tl.to("#box", { ...frame(185, 610, 600, 300), duration: 1.4, ease: "power2.inOut" }, 25.3);
+      tl.to("#t-compress", { opacity: 0, duration: 0.3 }, 26.0);
+      tl.to("#t-conf", { opacity: 1, duration: 0.3 }, 26.2);
+      tl.to("#t-conf", { y: -66, duration: 0.4 }, 26.4);
+
+      // D — decide
+      tl.to("#t-conf", { opacity: 0, duration: 0.3 }, 31.0);
+      tl.to("#box", { ...frame(150, 560, 700, 360, 560), duration: 1.6, ease: "power2.inOut" }, 28.6);
+      tl.fromTo("#h-suggest", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.5 }, 29.1);
+      tl.fromTo("#h-decide", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.5 }, 31.3);
+      tl.to("#hl", { opacity: 1, duration: 0.4 }, 32.3);
+      tl.to(["#h-suggest", "#h-decide", "#hl"], { opacity: 0, duration: 0.4 }, 36.9);
+
+      // E — sealed
+      show("#i05", 37.6, 0.4);
+      tl.to("#box", { ...frame(185, 150, 1070, 700), duration: 1.0, ease: "power2.inOut" }, 37.4);
+      tl.fromTo("#p-seal", { scale: 1.7, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.42, ease: "back.out(2.6)" }, 38.45);
+      tl.fromTo("#h-signed", { opacity: 0 }, { opacity: 1, duration: 0.5 }, 39.3);
+      tl.to(["#p-seal", "#h-signed"], { opacity: 0, duration: 0.5 }, 42.7);
+
+      // F — crack
+      show("#i06", 45.4, 0.5);
+      tl.to("#box", { ...frame(825, 540, 415, 270), duration: 1.4, ease: "power2.inOut" }, 45.2);
+      tl.set("#crack", { opacity: 1 }, 47.7);
+      tl.fromTo("#crack path", { strokeDasharray: 1200, strokeDashoffset: 1200 }, { strokeDashoffset: 0, duration: 0.28, ease: "power3.out" }, 47.7);
+      tl.fromTo("#flash", { opacity: 0 }, { opacity: 0.35, duration: 0.06 }, 47.7);
+      tl.to("#flash", { opacity: 0, duration: 0.5 }, 47.8);
+      tl.to("#crack", { opacity: 0, duration: 0.6 }, 49.0);
+      show("#i07", 48.6, 0.4);
+      tl.to("#box", { ...frame(825, 170, 415, 730), duration: 1.2, ease: "power2.inOut" }, 48.6);
+      tl.to("#t-refused", { opacity: 1, duration: 0.3 }, 48.8);
+      tl.to("#t-refused", { opacity: 0, duration: 0.3 }, 54.4);
+
+      // G — restore, verify, what leaves
+      show("#i09", 55.0, 0.6);
+      tl.to("#box", { ...frame(185, 130, 1070, 540), duration: 1.4, ease: "power2.inOut" }, 55.0);
+      tl.fromTo("#v-seal", { scale: 1.5, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.4, ease: "back.out(2)" }, 60.6);
+      tl.to("#v-seal", { opacity: 0, duration: 0.4 }, 62.0);
+      show("#i10", 61.6, 0.5);
+      tl.to("#box", { ...frame(825, 230, 415, 640, 520), x: "-=420", duration: 1.4, ease: "power2.inOut" }, 61.6);
+      tl.fromTo("#leaves", { opacity: 0, x: 30 }, { opacity: 1, x: 0, duration: 0.6 }, 62.0);
+      tl.to("#sP", { opacity: 0, duration: 0.5 }, 68.3);
+
+      // H — GBIF
+      tl.from("#h-eye", { opacity: 0, duration: 0.5 }, 69.0);
+      tl.from("#h-stat", { opacity: 0, y: 30, duration: 0.8, ease: "power3.out" }, 71.4);
+      tl.from("#h-l1", { opacity: 0, duration: 0.5 }, 72.4);
+      tl.from("#h-l2", { opacity: 0, duration: 0.5 }, 74.9);
+      tl.from(["#h-src", "#h-cav"], { opacity: 0, duration: 0.6 }, 75.6);
+
+      // I — close
+      tl.from("#i-title", { opacity: 0, y: 20, duration: 0.7 }, 81.4);
+      tl.from("#i-cols", { opacity: 0, y: 20, duration: 0.7 }, 83.8);
+      tl.from("#i-repo", { opacity: 0, duration: 0.6 }, 86.2);
+      tl.to("#root", { opacity: 1, duration: 0.01 }, 91.9);
+
+      window.__timelines["main"] = tl;
+      tl.seek(0);
+    </script>
+  </body>
+</html>

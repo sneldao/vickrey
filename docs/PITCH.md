@@ -30,7 +30,7 @@ Ranked by weight, highest first:
 - **My Agent Session:** Optional DevRelay embed or link if genuinely saved.
 - **Prize Categories:** List only partners demonstrably used in the submitted build, or remove this section. The one-prize-per-challenge rule makes ten speculative categories less valuable than one strong, evidenced entry.
 
-The [Week 1 FAQ](https://dev.to/challenges/hacktoberfest-week1-2026-10-05) says the project and repository must be started and completed in the challenge window. Existing open-source code may be borrowed when the change is significant, and non-trivial prior work must be credited. Do not claim that the repository date alone guarantees eligibility. The DEV post has not been verified as published.
+The [Week 1 FAQ](https://dev.to/challenges/hacktoberfest-week1-2026-10-05) says the project and repository must be started and completed in the challenge window. Existing open-source code may be borrowed when the change is significant, and non-trivial prior work must be credited. Do not claim that the repository date alone guarantees eligibility. The DEV post was submitted on October 11, 2026.
 
 ## Demo run of show (~3 min, verified local path)
 

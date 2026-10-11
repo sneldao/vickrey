@@ -65,7 +65,7 @@ location + model_id + species summary`, never the raw record, reaching
    unit-tested against a fake store; `MONGODB_URI` was unset in the live demo,
    so similar-sightings reported "no observation store configured". Darwin
    Core export: not implemented.
-6. **Write-up.** DEV post per `PITCH.md` (not yet published); partner stack per
+6. **Write-up.** DEV post per `PITCH.md` (submitted October 11, 2026); partner stack per
    `SPONSORS.md` (targets, not realised integrations).
 
 ## Field review and journal (October 11)
@@ -89,9 +89,9 @@ location + model_id + species summary`, never the raw record, reaching
 
 - [x] Public repo under Apache-2.0 (`LICENSE`).
 - [ ] Confirm the October 6 repository/project timeline and disclose Veles code reuse in the DEV entry; organizer determines eligibility.
-- [ ] Publish an accessible demo video or deployed demo and link the code repository in the entry.
+- [x] Publish an accessible demo video or deployed demo and link the code repository in the entry (YouTube film + GitHub Pages showcase live).
 - [x] Docs: strategy, pitch, sponsors, build log.
-- [ ] DEV post published with `#devchallenge` + `#hf26challenge`.
+- [x] DEV post published with `#devchallenge` + `#hf26challenge` (submitted October 11, 2026).
 - [ ] Take it outside and write up how it went.
 
 ## Non-goals

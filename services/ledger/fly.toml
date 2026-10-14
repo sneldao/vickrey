@@ -38,6 +38,16 @@ primary_region = "lhr"
   auto_stop_machines = "off"
   min_machines_running = 1
 
+  # Fly's rolling deploy leaves the old machine running alongside the new one,
+  # so a fresh deploy comes up with TWO machines -- each with its own in-memory
+  # block store and its own SQLite file. Requests then round-robin between two
+  # ledgers that cannot see each other, and the failure is silent: health stays
+  # green on both. After every deploy run:
+  #
+  #   fly scale count 1 --yes
+  #
+  # `scripts/deploy_fly.sh` does this for you and prints the machine count.
+
   [[http_service.checks]]
     grace_period = "10s"
     interval = "15s"
@@ -48,9 +58,18 @@ primary_region = "lhr"
 # Keeps the application copy (SQLite) across restarts and redeploys. Without it
 # the ledger starts empty after every deploy, and the ledger-side tamper demo
 # has nothing to tamper with.
-[[mounts]]
-  source = "vickrey_data"
-  destination = "/data"
+#
+# COMMENTED OUT BY DEFAULT: creating a volume needs a payment method on the Fly
+# account, which is the most likely thing to block a first deploy. Without it the
+# ledger still works end to end -- SQLite lives on the container filesystem, so
+# it survives restarts and just resets on each `fly deploy`. That is acceptable
+# for a single evening. Uncomment after creating the volume:
+#
+#   fly volumes create vickrey_data --size 1 --region lhr
+#
+# [[mounts]]
+#   source = "vickrey_data"
+#   destination = "/data"
 
 [[vm]]
   size = "shared-cpu-1x"

@@ -38,12 +38,18 @@ device's history and the outbox only holds what is still unsent. Run it with
 The opening vision describes the _planned_ production architecture. Not yet
 verified or built:
 
-- **Anything deployed.** Fly, MongoDB Atlas and Tavily are all wired but have
-  never been reached from a real host: the Atlas session had expired and
-  `flyctl` was not installed on the build machine. The Docker image build is
-  likewise unproven — no Docker on that machine. The Atlas write path has only
-  ever run against a fake store, and the Tavily client only against a local
-  fake. Treat all three as untested integrations.
+- **The ledger is deployed** at <https://vickrey-ledger.fly.dev> (one machine,
+  `lhr`, `HORNET_EMBEDDED=1`). The full loop — seal, tamper, refused sync,
+  restore, `VERIFIED` — was verified against it over the public internet, as was
+  the ledger-side `PAYLOAD_MISMATCH`. Two caveats that are not obvious: the SQLite
+  copy resets on every `fly deploy` (no volume — creating one needs a payment
+  method), and **the app must be scaled to exactly one machine after every
+  deploy**, because Fly's rolling deploy otherwise leaves two machines each
+  holding their own block store. See the Fly section below.
+- **Atlas and Tavily are not deployed.** Both are wired but have never been
+  reached from a real service: the Atlas write path has only run against a fake
+  store, and the Tavily client only against `scripts/fake_tavily.py`. Treat both
+  as untested integrations.
 - A real **on-device/offline** model run is still unverified. A real
   server-hosted Gemma 3 4B vision inference through the field client did run
   over a private SSH tunnel: on a credited Wikimedia Commons European robin
@@ -218,10 +224,21 @@ invocations, which share no memory; one always-on process can.
 
 ```bash
 cd services/ledger
-fly volumes create vickrey_data --size 1 --region lhr   # SQLite copy survives redeploys
 fly secrets set MONGODB_URI="mongodb+srv://..."
-fly deploy
+fly deploy && fly scale count 1 --yes
 ```
+
+Or just `scripts/deploy_fly.sh`, which creates the app if needed, sets secrets
+when the environment variables are exported, deploys, and scales to one machine.
+
+**Scale to one after every deploy.** Fly's rolling deploy leaves the old
+machine running alongside the new one, so the app comes up with **two** of them.
+With `HORNET_EMBEDDED=1` each machine holds its own in-memory block store and
+its own SQLite file, so requests round-robin between two ledgers that cannot see
+each other: a block registered on one is invisible on the other, records strand
+at `PENDING`, and `/messages/{id}/tamper` randomly 404s. The failure is silent —
+health stays green on both machines. `scripts/deploy_fly.sh` handles it and
+prints the count.
 
 Then point the field client at it — `?ledger=https://vickrey-ledger.fly.dev&commons=…`
 — or change the defaults in `apps/field/config.js`. `services/ledger/fly.toml`

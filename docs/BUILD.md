@@ -158,13 +158,24 @@ context on. 91 JS tests and 111 ledger tests pass.
 
 ### Still not verified
 
-- **Nothing is deployed.** `fly`, Atlas and Tavily have all been wired but never
-  reached from a real host; the Atlas session had expired and `flyctl` was not
-  installed on the build machine.
-- **The Docker image build is unproven** — no Docker on that machine. The
-  packaging was checked by copying only `app/` to a clean directory and booting
-  it standalone, which does not exercise `fly deploy`.
-- **The Atlas write path has never touched a real cluster**, only a fake store.
+- **The ledger is now deployed** — <https://vickrey-ledger.fly.dev>, one
+  machine in `lhr`, `HORNET_EMBEDDED=1`. Verified over the public internet:
+  the full field loop (seal → tamper → refused sync → restore → `VERIFIED`)
+  driven in a real browser, and the ledger-side `PAYLOAD_MISMATCH` via curl.
+- **A silent two-machine bug, found in deployment and worth recording.** Fly's
+  rolling deploy leaves the old machine running alongside the new one, so the app
+  came up with **two**. Each holds its own in-memory block store and its own
+  SQLite file, so requests round-robin between two ledgers that cannot see each
+  other: `/messages/{id}/tamper` returned 404 for a record that `/ingest` had
+  just written seconds earlier, while `/health` stayed green on both machines.
+  `fly scale count 1 --yes` fixes it. This is exactly the single-instance
+  constraint the embedded mode implies — it just fails invisibly, and only under
+  a real load balancer. `scripts/deploy_fly.sh` now scales to one and prints the
+  count.
+- **No volume**, so the SQLite copy resets on every `fly deploy` — creating one
+  needs a payment method, which was not worth blocking the evening on.
+- **Atlas and Tavily are still undeployed.** The Atlas write path has only run
+  against a fake store; Tavily only against `scripts/fake_tavily.py`.
 - **On-device inference remains unverified.** Still no offline phone run.
 
 ## Compliance

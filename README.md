@@ -350,13 +350,24 @@ services/ledger/.venv/bin/pip install -r services/ledger/requirements-dev.txt
 node --test apps/field/*.test.mjs apps/explorer/app.test.mjs
 ```
 
-91 JS tests and 111 ledger tests cover the seal, the chain, the tamper path, the
+91 JS tests and 119 ledger tests cover the seal, the chain, the tamper path, the
 sample walk and the embedded block store. The walk tests seal through the real
 logbook rather than a stand-in, and assert that a seeded chain verifies, that
 tampering cracks it, and that the anchor carries a commitment, a coarse area
 and the device key — never the record itself. The embedded tests assert the
 property that matters most for hosting: a tampered application copy is still
 caught when the block store is in-process.
+
+## The showcase site
+
+`apps/site` is the GitHub Pages page, published on every push to `main` by
+`.github/workflows/pages.yml`, which assembles `apps/site` at the root and
+`apps/field` at `/field/`.
+
+Its "What is actually running" section fetches `/health` and
+`/observations/recent` when the page loads and renders the real state, so the
+page cannot claim something that has stopped being true. If the ledger is
+unreachable it says so.
 
 ## Docs
 

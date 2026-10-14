@@ -37,7 +37,10 @@ PAYLOAD_MISMATCH / NOT_SOLID`, ingest fan-out, tamper + restore (demo-only).
 **Verified end-to-end locally** (`bash scripts/demo_field.sh`): sample
 identification → Ed25519 seal → hash chain verifies → anchor relay → mock
 Hornet → ledger `VERIFIED`; a tampered queue entry cracks the seal and sync
-refuses to send it. The public [GitHub Pages showcase](https://sneldao.github.io/vickrey/) embeds the YouTube film but hosts no inference or ledger service; the field client remains a locally run prototype. Everything below is the build plan against the _planned_
+refuses to send it. The public [GitHub Pages showcase](https://sneldao.github.io/vickrey/) embeds the YouTube film, and the field client itself is now
+[published and live at `/field/`](https://sneldao.github.io/vickrey/field/) — see
+the Buildathon section below for what changed after this line was written.
+Everything below is the build plan against the _planned_
 production architecture, with status per item.
 
 ## Build plan → status
@@ -154,7 +157,7 @@ Full loop in a browser against `scripts/demo_single.sh` — the exact shape Fly
 runs: sample walk → 3 waiting → tamper → sync **refused** ("nothing unsent left
 the device") → restore → sync → 3 × `Anchored · VERIFIED`, with `/health`
 reporting `anchoring: embedded` and `blocks_registered: 3`. Same again with web
-context on. 91 JS tests and 111 ledger tests pass.
+context on. 91 JS tests and 119 ledger tests pass.
 
 ### Still not verified
 
@@ -195,8 +198,30 @@ context on. 91 JS tests and 111 ledger tests pass.
 
 Vickrey was **not** the project demoed at the Buildathon — a different project
 was chosen, because this one was not ready to present. Everything after that is
-consequence work on Vickrey itself: the live Atlas commons, the honest
-self-description, and the tests that keep both true.
+consequence work on Vickrey itself.
+
+### What changed once there was no clock
+
+- **The ledger stopped overstating itself.** `/` had described the service as
+  _"independently read the Hornet block"_, which is false in embedded mode
+  because the ledger writes the block first. It now publishes an explicit
+  `guarantee.independent_source`, and `tests/test_honesty.py` fails the build if
+  that ever drifts.
+- **Atlas went live**, after three failures that all presented as the same
+  `tlsv1 alert internal error`: an empty network access list, a missing CA
+  bundle, and a `dbusers update` invocation that silently changed nothing.
+- **The field client went public.** It had only ever existed on a laptop.
+  Vercel was tried first and deployed fine, but the account has Deployment
+  Protection on, so it redirects to a login — unusable as a link. GitHub Pages
+  needed no auth wall, so `pages.yml` now assembles `apps/site` at the root and
+  `apps/field` at `/field/`.
+- **The showcase now proves itself.** The nav leads to the live client, and the
+  "What is actually running" section fetches `/health` and
+  `/observations/recent` at page load, so the badges report the real state
+  rather than the state at deploy time. When the ledger went down mid-write, the
+  first draft of that badge reported the embedded block-store count as if it
+  were the commons size — the same class of error the ledger had just been fixed
+  for.
 
 - **On-device inference remains unverified.** Still no offline phone run.
 

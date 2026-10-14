@@ -11,8 +11,9 @@ locally against a mock Hornet, in both the three-process and single-process
 shapes (see the README status block); everything else in this document is the
 plan. Real server-hosted Gemma 3 4B inference through the field client was also
 verified on a credited robin image; no offline phone run. Atlas, Fly and Tavily
-are **wired but undeployed** — see the Buildathon section of
-[`BUILD.md`](BUILD.md).
+are **wired and deployed** — the ledger on Fly.io, the commons on Atlas M0,
+web context on Tavily, and the field client on GitHub Pages. See the Buildathon
+section of [`BUILD.md`](BUILD.md). On-device inference remains unbuilt.
 
 ## The re-frame: outcome first, domain second
 

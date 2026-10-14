@@ -34,7 +34,7 @@ The remaining partners are unintegrated targets.
 | 9   | **GitHub Copilot** | Best Use of GitHub Copilot | $100  | Build the project; automate with Actions                           |
 | 10  | **Entire**         | Best Use of Entire         | $100  | Share the agent sessions behind the build in the post              |
 
-**Verified partner use:** Gemma 3 4B vision performed real server-hosted inference through the field client on a credited robin photo, and the resulting signed observation reached `VERIFIED` on mock Hornet. This supports consideration for Best Use of Gemma ($200); it does not prove on-device/offline use. Atlas remains fake-store-tested, Temporal a scaffold, Render undeployed; no other partner qualification is verified.
+**Verified partner use, as of the October 11 Week 1 submission:** Gemma 3 4B vision performed real server-hosted inference through the field client on a credited robin photo, and the resulting signed observation reached `VERIFIED` on mock Hornet. This supports consideration for Best Use of Gemma ($200); it does not prove on-device/offline use. At that date Atlas was fake-store-tested, Temporal a scaffold, and nothing was deployed. **Atlas has since gone live and Tavily was added** — see _Buildathon partners_ below, which is a different event and does not affect the Week 1 entry.
 
 ## Distinct roles (avoid "three orchestrators")
 
@@ -88,11 +88,11 @@ The HYPE Buildathon (London, 14 October 2026) has its own partners and judges:
 affect the submitted entry, which was filed on October 11. Where a partner
 overlaps, the work is shared:
 
-| Buildathon partner | What was built                                                                                              | Verified?                                                                                       |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| **MongoDB Atlas**  | Commons panel (`/observations/recent`, per-record vector similarity), `atlas.py`, `scripts/seed_commons.py` | **Yes.** Live M0 cluster, `EU_WEST_1`; 12 documents, 9/9 sample signatures re-verified in place |
-| **Vercel**         | Field client and explorer are already static and deploy as-is                                               | **No.** Not deployed; the ledger host decision went to Fly instead                              |
-| **Tavily**         | `app/context.py` — server-side web context beside an anchored record                                        | **Yes.** Live key on Fly; real results returned, 1 credit per lookup                            |
+| Buildathon partner | What was built                                                                                              | Verified?                                                                                                                                                                 |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **MongoDB Atlas**  | Commons panel (`/observations/recent`, per-record vector similarity), `atlas.py`, `scripts/seed_commons.py` | **Yes.** Live M0 cluster, `EU_WEST_1`; 12 documents, 9/9 sample signatures re-verified in place                                                                           |
+| **Vercel**         | Field client and explorer are already static and deploy as-is                                               | Deployed, but **not usable as a link**: the account has Deployment Protection on, so every request redirects to a Vercel login. The client ships via GitHub Pages instead |
+| **Tavily**         | `app/context.py` — server-side web context beside an anchored record                                        | **Yes.** Live key on Fly; real results returned, 1 credit per lookup                                                                                                      |
 
 The same discipline as above applies: a configured endpoint, a local fake or a
 scaffold is not a demonstrated integration. None of these three may be claimed

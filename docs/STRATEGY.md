@@ -7,10 +7,12 @@ at its core that gets people off the screen and into the world. Vickrey is an
 offline, open-weight field identifier with a tamper-evident ecological logbook.
 
 **Status:** the seal → verify → anchor → crack loop is verified end-to-end
-locally against a mock Hornet (see the README status block); everything else
-in this document is the plan. Real server-hosted Gemma 3 4B inference through
-the field client was also verified on a credited robin image; no offline phone
-run.
+locally against a mock Hornet, in both the three-process and single-process
+shapes (see the README status block); everything else in this document is the
+plan. Real server-hosted Gemma 3 4B inference through the field client was also
+verified on a credited robin image; no offline phone run. Atlas, Fly and Tavily
+are **wired but undeployed** — see the Buildathon section of
+[`BUILD.md`](BUILD.md).
 
 ## The re-frame: outcome first, domain second
 
@@ -73,6 +75,35 @@ Three layers, one job each:
 | Identify | On device       | Open-weight model names the observation offline                 |
 | Prove    | On device       | Signature + hash chain make edits detectable                    |
 | Share    | Server + ledger | Anchor the commitment; (planned) export Darwin Core to research |
+
+### A fourth, deliberately outside the record
+
+Web context (Tavily) answers a question the loop otherwise leaves open: is this
+species expected here, and when did others last report it? It is shown **beside**
+an anchored record, never inside it.
+
+This is a boundary, not an oversight. The seal is the observer's own
+observation; a third party's answer, fetched later, cannot be part of a
+commitment someone is expected to reproduce. Feeding search results into the
+review step would be worse — it would let unverified content shape a decision
+about to be cryptographically sealed. So a Tavily outage, a quota error or a
+missing key degrades to a line of text and can never move a status off
+`VERIFIED`.
+
+### Hosting shapes
+
+| Mode                           | Processes | Two-source check           | When                            |
+| ------------------------------ | --------- | -------------------------- | ------------------------------- |
+| `scripts/demo_field.sh`        | 3         | separate processes         | the faithful local demo         |
+| `scripts/demo_single.sh` (Fly) | 1         | separate stores, same proc | one container, simplest to host |
+| real `HORNET_URL`              | ≥ 2       | fully independent          | production                      |
+
+In embedded mode the ledger writes the block before reading it back, so it no
+longer only ever GETs. The two-source property survives at the **data** layer —
+the application copy is in SQLite, the block in a separate structure, so editing
+the copy alone still yields `PAYLOAD_MISMATCH` — but the guarantee that a
+different _process_ holds the block is lost. The block store is also in memory,
+so the app must run exactly one instance with auto-stop off.
 
 ## The anchoring rule
 

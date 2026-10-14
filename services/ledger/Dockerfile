@@ -7,6 +7,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 
+# The SQLite application copy lives here; Fly mounts a volume over it.
+RUN mkdir -p /data
+
 ENV DATABASE_PATH=/data/ledger.db \
     PYTHONUNBUFFERED=1
 

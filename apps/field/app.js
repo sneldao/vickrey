@@ -41,6 +41,7 @@
     "model",
     "ledgerLabel",
     "area",
+    "place",
   ];
 
   /* Query-string names, short for a demo URL, mapped to config keys. Both
@@ -55,6 +56,7 @@
     model: "model",
     ledgerLabel: "ledgerLabel",
     area: "area",
+    place: "place",
   };
 
   /* Merge the file's config with URL overrides, so a demo can point one page at
@@ -131,10 +133,13 @@
     return "unidentified observation";
   }
 
-  /* The anchor: commitment only. No image, no notes, no precise location. */
-  function anchorMessage(entry, flowId) {
+  /* The anchor: commitment only. No image, no notes, no precise location.
+   * The device's public key travels with it so the commons can check the
+   * signature it was handed -- without it an anchor is an unfalsifiable
+   * promise. */
+  function anchorMessage(entry, flowId, publicKey) {
     var summary = summaryOf(entry);
-    return {
+    var anchor = {
       flow_id: flowId || null,
       schema: SCHEMA,
       observed_at: entry.observed_at,
@@ -156,6 +161,10 @@
             confidence: summary.confidence,
           },
     };
+    if (publicKey) {
+      anchor.public_key = publicKey;
+    }
+    return anchor;
   }
 
   function reviewDecision(entry) {
@@ -165,8 +174,8 @@
       : null;
   }
 
-  function relayBody(entry, flowId) {
-    var anchor = anchorMessage(entry, flowId);
+  function relayBody(entry, flowId, publicKey) {
+    var anchor = anchorMessage(entry, flowId, publicKey);
     return {
       blockId: entry.hash,
       tag: TAG,
@@ -499,6 +508,7 @@
         model: resolved.model || "gemma3",
         ledgerLabel: resolved.ledgerLabel || "mock Hornet demo",
         area: parseArea(resolved.area),
+        place: resolved.place || "",
       };
     })();
     var flow =
@@ -520,6 +530,15 @@
       justCracked: null,
       open: {},
       similar: {},
+      /* The commons panel only appears once a store is actually reachable, so
+       * the page never shows an empty search box on a local demo. */
+      commonsReady: false,
+      commons: null,
+      commonsError: null,
+      commonsLoading: false,
+      contextReady: false,
+      context: {},
+      seeding: false,
       publicKey: null,
       privateKey: null,
       publicKeyText: "",
@@ -1050,6 +1069,78 @@
       );
     }
 
+    /* Web context for an anchored sighting. This is public knowledge about the
+     * species, fetched after the fact -- it is shown beside the record and is
+     * never written into it. The seal is the observer's own observation; a
+     * third party's answer cannot be part of a commitment they would have to
+     * reproduce. */
+    function contextBlock(row) {
+      if (row.state !== "anchored") {
+        return "";
+      }
+      if (!state.contextReady) {
+        return "";
+      }
+      var entry = row.entry;
+      var summary = summaryOf(entry);
+      var result = state.context[row.hash];
+      var body = "";
+      if (result && result.loading) {
+        body = '<p class="hint">Looking…</p>';
+      } else if (result && result.error) {
+        body = '<p class="hint">' + escapeHtml(result.error) + "</p>";
+      } else if (result && result.body) {
+        var found = result.body;
+        body =
+          (found.answer
+            ? '<p class="context-answer">' + escapeHtml(found.answer) + "</p>"
+            : "") +
+          (found.results && found.results.length
+            ? '<ul class="context-list">' +
+              found.results
+                .slice(0, 4)
+                .map(function (hit) {
+                  return (
+                    '<li><a href="' +
+                    escapeHtml(hit.url) +
+                    '" target="_blank" rel="noopener noreferrer">' +
+                    escapeHtml(hit.title || hit.url) +
+                    "</a>" +
+                    (hit.content
+                      ? '<span class="context-snippet">' +
+                        escapeHtml(hit.content.slice(0, 180)) +
+                        "</span>"
+                      : "") +
+                    "</li>"
+                  );
+                })
+                .join("") +
+              "</ul>"
+            : '<p class="hint">Nothing recent came back for this species.</p>') +
+          '<p class="mono context-meta">' +
+          escapeHtml(
+            "tavily · " +
+              (found.credits === null || found.credits === undefined
+                ? "credit use unstated"
+                : found.credits +
+                  (found.credits === 1 ? " credit" : " credits")) +
+              " · fetched after sealing, outside the commitment",
+          ) +
+          "</p>";
+      }
+      return (
+        '<div class="context">' +
+        '<div class="context-head">' +
+        '<button type="button" class="linklike" data-act="context" data-hash="' +
+        row.hash +
+        '">Recent reports of this species</button>' +
+        '<span class="aside">public web context · not sealed, not anchored</span>' +
+        "</div>" +
+        body +
+        "</div>"
+      );
+    }
+
     function journalRow(row) {
       var entry = row.entry;
       var summary = summaryOf(entry);
@@ -1107,7 +1198,116 @@
         proofList(row) +
         (row.state === "anchored" ? similarBlock(row) : "") +
         "</details>" +
+        contextBlock(row) +
         "</li>"
+      );
+    }
+
+    /* A seeded observer is fiction kept for the demo: it is tagged, it is
+     * visibly marked, and it is never presented as a real person's record. */
+    function sampleMark(hit) {
+      var flow = hit.flow_id || "";
+      return /^sample-observer-/.test(flow);
+    }
+
+    function commonsPanel() {
+      if (!state.commonsReady) {
+        return "";
+      }
+      var body;
+      if (state.commonsLoading) {
+        body = '<p class="hint">Searching the commons…</p>';
+      } else if (state.commonsError) {
+        body = '<p class="hint">' + escapeHtml(state.commonsError) + "</p>";
+      } else if (state.commons && state.commons.length) {
+        body =
+          '<ul class="commons-list">' +
+          state.commons
+            .map(function (hit) {
+              return (
+                "<li>" +
+                "<b>" +
+                escapeHtml(hit.species || hit.label || "unlabelled") +
+                "</b>" +
+                (sampleMark(hit)
+                  ? ' <span class="tag tag-sample">sample observer</span>'
+                  : "") +
+                '<span class="commons-meta mono">' +
+                escapeHtml(
+                  (hit.observed_at || "").replace("T", " ").slice(0, 16),
+                ) +
+                (hit.location
+                  ? " · " +
+                    escapeHtml(hit.location.lat + ", " + hit.location.lon)
+                  : "") +
+                "</span>" +
+                '<span class="mono wrap commons-hash">' +
+                escapeHtml(shortHash(hit.commitment, 8)) +
+                "</span></li>"
+              );
+            })
+            .join("") +
+          "</ul>";
+      } else {
+        body =
+          '<p class="hint">Nothing anchored in the commons yet. Seal a sighting and sync it.</p>';
+      }
+      return (
+        '<section class="card commons-panel" aria-labelledby="commons-h">' +
+        '<div class="card-head"><h2 id="commons-h">Commons</h2>' +
+        '<span class="mono count">' +
+        (state.commons ? state.commons.length : "—") +
+        " anchored</span></div>" +
+        '<p class="hint">Anchors committed by other observers — a hash, a coarse area and a species summary. Never a photo or an exact location.</p>' +
+        '<div class="row">' +
+        '<button type="button" class="primary" data-act="commons"' +
+        (state.commonsLoading ? " disabled" : "") +
+        ">" +
+        (state.commonsLoading ? "Loading…" : "Show recent anchors") +
+        "</button>" +
+        "</div>" +
+        body +
+        "</section>"
+      );
+    }
+
+    /* The empty state is the first thing a judge sees, so it carries the
+     * sample walk rather than sitting there as an empty list. */
+    function seedCta() {
+      var steps = root.VickreySampleWalk;
+      if (!steps) {
+        return "";
+      }
+      var lines = steps
+        .preview()
+        .map(function (item) {
+          return (
+            "<li><b>" +
+            escapeHtml(item.plateName) +
+            "</b> — " +
+            escapeHtml(item.line) +
+            "</li>"
+          );
+        })
+        .join("");
+      return (
+        '<div class="seed">' +
+        '<p class="hint">Nothing sealed on this device yet. Load a sample walk to see the journal, the outbox and the seal-crack demo with something real to work on.</p>' +
+        '<ol class="seed-steps">' +
+        lines +
+        "</ol>" +
+        '<div class="row">' +
+        '<button type="button" class="primary" data-act="seed"' +
+        (state.seeding ? " disabled" : "") +
+        ">" +
+        (state.seeding ? "Sealing the walk…" : "Load the sample walk") +
+        "</button>" +
+        "</div>" +
+        '<p class="hint seed-note">' +
+        escapeHtml(steps.WALK_PLACE) +
+        ". Sealed with this device’s key, so every hash and signature is genuine. " +
+        "The plates are illustrations, not photographs.</p>" +
+        "</div>"
       );
     }
 
@@ -1116,12 +1316,19 @@
       return (
         '<section class="card journal" aria-labelledby="journal-h">' +
         '<div class="card-head"><h2 id="journal-h">Field journal</h2>' +
-        '<span class="mono count" id="journal-count">' +
-        rows.length +
-        " sealed</span></div>" +
         (rows.length
-          ? '<ol class="sightings">' + rows.map(journalRow).join("") + "</ol>"
-          : '<p class="empty">Your sealed sightings will be listed here, and stay here after they sync.</p>') +
+          ? '<button type="button" class="linklike" data-act="clear">Clear this device</button>'
+          : '<span class="mono count" id="journal-count">0 sealed</span>') +
+        "</div>" +
+        (rows.length
+          ? '<span class="mono count">' +
+            rows.length +
+            " sealed</span>" +
+            '<ol class="sightings">' +
+            rows.map(journalRow).join("") +
+            "</ol>"
+          : '<p class="empty">Your sealed sightings will be listed here, and stay here after they sync.</p>' +
+            seedCta()) +
         '<p class="mono device">device key ' +
         escapeHtml(shortHash(state.publicKeyText, 12)) +
         "</p>" +
@@ -1138,6 +1345,7 @@
         "</div>" +
         '<div class="col-side">' +
         outboxPanel() +
+        commonsPanel() +
         journalPanel() +
         "</div>" +
         "</div>";
@@ -1276,6 +1484,16 @@
             },
             similar: function () {
               similar(hash);
+            },
+            seed: function () {
+              seedWalk();
+            },
+            context: function () {
+              loadContext(hash);
+            },
+            clear: clearDevice,
+            commons: function () {
+              loadCommons();
             },
           };
           if (actions[act]) {
@@ -1457,7 +1675,7 @@
     }
 
     async function postAnchor(entry) {
-      var body = relayBody(entry, flow);
+      var body = relayBody(entry, flow, state.publicKeyText);
       var response = await root.fetch(trimUrl(settings.ledgerUrl) + "/ingest", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1500,6 +1718,179 @@
       render();
     }
 
+    /* ---------------------------------------------------------------- seed */
+
+    /* Seal the sample walk through the ordinary path: same logbook, same
+     * reviewedIdentification, same Ed25519 signature, same outbox. Nothing is
+     * faked, so the seal-crack demo behaves exactly as it would on a real
+     * walk. */
+    async function seedWalk() {
+      var walk = root.VickreySampleWalk;
+      var plates = root.VickreySpecimens;
+      if (!walk || !plates) {
+        state.error = "The sample walk modules failed to load.";
+        render();
+        return;
+      }
+      if (!state.privateKey) {
+        state.error =
+          "The device key is not ready yet — sealing needs it. Wait a moment, then try again.";
+        render();
+        return;
+      }
+      state.seeding = true;
+      state.error = null;
+      state.step = "photo";
+      render();
+      var steps;
+      try {
+        steps = walk.sampleWalk({});
+        for (var i = 0; i < steps.length; i++) {
+          var step = steps[i];
+          var reviewed = reviewedIdentification(step.suggestion, step.decision);
+          var entry = await logbook.seal(reviewed, {
+            privateKey: state.privateKey,
+            model: step.modelId,
+            observedAt: step.observedAt,
+            location: root.VickreyTrust.coarseLocation(step.location, 2),
+          });
+          journal.record(entry, {
+            thumb: plates.plate(step.plate),
+            recordedAt: step.observedAt,
+          });
+          state.justSealed = entry.hash;
+          render();
+        }
+        state.verdict = null;
+        toast("Sealed a walk of " + steps.length + " sightings");
+      } catch (err) {
+        state.error = err.message;
+      }
+      state.seeding = false;
+      render();
+    }
+
+    /* Wipe this device's walk and start an empty one. The device key is kept:
+     * it is the same device, and only the walk is being cleared. */
+    function clearDevice() {
+      try {
+        root.localStorage.removeItem(QUEUE_KEY);
+        root.localStorage.removeItem(JOURNAL_KEY);
+        root.localStorage.removeItem(FLOW_KEY);
+      } catch (err) {
+        /* storage unavailable: the reload below still gives a clean page */
+      }
+      root.location.reload();
+    }
+
+    /* -------------------------------------------------------------- commons */
+
+    /* Ask the commons whether it has a searchable store. If it does not, the
+     * panel stays hidden rather than showing an empty search on a laptop with
+     * no Atlas behind it. */
+    async function probeCommons() {
+      try {
+        var response = await root.fetch(trimUrl(settings.commonsUrl) + "/", {
+          cache: "no-store",
+        });
+        if (!response.ok) {
+          return;
+        }
+        var body = await response.json();
+        state.commonsReady = !!(body && body.observations);
+      } catch (err) {
+        state.commonsReady = false;
+      }
+      render();
+    }
+
+    /* Recent anchors, not a vector search: the panel asks "who else has
+     * anchored lately?", which is a recency question. Semantic similarity is
+     * the per-record "find similar sightings" button, where the embedder has a
+     * real query to work with. */
+    async function loadCommons() {
+      state.commonsLoading = true;
+      state.commonsError = null;
+      render();
+      try {
+        var url =
+          trimUrl(settings.commonsUrl) + "/observations/recent?limit=10";
+        var response = await root.fetch(url);
+        var body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.detail || "commons returned " + response.status);
+        }
+        state.commons = body.observations || [];
+      } catch (err) {
+        state.commonsError =
+          "Commons search unavailable: " + String(err.message || err);
+        state.commons = null;
+      }
+      state.commonsLoading = false;
+      render();
+    }
+
+    /* -------------------------------------------------------------- context */
+
+    /* Ask the ledger whether it has a web-context provider, so the page only
+     * offers the lookup when one is actually configured. Same probe shape as
+     * the commons, and for the same reason: no empty button on a laptop. */
+    async function probeContext() {
+      try {
+        var response = await root.fetch(
+          trimUrl(settings.ledgerUrl) + "/health",
+          {
+            cache: "no-store",
+          },
+        );
+        if (!response.ok) {
+          return;
+        }
+        var body = await response.json();
+        state.contextReady = !!body.context;
+      } catch (err) {
+        state.contextReady = false;
+      }
+      render();
+    }
+
+    async function loadContext(hash) {
+      var record = journal.get(hash);
+      if (!record) {
+        return;
+      }
+      var summary = summaryOf(record.entry);
+      state.context[hash] = { loading: true };
+      render();
+      try {
+        var response = await root.fetch(
+          trimUrl(settings.ledgerUrl) + "/context",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              species: summary.species,
+              kind: summary.kind,
+              /* A place name the observer already chose to record. Never a
+               * coordinate: the anchoring rule is not relaxed for a search. */
+              place: settings.place || null,
+              limit: 5,
+            }),
+          },
+        );
+        var body = await response.json();
+        if (!response.ok) {
+          throw new Error(body.detail || "ledger returned " + response.status);
+        }
+        state.context[hash] = { body: body };
+      } catch (err) {
+        state.context[hash] = {
+          error: "Context unavailable: " + String(err.message || err),
+        };
+      }
+      render();
+    }
+
     /* ---------------------------------------------------------------- boot */
 
     ensureKey()
@@ -1511,6 +1902,8 @@
       })
       .then(function () {
         render();
+        probeCommons();
+        probeContext();
       });
     render();
   }

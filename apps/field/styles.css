@@ -222,6 +222,152 @@ main {
   font-size: 0.9rem;
 }
 
+/* ------------------------------------------------------- sample walk */
+
+.seed {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule, #ddd4c4);
+}
+
+.seed-steps {
+  margin: 10px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 6px;
+  font-size: 0.88rem;
+  color: var(--ink-soft);
+}
+
+.seed-steps b {
+  color: var(--ink);
+}
+
+.seed .row {
+  margin-top: 12px;
+}
+
+.seed-note {
+  margin-top: 10px;
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+/* ------------------------------------------------------------ commons */
+
+.commons-panel {
+  border-left: 3px solid var(--wax, #a32020);
+}
+
+.commons-list {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.commons-list li {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule, #ddd4c4);
+  font-size: 0.9rem;
+}
+
+.commons-list li:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.commons-meta {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--ink-soft);
+}
+
+.commons-hash {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+  opacity: 0.75;
+}
+
+/* ------------------------------------------------------------- context
+   Shown beside a record, never inside it. The muted rule above the block is
+   deliberate: this is a third party's answer, not part of the sealed record. */
+.context {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--rule, #ddd4c4);
+}
+
+.context-answer {
+  margin: 8px 0 0;
+  font-family: var(--serif);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.context-list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 8px;
+}
+
+.context-list a {
+  font-size: 0.88rem;
+  font-weight: 500;
+  /* Without this the browser's default blue breaks the parchment entirely. */
+  color: var(--notary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.context-list a:hover {
+  color: var(--wax);
+}
+
+.context-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.context-snippet {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  line-height: 1.45;
+}
+
+.context-meta {
+  margin-top: 8px;
+  font-size: 0.7rem;
+  color: var(--ink-soft);
+  opacity: 0.8;
+}
+
+/* A seeded observer is demo fiction. It is always labelled, never disguised. */
+.tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border: 1px solid var(--wax, #a32020);
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wax, #a32020);
+  vertical-align: 0.08em;
+}
+
+.tag-sample {
+  opacity: 0.85;
+}
+
 .row {
   display: flex;
   flex-wrap: wrap;

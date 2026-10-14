@@ -1,0 +1,57 @@
+# Fly.io deployment for the Vickrey evidence ledger.
+#
+# Deploy from this directory so the build context is services/ledger:
+#
+#   cd services/ledger
+#   fly volumes create vickrey_data --size 1 --region lhr
+#   fly secrets set MONGODB_URI="mongodb+srv://..."
+#   fly deploy
+#
+# This runs the single-process shape (scripts/demo_single.sh): one container
+# with HORNET_EMBEDDED=1, so the field client posts straight to /ingest and no
+# anchor relay or separate Hornet is needed.
+
+app = "vickrey-ledger"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # The block store lives in this process's memory. See app/embedded.py.
+  HORNET_EMBEDDED = "1"
+  # On the volume below, so the application copy survives a restart or redeploy.
+  DATABASE_PATH = "/data/ledger.db"
+  # Narrow this to your field client's origin before the demo.
+  LEDGER_CORS_ORIGINS = "*"
+  LOG_LEVEL = "INFO"
+  MONGODB_DB = "vickrey"
+
+[http_service]
+  internal_port = 8088
+  force_https = true
+  auto_start_machines = true
+
+  # MUST stay on. The embedded block store is in memory: if the machine stops,
+  # every registered block is lost and its record is stranded at PENDING until
+  # it is re-anchored. Likewise the app must never run more than one instance.
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "15s"
+    method = "GET"
+    path = "/health"
+    timeout = "3s"
+
+# Keeps the application copy (SQLite) across restarts and redeploys. Without it
+# the ledger starts empty after every deploy, and the ledger-side tamper demo
+# has nothing to tamper with.
+[[mounts]]
+  source = "vickrey_data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

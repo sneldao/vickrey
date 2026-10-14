@@ -85,6 +85,88 @@ location + model_id + species summary`, never the raw record, reaching
   tamper refused, restored, `VERIFIED` on the mock Hornet. Still server-hosted,
   not on-phone, not outdoors.
 
+## Buildathon — HYPE / Buildathon London, 14 October 2026
+
+The Week 1 entry was submitted on October 11. Everything below is
+**after submission**: it does not change what was judged, and it is committed
+separately so the submitted state stays legible. The Buildathon partners
+(MongoDB, Vercel, Tavily) are a different event with a different jury from the
+Week 1 partners; see [`SPONSORS.md`](SPONSORS.md).
+
+The goal for the evening was not new mechanics. It was that the loop must be
+**demonstrable by a stranger on a laptop with no camera, no model and no
+signal**, in two minutes.
+
+### The cold open was the real problem
+
+Traced what a first-time visitor actually sees: an empty journal, an empty
+outbox, two disabled buttons, and a `<input capture="environment">` that has no
+camera on a laptop. The only escape was "Try a labelled sample suggestion",
+which sealed a species against an empty photo plate — the product demonstrating
+it had no input.
+
+### What was added
+
+- **`apps/field/specimens.js`** — three labelled specimen plates (ivy, robin,
+  hawthorn) as SVG data URIs, drawn in the client's ink-on-parchment language.
+  Chosen over stock photography on purpose: Wikimedia Commons blocks bots from
+  this host, and more importantly a photo that disagrees with its caption would
+  be worse than an illustration that cannot.
+- **`apps/field/seed.js`** — a specification of a sample walk, _not_ a mock.
+  Each step is sealed through the ordinary `logbook.seal`, so hashes are
+  computed and Ed25519 signatures are genuine, and the chain verifies exactly as
+  a walk you made yourself would. The middle step is the one that matters: the
+  model suggests a **common blackbird**, the observer **corrects it to a robin**,
+  and the correction is sealed beside the suggestion.
+- **Commons panel** promoted out of a `Proof` disclosure, and it only renders
+  when `/health` reports a store is reachable — so there is no empty search box
+  on a laptop with no Atlas behind it. It uses `/observations/recent`, not
+  vector search: "who else has anchored lately?" is a recency question, and
+  `atlas.py` is explicit that the local embedder matches shared words and
+  nothing more.
+- **`services/ledger/app/embedded.py`** (`HORNET_EMBEDDED=1`) — the block store
+  in-process, so the ledger is one container: the field client posts straight to
+  `/ingest`, with no anchor relay and no separate Hornet. `mock_hornet.py` keeps
+  blocks in a module-level dict, so it cannot be split across serverless
+  invocations, which share no memory. `services/ledger/fly.toml` runs it; the
+  store is in memory, so the app must run exactly one instance with
+  auto-stop off. `scripts/demo_single.sh` rehearses it locally.
+- **`services/ledger/app/context.py`** — Tavily web context for an anchored
+  record: recent public reports of the species, shown _beside_ the record. Three
+  rules are enforced by tests, not comments: it is never sealed, a Tavily outage
+  never moves a status off `VERIFIED`, and the query never carries a coordinate.
+  The key is server-side. `scripts/demo_context.sh` runs it against
+  `scripts/fake_tavily.py` with no key and no credits.
+- **`scripts/seed_commons.py`** — sample-observer seeding for the commons, under
+  `flow_id = sample-observer-NN` and badged as such in the UI. The signatures are
+  **real**: one Ed25519 key per observer, commitments signed over a record body
+  in the same shape `trust.sealObservation` uses, every anchor re-verified after
+  writing. It refuses to write without `--seed-demo-data`, and that check runs
+  before any connection opens.
+- **`public_key` now travels with the anchor.** `anchorMessage()` omitted it
+  while `atlas.py` listed it in `ANCHOR_FIELDS` and stored it, so every Atlas
+  record would have carried `public_key: null` and the commons would have held
+  anchors it could not verify.
+
+### Verified after these changes
+
+Full loop in a browser against `scripts/demo_single.sh` — the exact shape Fly
+runs: sample walk → 3 waiting → tamper → sync **refused** ("nothing unsent left
+the device") → restore → sync → 3 × `Anchored · VERIFIED`, with `/health`
+reporting `anchoring: embedded` and `blocks_registered: 3`. Same again with web
+context on. 91 JS tests and 111 ledger tests pass.
+
+### Still not verified
+
+- **Nothing is deployed.** `fly`, Atlas and Tavily have all been wired but never
+  reached from a real host; the Atlas session had expired and `flyctl` was not
+  installed on the build machine.
+- **The Docker image build is unproven** — no Docker on that machine. The
+  packaging was checked by copying only `app/` to a clean directory and booting
+  it standalone, which does not exercise `fly deploy`.
+- **The Atlas write path has never touched a real cluster**, only a fake store.
+- **On-device inference remains unverified.** Still no offline phone run.
+
 ## Compliance
 
 - [x] Public repo under Apache-2.0 (`LICENSE`).

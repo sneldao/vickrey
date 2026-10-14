@@ -1,5 +1,15 @@
 # Submission plan — Hacktoberfest 2026, Week 1: Touch Grass
 
+> **Submitted.** The DEV post went in on October 11, 2026, and this document is
+> kept as the record of what was claimed and what was not. Changes after that
+> date are tracked separately in [`BUILD.md`](BUILD.md) under _Buildathon —
+> HYPE / Buildathon London, 14 October 2026_, which is a **different event with
+> a different jury**. Do not retro-fit post-submission work into the Week 1
+> claims here: the entry said what it said, and that is the honest record.
+>
+> In particular, the sample walk and web context landed **after** the Week 1
+> post. Neither was in the judged build.
+
 **Project:** Vickrey — a sealed bid on what you saw. Offline, open-source AI field
 identification with a tamper-evident ecological logbook. The name is the metaphor:
 William Vickrey's sealed-bid auction (see [`BRAND.md`](BRAND.md)).

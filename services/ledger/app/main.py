@@ -19,7 +19,11 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.atlas import ObservationStore
 from app.atlas import connect as connect_observations
+from app.context import ContextError
+from app.context import context_from_env as open_context
+from app.context import DEFAULT_LIMIT as DEFAULT_CONTEXT_LIMIT
 from app.db import Database, load_json, normalize_block_id, parse_time_bound
+from app.embedded import EmbeddedHornet, embedded_from_env
 from app.hornet import DEFAULT_HORNET_URL, HornetClient
 from app.tamper import mutate_application_payload
 from app.verify import STATUS_VALUES, Status, VerifyResult, verify_record
@@ -30,6 +34,30 @@ TAMPER_NOTE = (
     "DEMO ONLY. payload_json in this database was overwritten. "
     "Hornet was not modified; reverify only GETs the block and metadata."
 )
+
+
+class ContextIn(BaseModel):
+    """What the field client knows about a sighting when it asks for context.
+
+    Deliberately carries no coordinate: ``place`` is an observer-supplied label
+    already coarse enough to publish, and the anchoring rule is not relaxed
+    because a search engine wants a location.
+    """
+
+    species: str = Field(min_length=1, max_length=160)
+    kind: str | None = Field(default=None, max_length=40)
+    place: str | None = Field(default=None, max_length=160)
+    limit: int = Field(default=DEFAULT_CONTEXT_LIMIT, ge=1, le=20)
+
+
+class ContextResult(BaseModel):
+    provider: str
+    query: str
+    answer: str | None = None
+    credits: int | None = None
+    elapsed: float | None = None
+    error: str | None = None
+    results: list[dict] = Field(default_factory=list)
 
 
 class IngestIn(BaseModel):
@@ -251,6 +279,8 @@ def create_app(
     hornet_url: str | None = None,
     cors_origins: str | None = None,
     observation_store: Any | None = None,
+    embedded: Any | None = None,
+    context: Any | None = None,
 ) -> FastAPI:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
     resolved_url = hornet_url or os.environ.get("HORNET_URL", DEFAULT_HORNET_URL)
@@ -260,16 +290,47 @@ def create_app(
         os.path.join(os.path.dirname(__file__), "..", "data", "ledger.db"),
     )
     database = Database(db_path)
+
+    # An injected reader always wins (tests pass a fake). Otherwise HORNET_EMBEDDED
+    # selects the in-process block store, and only failing that do we build the
+    # HTTP client -- so a deployed ledger needs one process, not two.
+    #
+    # ``embedded`` accepts None (read the environment), a bool, or a ready
+    # EmbeddedHornet to share with the caller.
+    if embedded is None:
+        store = embedded_from_env()
+    elif isinstance(embedded, EmbeddedHornet):
+        store = embedded
+    elif embedded:
+        store = EmbeddedHornet()
+    else:
+        store = None
+
+    anchoring = store if hornet is None else None
     reader = (
-        hornet if hornet is not None else HornetClient(resolved_url, timeout=timeout)
+        hornet
+        if hornet is not None
+        else (store or HornetClient(resolved_url, timeout=timeout))
     )
+    if anchoring is not None:
+        resolved_url = anchoring.url
     observations = _open_observation_store(observation_store)
+    # Web context is optional: no key means the route reports it is off, and
+    # nothing else in the ledger changes.
+    web = open_context() if context is None else context
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        logger.info("evidence ledger db=%s hornet=%s", database.path, resolved_url)
+        logger.info(
+            "evidence ledger db=%s hornet=%s embedded=%s",
+            database.path,
+            resolved_url,
+            anchoring is not None,
+        )
         yield
         reader.close()
+        if web is not None:
+            web.close()
 
     app = FastAPI(
         title="Veles evidence ledger",
@@ -280,6 +341,7 @@ def create_app(
     app.state.db = database
     app.state.hornet = reader
     app.state.hornet_url = resolved_url
+    app.state.anchoring = anchoring
     app.state.observations = observations
     origin_setting = (
         os.environ.get("LEDGER_CORS_ORIGINS", "*")
@@ -305,7 +367,13 @@ def create_app(
             "docs": "/docs",
             "ingest": "/ingest",
             "messages": "/messages",
-            "observations": "/observations/similar" if observations else None,
+            "context": "/context" if web is not None else None,
+            "observations": {
+                "recent": "/observations/recent",
+                "similar": "/observations/similar",
+            }
+            if observations
+            else None,
         }
 
     @app.get("/health")
@@ -314,11 +382,56 @@ def create_app(
             "status": "ok",
             "service": "ledger",
             "hornet_url": app.state.hornet_url,
+            "anchoring": "embedded" if anchoring is not None else "messages-api",
+            "context": web is not None,
+            "blocks_registered": (
+                anchoring.registered if anchoring is not None else None
+            ),
             "observations": observations is not None,
         }
 
+    @app.post("/context", response_model=ContextResult)
+    def context_lookup(body: ContextIn) -> dict:
+        """Recent public reports of a species, from Tavily.
+
+        Deliberately separate from the record: nothing here is sealed, anchored
+        or stored. It is public knowledge about the species, and it must never
+        become part of a commitment the observer is expected to reproduce.
+        """
+        if web is None:
+            raise HTTPException(
+                status_code=503,
+                detail="no web context configured; set TAVILY_API_KEY",
+            )
+        try:
+            return web.search(
+                species=body.species,
+                kind=body.kind,
+                place=body.place,
+                limit=body.limit,
+            )
+        except ContextError as exc:
+            # 200 with an error field: the page should show why the lookup
+            # failed, not fall over because a third party is down.
+            return {
+                "provider": "tavily",
+                "query": body.species,
+                "error": str(exc),
+                "results": [],
+            }
+
     @app.post("/ingest", response_model=MessageOut)
     def ingest(body: IngestIn, response: Response) -> dict:
+        # In embedded mode this service is also the Messages API stand-in, so it
+        # writes the block before reading it back. The block still lands in a
+        # separate structure from the application copy, which is what the
+        # two-source check compares; see app/embedded.py for what this costs.
+        if anchoring is not None:
+            anchoring.register(
+                block_id=body.block_id,
+                tag=body.tag,
+                message=body.message,
+            )
         created = app.state.db.upsert_application(
             block_id=body.block_id,
             tag=body.tag,

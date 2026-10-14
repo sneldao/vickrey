@@ -1,2 +1,4 @@
 -r requirements.txt
 pytest>=8.3.0
+# Ed25519 signatures for scripts/seed_commons.py sample observers
+cryptography>=44.0.0

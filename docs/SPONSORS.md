@@ -12,6 +12,15 @@ The Atlas observation store is unit-tested against
 a fake store (`MONGODB_URI` was unset in the demo). Temporal is scaffold only.
 The remaining partners are unintegrated targets.
 
+> **Hosting changed after the Week 1 submission.** The plan below says Render;
+> the ledger is now configured for **Fly.io** (`services/ledger/fly.toml`) with
+> `HORNET_EMBEDDED=1` so it runs as one container, because
+> `scripts/mock_hornet.py` holds blocks in a module-level dict and cannot be
+> split across serverless invocations. Nothing is deployed on either. The
+> Render-specific free-tier caveats are therefore historical — the constraint
+> that mattered was always "persistence lives in Atlas, not a local disk", and
+> Fly needs a mounted volume for the SQLite application copy.
+
 | #   | Partner            | Category                   | Prize | Target role in Vickrey                                             |
 | --- | ------------------ | -------------------------- | ----- | ------------------------------------------------------------------ |
 | 1   | **Gemma**          | Best Use of Gemma          | $200  | Real server-hosted Gemma 3 4B vision ID; on-device remains planned |
@@ -71,6 +80,23 @@ These overlap if left vague. Keep them clearly separated:
   credits. Nothing is deployed yet.
 - **Qualcomm / Arduino (UNO Q)** — needs the board.
 - **SerpApi** — online search conflicts with the offline, data-stays-local theme.
+
+## Buildathon partners — a different event
+
+The HYPE Buildathon (London, 14 October 2026) has its own partners and judges:
+**MongoDB, Vercel and Tavily**. These are _not_ Week 1 categories and do not
+affect the submitted entry, which was filed on October 11. Where a partner
+overlaps, the work is shared:
+
+| Buildathon partner | What was built                                                                                              | Verified?                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| **MongoDB Atlas**  | Commons panel (`/observations/recent`, per-record vector similarity), `atlas.py`, `scripts/seed_commons.py` | **No.** Fake store only; `MONGODB_URI` has never pointed at a real cluster            |
+| **Vercel**         | Field client and explorer are already static and deploy as-is                                               | **No.** Not deployed; the ledger host decision went to Fly instead                    |
+| **Tavily**         | `app/context.py` — server-side web context beside an anchored record                                        | Partly. 24 tests against `scripts/fake_tavily.py`; the live API has never been called |
+
+The same discipline as above applies: a configured endpoint, a local fake or a
+scaffold is not a demonstrated integration. None of these three may be claimed
+as verified until they have run against the real services.
 
 ## Stretch (only if time remains)
 

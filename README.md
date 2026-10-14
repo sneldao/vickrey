@@ -38,6 +38,12 @@ device's history and the outbox only holds what is still unsent. Run it with
 The opening vision describes the _planned_ production architecture. Not yet
 verified or built:
 
+- **Anything deployed.** Fly, MongoDB Atlas and Tavily are all wired but have
+  never been reached from a real host: the Atlas session had expired and
+  `flyctl` was not installed on the build machine. The Docker image build is
+  likewise unproven — no Docker on that machine. The Atlas write path has only
+  ever run against a fake store, and the Tavily client only against a local
+  fake. Treat all three as untested integrations.
 - A real **on-device/offline** model run is still unverified. A real
   server-hosted Gemma 3 4B vision inference through the field client did run
   over a private SSH tunnel: on a credited Wikimedia Commons European robin
@@ -47,12 +53,12 @@ verified or built:
   run with Ollama on a CPU cloud VM, again suggested "Robin" (self-reported
   confidence 0.95, about 20 s); the observer confirmed it before sealing. A
   model's confidence is its own score, not calibrated accuracy.
-- The real Messages API / public Hornet anchor (the demo uses
-  `scripts/anchor_relay.py` + `scripts/mock_hornet.py`).
-- MongoDB Atlas commons search — the code is unit-tested against a fake store;
-  `MONGODB_URI` was unset in the live demo.
-- The Temporal sync workflow (scaffold only), Darwin Core export, the field
-  walk, and the DEV post.
+- The real Messages API / public Hornet anchor. The local demos use
+  `scripts/mock_hornet.py` + `scripts/anchor_relay.py`, or
+  `HORNET_EMBEDDED=1` for the single-process shape.
+- The Temporal sync workflow (scaffold only) and Darwin Core export. The field
+  walk and the Week 1 DEV post (submitted October 11, 2026) are done; see
+  [`docs/BUILD.md`](docs/BUILD.md) for the post-submission Buildathon work.
 
 ## The loop
 
@@ -127,7 +133,10 @@ entry cracks the seal and **sync refuses to send it** instead.
 
 - **On-device AI:** open-weight model (see [`docs/SPONSORS.md`](docs/SPONSORS.md)).
 - **Commons / anchor verifier:** `services/ledger` — FastAPI + SQLite, port 8088.
+  Optional MongoDB Atlas commons mirror and optional Tavily web context; both
+  are off unless configured.
 - **Explorer / logbook:** `apps/explorer` — static page, port 8090.
+- **Ledger hosting:** Fly.io, single container, `services/ledger/fly.toml`.
 - **Anchor (optional):** private Hornet via
   [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle);
   insert path through [iota-messages-api](https://github.com/eclipse-aerios/iota-messages-api).
@@ -142,6 +151,27 @@ bash scripts/demo_field.sh
 ```
 
 For the optional **server-hosted Gemma** demo, run Ollama with `gemma3:4b` on a host the browser can reach — on the same machine (`ollama serve`, then `ollama pull gemma3:4b`) or through a private tunnel (for example `ssh -fN -L 127.0.0.1:11435:127.0.0.1:11434 YOUR_HOST`). Append `&endpoint=http://127.0.0.1:11434&model=gemma3:4b` (or the tunnel port) to the printed field-client URL, choose a credited photo, then **Ask the model for a suggestion**. Review it, then **Confirm & seal** or **Correct it**. The photo is sent to that model server for inference; it is not an offline or on-phone demo. The mock Hornet/ledger are still local. Add `&area=LAT,LON` to record a coarse area (rounded to about 1 km) with each sighting.
+
+### The sample walk
+
+On an empty device the field client offers a **sample walk**: three sightings
+sealed on demand, so the journal, the outbox and the seal-crack demo all have
+something real to work on. It is not a mock — each step goes through the
+ordinary logbook, so the hashes are computed and the Ed25519 signatures are
+genuine, and the chain verifies exactly as a walk you made yourself would.
+
+The walk is _a walk around Dalston_ (the anchor carries the coarse area only):
+common ivy confirmed, a robin **corrected** — the model read the orange bib as
+a common blackbird, which is a confusion a small VLM genuinely makes — and
+hawthorn confirmed. The correction is sealed inside the record beside the
+model's original suggestion, which is the whole thesis in one row.
+
+The specimen plates in `apps/field/specimens.js` are labelled illustrations
+drawn in the client's own ink-on-parchment language, not photographs: they are
+data URIs, so the sample walk needs no camera, no network and no stock imagery,
+and a plate can never disagree with the name printed on it. **Clear this
+device** returns to an empty journal and keeps the device key, because it is
+the same device — only the walk is cleared.
 
 ### The field journal and the outbox
 
@@ -178,6 +208,105 @@ python3 -m http.server 8090 --bind 127.0.0.1 --directory apps/explorer
 Endpoints and configuration are unchanged from the ledger/explorer design; the
 full table lives in [`docs/STRATEGY.md`](docs/STRATEGY.md).
 
+### Deploy the single-process ledger (Fly.io)
+
+`HORNET_EMBEDDED=1` makes the ledger hold the tagged-data block itself before
+reading it back, so the field client posts straight to `/ingest` — no anchor
+relay, no separate Hornet, one container. `scripts/mock_hornet.py` keeps its
+blocks in a module-level dict and so cannot be split across serverless
+invocations, which share no memory; one always-on process can.
+
+```bash
+cd services/ledger
+fly volumes create vickrey_data --size 1 --region lhr   # SQLite copy survives redeploys
+fly secrets set MONGODB_URI="mongodb+srv://..."
+fly deploy
+```
+
+Then point the field client at it — `?ledger=https://vickrey-ledger.fly.dev&commons=…`
+— or change the defaults in `apps/field/config.js`. `services/ledger/fly.toml`
+carries the rest.
+
+**What embedded mode changes.** The block store moves into the ledger's own
+process, so the ledger no longer only ever GETs — in embedded mode it writes the
+block before reading it back. The two-source property survives at the data
+layer, which is what the check tests: the application copy is in SQLite, the
+block is in a separate structure, so editing the copy alone still yields
+`PAYLOAD_MISMATCH`. What is lost is the guarantee that a _different process_
+holds the block. Point `HORNET_URL` at a real node and none of this applies —
+the ledger only ever GETs, as it does locally. `scripts/demo_field.sh` runs the
+faithful three-process version; `scripts/demo_single.sh` runs the deployable one.
+
+**The store is in memory, so the app must run exactly one instance.** Scale to
+zero and a restart drops every registered block, stranding its record at
+`PENDING`. `fly.toml` therefore sets `auto_stop_machines = "off"` and
+`min_machines_running = 1`. `/health` reports `anchoring` and
+`blocks_registered` so you can see this working.
+
+### Seed the commons with sample observers
+
+The Commons panel is much stronger with rows in it, but seeding it with a real
+person's records would be a lie. `scripts/seed_commons.py` writes anchors under
+`flow_id = sample-observer-NN`, which the field client badges **sample observer**
+and `sampleMark()` filters on.
+
+The signatures are **real**. Each sample observer gets its own Ed25519 device
+key, every commitment is signed over a record body in the same shape
+`trust.sealObservation` uses, and every anchor is re-verified after it is
+written — so a MongoDB engineer can pull a document and check it. The public key
+for each observer prints on every run. Records that were corrected keep the
+model's score off the final name, exactly as the field client does.
+
+```bash
+scripts/ledger/.venv/bin/python scripts/seed_commons.py \
+  --uri "$MONGODB_URI" --seed-demo-data
+scripts/ledger/.venv/bin/python scripts/seed_commons.py \
+  --uri "$MONGODB_URI" --verify      # re-check every stored signature
+```
+
+It refuses to write without `--seed-demo-data`, and the check happens _before_
+any connection is opened, so it cannot contaminate a real commons. To remove:
+`db.observations.deleteMany({flow_id: {$regex: '^sample-observer-'}})`.
+
+Note what `--verify` cannot do: recompute a commitment. That needs the sealed
+record body, which the commons deliberately does not store — the anchoring
+rule, not a gap.
+
+### Web context (Tavily)
+
+An identifier that says "European robin" and stops is half a product. What is
+missing is context — is this species expected here, is it notable, when did
+others last report it nearby? That is public, slow-changing knowledge, and a
+web search is the right tool for it. `POST /context` on the ledger returns
+recent reports from Tavily, shown **beside** an anchored record.
+
+Three rules, all enforced by tests:
+
+- **Context is never sealed.** Nothing from a search is written into the record
+  or the anchor. The seal is the observer's own observation; a third party's
+  answer cannot be part of a commitment someone is expected to reproduce.
+- **The ledger stays the source of truth.** A Tavily outage, quota error or
+  missing key degrades to a line of text on the page. It never fails an ingest
+  and never moves a status off `VERIFIED`.
+- **Only coarse geography leaves the device.** The query carries the species and
+  an optional place _name_ the observer already chose to record (`&place=…`). It
+  never carries a coordinate.
+
+The API key is server-side, so this is a route on the ledger rather than a fetch
+from the browser. The species name is quoted, so a bare "robin" cannot be
+silently substituted with the American bird — which matters on a UK record.
+`search_depth: basic` keeps each lookup at one credit, and the credit use is
+displayed.
+
+```bash
+fly secrets set TAVILY_API_KEY="tvly-..."
+bash scripts/demo_context.sh     # runs it against a local fake, no key needed
+```
+
+Without a key the button does not appear: the field client probes `/health` for
+`context`, the same way it probes for the commons. `scripts/fake_tavily.py` is a
+standalone stand-in, and `TAVILY_ENDPOINT` points the client anywhere.
+
 ### Tests
 
 ```bash
@@ -185,6 +314,14 @@ services/ledger/.venv/bin/pip install -r services/ledger/requirements-dev.txt
 (cd services/ledger && .venv/bin/python -m pytest)
 node --test apps/field/*.test.mjs apps/explorer/app.test.mjs
 ```
+
+91 JS tests and 111 ledger tests cover the seal, the chain, the tamper path, the
+sample walk and the embedded block store. The walk tests seal through the real
+logbook rather than a stand-in, and assert that a seeded chain verifies, that
+tampering cracks it, and that the anchor carries a commitment, a coarse area
+and the device key — never the record itself. The embedded tests assert the
+property that matters most for hosting: a tampered application copy is still
+caught when the block store is in-process.
 
 ## Docs
 

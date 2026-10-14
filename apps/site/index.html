@@ -4,7 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vickrey — Prove What You Saw</title>
-<meta name="description" content="A field journal that seals what you saw with a device signature and a hash chain — so a changed record cracks the seal.">
+<meta name="description" content="A field journal that seals what you saw with a device signature and a hash chain — so a changed record cracks the seal. Live at /field/.">
+<meta property="og:title" content="Vickrey — Prove What You Saw">
+<meta property="og:description" content="Seal what you saw. An open-weight model suggests, an observer decides, and the decision is sealed on the device.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23F4EFE3'/%3E%3Ccircle cx='16' cy='16' r='10' fill='none' stroke='%23A32020' stroke-width='2'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -12,9 +15,11 @@
 <nav class="nav" aria-label="Site">
   <a class="brand" href="#top">Vickrey</a>
   <div class="nav-links">
-    <a href="#film">Film</a>
+    <a class="nav-live" href="field/">Live client<span class="dot" aria-hidden="true"></span></a>
     <a href="#how">How it works</a>
+    <a href="#stack">What's running</a>
     <a href="#status">Status</a>
+    <a href="#film">Film</a>
     <a href="https://github.com/sneldao/vickrey">Repo</a>
   </div>
 </nav>
@@ -28,9 +33,10 @@
   seal instead of silently rewriting the past.</p>
   <div class="cta-row">
     <a class="btn btn-wax" href="field/">Open the live field client</a>
-    <a class="btn btn-ghost" href="#film">Watch the film</a>
-    <a class="btn btn-ghost" href="https://github.com/sneldao/vickrey#run-the-local-field-demo">Run locally</a>
+    <a class="btn btn-ghost" href="#stack">See what is actually running</a>
   </div>
+  <p class="cta-note"><a href="#film">Or watch the 92-second film</a> — and
+  <a href="#status">read what is and isn't true yet</a>.</p>
 </header>
 
 <figure class="fieldnote" aria-label="Illustrative sealed field note">
@@ -42,23 +48,6 @@
   <div class="seal" aria-hidden="true"><span>V</span></div>
   <figcaption>Illustrative field note — mechanism, not screenshot.</figcaption>
 </figure>
-
-<section class="section" id="film">
-  <h2>The film</h2>
-  <div class="frame">
-    <iframe
-      src="https://www.youtube-nocookie.com/embed/9BmpLblSHUM"
-      title="Vickrey — Prove What You Saw"
-      loading="lazy"
-      allow="accelerometer; encrypted-media; picture-in-picture"
-      allowfullscreen></iframe>
-  </div>
-  <p class="caption">92 seconds, hosted on YouTube (unlisted) —
-  <a href="https://youtu.be/9BmpLblSHUM">watch directly</a>. Shows a real
-  server-hosted Gemma 3 4B identification sealed and verified against a mock
-  Hornet ledger. The robin photo is illustrative:
-  <a href="https://commons.wikimedia.org/wiki/File:European_robin_on_a_branch.jpg">Alexis LOURS, CC BY 2.0, Wikimedia Commons</a>.</p>
-</section>
 
 <section class="section" id="how">
   <h2>How it works</h2>
@@ -79,9 +68,101 @@
       <span class="phase-no mono">03</span>
       <h3>Compare later</h3>
       <p>Sync anchors a commitment — never the raw photo — to a ledger. Edit a
-      queued record and the hashes stop recomputing: sync is refused.</p>
+      queued record and the hashes stop recomputing: sync refuses to send it.</p>
+    </li>
+    <li>
+      <span class="phase-no mono">04</span>
+      <h3>Context, outside the seal</h3>
+      <p>A web lookup adds what else is being reported nearby. It is shown
+      <em>beside</em> the record, never inside it: a third party's answer cannot
+      be part of a commitment someone must reproduce.</p>
     </li>
   </ol>
+</section>
+
+<section class="section" id="stack">
+  <h2>What is actually running</h2>
+  <p class="section-lede">Not a diagram — these are the deployed endpoints. The
+  badges below are fetched live when this page loads, so they report the real
+  state rather than the state at deploy time.</p>
+  <ul class="stack">
+    <li>
+      <span class="stack-name">Field client</span>
+      <span class="stack-what">static JS, GitHub Pages</span>
+      <a class="stack-link" href="field/">open it</a>
+      <span class="pill pill-live" data-check="client">checking…</span>
+    </li>
+    <li>
+      <span class="stack-name">Ledger &amp; anchors</span>
+      <span class="stack-what">Fly.io, <span class="mono">lhr</span></span>
+      <a class="stack-link" href="https://vickrey-ledger.fly.dev/health" rel="noopener">/health</a>
+      <span class="pill" data-check="ledger">checking…</span>
+    </li>
+    <li>
+      <span class="stack-name">Commons</span>
+      <span class="stack-what">MongoDB Atlas, M0</span>
+      <a class="stack-link" href="https://vickrey-ledger.fly.dev/observations/recent?limit=5" rel="noopener">anchors</a>
+      <span class="pill" data-check="commons">checking…</span>
+    </li>
+    <li>
+      <span class="stack-name">Web context</span>
+      <span class="stack-what">Tavily, server-side</span>
+      <a class="stack-link" href="https://vickrey-ledger.fly.dev/context" rel="noopener">/context</a>
+      <span class="pill" data-check="context">checking…</span>
+    </li>
+  </ul>
+</section>
+
+<section class="section" id="status">
+  <h2>What is true today</h2>
+  <div class="truth">
+    <div class="col">
+      <h3 class="ok">Live and verifiable</h3>
+      <ul>
+        <li>The whole loop, from a cold browser: seal, tamper, <strong>sync refused</strong>, restore, three <span class="mono">Anchored · VERIFIED</span>.</li>
+        <li>Ed25519 device key and a hash chain, verified in the browser — every hash recomputes, every signature checks.</li>
+        <li>A correction is sealed beside the model's original suggestion, so neither can quietly overrule the other afterwards.</li>
+        <li>Real server-hosted Gemma 3 4B identification through the client (over a private tunnel — not on-device).</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 class="caveat">Live, with a stated limit</h3>
+      <ul>
+        <li><strong>The block store runs in the ledger's own process.</strong> The application copy is still a separate store, so an edited copy still yields <span class="mono">PAYLOAD_MISMATCH</span> — but the block is not held by a separate process, so this is <em>not</em> an independent source.</li>
+        <li>The ledger says so itself: <code class="mono">/</code> reports <code class="mono">independent_source: false</code>. A test fails the build if that stops being true.</li>
+        <li>Point <code class="mono">HORNET_URL</code> at a real node and it reports <code class="mono">true</code>. That path is unrun.</li>
+      </ul>
+    </div>
+    <div class="col">
+      <h3 class="notyet">Not yet</h3>
+      <ul>
+        <li>On-phone / offline model inference. Every model run so far was server-hosted.</li>
+        <li>Actual outdoor field use. The plates in the client are illustrations, not photographs.</li>
+        <li>Darwin Core export, so researchers can consume the records.</li>
+        <li>Atlas Vector Search: the Commons panel works, but per-record similarity needs a Search index that only the Atlas control plane can create.</li>
+      </ul>
+    </div>
+  </div>
+  <p class="ceiling"><strong>Integrity is not accuracy.</strong> A seal proves a record
+  was not edited after it was signed. It does not prove the identification was
+  right — that is the model's job, and the two are kept visibly separate.</p>
+</section>
+
+<section class="section" id="film">
+  <h2>The film</h2>
+  <div class="frame">
+    <iframe
+      src="https://www.youtube-nocookie.com/embed/9BmpLblSHUM"
+      title="Vickrey — Prove What You Saw"
+      loading="lazy"
+      allow="accelerometer; encrypted-media; picture-in-picture"
+      allowfullscreen></iframe>
+  </div>
+  <p class="caption">92 seconds, hosted on YouTube (unlisted) —
+  <a href="https://youtu.be/9BmpLblSHUM">watch directly</a>. Shows a real
+  server-hosted Gemma 3 4B identification sealed and verified against a mock
+  Hornet ledger. The robin photo is illustrative:
+  <a href="https://commons.wikimedia.org/wiki/File:European_robin_on_a_branch.jpg">Alexis LOURS, CC BY 2.0, Wikimedia Commons</a>.</p>
 </section>
 
 <section class="section scale">
@@ -95,34 +176,59 @@
   records worth having.</p>
 </section>
 
-<section class="section" id="status">
-  <h2>What is true today</h2>
-  <div class="truth">
-    <div class="col">
-      <h3 class="ok">Working demo</h3>
-      <ul>
-        <li>Server-hosted Gemma 3 4B identifies a photo through the field client.</li>
-        <li>Local signed journal: Ed25519 seal + hash chain, verified in the browser.</li>
-        <li>Edit → crack → sync refused; restore → mock Hornet <span class="mono">VERIFIED</span>.</li>
-      </ul>
-    </div>
-    <div class="col">
-      <h3 class="notyet">Not yet</h3>
-      <ul>
-        <li>On-phone / offline model inference.</li>
-        <li>Public ledger anchor (demo uses a mock Hornet + relay).</li>
-        <li>Actual outdoor field use.</li>
-        <li>Darwin Core export; live Atlas similarity search.</li>
-      </ul>
-    </div>
-  </div>
-</section>
-
 <footer class="footer">
   <p>Open source, Apache-2.0 —
   <a href="https://github.com/sneldao/vickrey">github.com/sneldao/vickrey</a>.</p>
   <p class="mono">Run it locally: <code>bash scripts/demo_field.sh</code></p>
 </footer>
+
+<script>
+// Report what the deployed service is actually doing, rather than what it was
+// doing when this page was built. Every claim on this page should be checkable.
+(function () {
+  var LEDGER = "https://vickrey-ledger.fly.dev";
+  var pills = {};
+  Array.prototype.forEach.call(document.querySelectorAll("[data-check]"), function (n) {
+    pills[n.getAttribute("data-check")] = n;
+  });
+  function set(name, text, cls) {
+    var n = pills[name];
+    if (!n) return;
+    n.textContent = text;
+    n.className = "pill " + (cls || "");
+  }
+  function getJson(path) {
+    return fetch(LEDGER + path, { cache: "no-store" })
+      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+  }
+  if (pills.client) set("client", "reachable", "pill-live");
+  getJson("/health")
+    .then(function (h) {
+      set("ledger", "up · " + (h.anchoring || "?"), "pill-live");
+      set("context", h.context ? "configured" : "not configured",
+        h.context ? "pill-live" : "pill-off");
+      // The commons count has to come from Atlas. blocks_registered is the
+      // *embedded block store*, a different thing entirely, so it is never used
+      // here -- reporting it as a commons size would be a small false claim.
+      if (!h.observations) {
+        set("commons", "not configured", "pill-off");
+        return;
+      }
+      return getJson("/observations/recent?limit=50")
+        .then(function (r) {
+          set("commons", "live · " + r.count + " anchors", "pill-live");
+        })
+        .catch(function () {
+          set("commons", "configured · unreachable", "pill-off");
+        });
+    })
+    .catch(function () {
+      ["ledger", "commons", "context"].forEach(function (k) {
+        set(k, "unreachable", "pill-off");
+      });
+    });
+})();
+</script>
 
 </body>
 </html>

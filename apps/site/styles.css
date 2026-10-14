@@ -44,9 +44,30 @@ a:focus-visible, .btn:focus-visible, iframe:focus-visible {
   text-decoration: none;
   letter-spacing: 0.02em;
 }
-.nav-links { display: flex; gap: 1rem; font-size: 0.9rem; flex-wrap: wrap; }
+.nav-links { display: flex; gap: 1rem; font-size: 0.9rem; flex-wrap: wrap; align-items: center; }
 .nav-links a { color: var(--ink); text-decoration: none; }
 .nav-links a:hover { color: var(--wax); text-decoration: underline; }
+
+/* The one link that matters most gets the wax and a live dot. */
+.nav-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--wax);
+  font-weight: 600;
+}
+.nav-live:hover { color: var(--ink); }
+.nav-live .dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--moss);
+  animation: pulse 2.4s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
 
 .hero {
   max-width: 44rem;
@@ -90,6 +111,13 @@ h1 em { font-style: italic; color: var(--notary); }
 .btn-wax:hover { background: var(--ink); border-color: var(--ink); color: var(--bone); }
 .btn-ghost { color: var(--notary); }
 .btn-ghost:hover { color: var(--bone); background: var(--notary); }
+
+.cta-note {
+  margin: 0 auto;
+  max-width: 36rem;
+  font-size: 0.9rem;
+  color: var(--pencil);
+}
 
 .fieldnote {
   position: relative;
@@ -190,16 +218,71 @@ h2 {
 
 .scale p { max-width: 40rem; }
 
+.section-lede { max-width: 40rem; margin-top: -0.4rem; }
+
+/* --------------------------------------------------------- live stack */
+
+.stack {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.1rem;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.stack li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.4rem 1rem;
+  padding: 0.7rem 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+}
+.stack-name { font-weight: 600; min-width: 11rem; }
+.stack-what { color: var(--pencil); font-size: 0.9rem; }
+.stack-link { font-size: 0.9rem; }
+
+.pill {
+  margin-left: auto;
+  padding: 0.1rem 0.55rem;
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: var(--pencil);
+}
+.pill-live { color: var(--moss); }
+.pill-off { color: var(--pencil); }
+
+/* --------------------------------------------------------- status */
+
 .truth {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(13.5rem, 1fr));
+  gap: 1.5rem 1.75rem;
 }
 .truth h3 { font-size: 1rem; margin: 0 0 0.6rem; letter-spacing: 0.04em; }
 .truth .ok { color: var(--moss); }
+/* The limit column is the interesting one, so it gets its own ink. */
+.truth .caveat { color: var(--wax); }
 .truth .notyet { color: var(--pencil); }
 .truth ul { margin: 0; padding-left: 1.2rem; }
-.truth li { margin-bottom: 0.5rem; font-size: 0.95rem; }
+.truth li { margin-bottom: 0.55rem; font-size: 0.95rem; }
+.truth code {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  padding: 0.1rem 0.3rem;
+  border-radius: 2px;
+  font-size: 0.85em;
+}
+
+.ceiling {
+  margin: 1.75rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  max-width: 44rem;
+}
 
 .footer {
   border-top: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
@@ -214,17 +297,24 @@ h2 {
 }
 
 @media (min-width: 768px) {
-  .phases { grid-template-columns: repeat(3, 1fr); }
+  .phases { grid-template-columns: repeat(4, 1fr); }
   .phases li { border-left: 0; border-top: 3px solid var(--notary); padding-left: 0; padding-top: 0.8rem; }
+  /* Two live buckets side by side; the honest gap list reads as a band under
+     them rather than a stranded third column. */
+  .truth .col:last-child { grid-column: 1 / -1; }
+  .truth .col:last-child ul { columns: 2; column-gap: 2.5rem; }
 }
 
 @media (max-width: 480px) {
   .truth { grid-template-columns: 1fr; }
   .nav { flex-direction: column; gap: 0.5rem; }
   .seal { right: 1.4rem; width: 3.8rem; height: 3.8rem; }
+  .stack-name { min-width: 100%; }
+  .pill { margin-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   * { animation: none !important; transition: none !important; }
   .note, .stamp { transform: none; }
+  .nav-live .dot { animation: none; }
 }

@@ -32,3 +32,6 @@ services/ledger/data/
 # Upstream clones belong beside this repo, never inside it
 /iota-tangle/
 /iota-messages-api/
+
+# Vercel/Next local project metadata
+.vercel/

@@ -25,10 +25,26 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5
+      - name: Assemble the site
+        run: |
+          # apps/site stays at the root so the existing showcase URL keeps
+          # working, and the field client is published alongside it at /field/.
+          # The field client is pure static JS, so it needs nothing from Pages:
+          # it talks to the ledger on Fly.io, which apps/field/config.js points at.
+          mkdir -p _site/field
+          cp -r apps/site/. _site/
+          for f in apps/field/*.js apps/field/*.html apps/field/*.css; do
+            [ -e "$f" ] || continue
+            case "$f" in
+              *.test.mjs) continue ;;
+            esac
+            cp "$f" _site/field/
+          done
+          echo "published:"; find _site -maxdepth 2 -type f | sort
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3
         with:
-          path: apps/site
+          path: _site
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4

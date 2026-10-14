@@ -36,36 +36,47 @@ import httpx
 TAVILY_ENDPOINT = "https://api.tavily.com/search"
 
 # 'basic' is one credit. 'advanced' doubles it for very little gain on a short
-# "has anyone reported this recently" query.
+# "is this species found around here" query.
 SEARCH_DEPTH = "basic"
 DEFAULT_LIMIT = 5
-# Recency is asked for here rather than by encoding a date into the query, so
-# Tavily applies its own date filtering.
-TIME_RANGE = "month"
+
+# No default time filter, and that is a deliberate, measured choice.
+#
+# A sighting is not a news event. Almost nothing on the web is *published this
+# month* about robins in Hackney, so time_range=month left Tavily matching any
+# recent page containing the words: a robin query returned a Wikipedia
+# biography and a restaurant guide. Dropping it and asking simply "where is this
+# species found around here" returns actual field checklists and a usable
+# answer. Callers may still pass `time_range` if they want recency.
+DEFAULT_TIME_RANGE: str | None = None
 
 
 class ContextError(RuntimeError):
     """An upstream failure, phrased for a human reading the field client."""
 
 
-def build_query(species: str, kind: str | None = None, place: str | None = None) -> str:
-    """A short, quoted query for "has anyone been reporting this around here".
+def build_query(species: str, place: str | None = None) -> str:
+    """A short, quoted query for "is this species found around here".
 
-    The species is quoted so Tavily does not silently substitute a synonym --
-    "robin" would otherwise return the American bird far more often than the
-    one actually observed.
+    The species is quoted so Tavily cannot silently substitute a synonym --
+    "robin" would otherwise return the American bird far more often than the one
+    actually observed.
+
+    The kind ("bird", "plant") is deliberately *not* included. Measured against
+    the live API it diluted the query badly: `"European robin" bird sightings
+    reported Hackney` returned a birding PDF, a Wikipedia biography and a
+    restaurant guide, while `"European robin" Hackney sightings` returned
+    Victoria Park checklists and the River Lea. Redundant words cost more here
+    than they disambiguate.
     """
     name = " ".join(str(species or "").split())
     if not name:
         raise ContextError("a species is needed before looking up context")
     parts = [f'"{name}"']
-    if kind and str(kind).strip() and str(kind).strip().lower() != "other":
-        parts.append(str(kind).strip())
-    parts.append("sightings reported")
-    if place:
-        cleaned = " ".join(str(place).split())
-        if cleaned:
-            parts.append(cleaned)
+    cleaned = " ".join(str(place).split()) if place else ""
+    if cleaned:
+        parts.append(cleaned)
+    parts.append("sightings")
     return " ".join(parts)
 
 
@@ -104,25 +115,25 @@ class TavilyContext:
         self,
         *,
         species: str,
-        kind: str | None = None,
         place: str | None = None,
         limit: int = DEFAULT_LIMIT,
-        time_range: str = TIME_RANGE,
+        time_range: str | None = DEFAULT_TIME_RANGE,
         search_depth: str = SEARCH_DEPTH,
     ) -> dict[str, Any]:
-        query = build_query(species, kind, place)
+        query = build_query(species, place)
         payload = {
             "query": query,
             "search_depth": search_depth,
             "max_results": max(1, min(int(limit), 20)),
             "topic": "general",
-            "time_range": time_range,
             # A short synthesis reads well on a phone and saves the judge
             # scrolling four snippets.
             "include_answer": "basic",
             # Shown on the page: what the lookup cost.
             "include_usage": True,
         }
+        if time_range:
+            payload["time_range"] = time_range
         try:
             response = self._client.post(
                 self.endpoint,

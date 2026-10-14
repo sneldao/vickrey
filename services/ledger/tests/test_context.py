@@ -76,24 +76,48 @@ def test_the_species_is_quoted_so_a_synonym_cannot_replace_it():
 def test_a_bare_robin_is_not_left_to_the_search_engines_symonyms():
     # "robin" unqualified returns the American bird most often, which would be
     # a confidently wrong answer on a UK field record.
-    assert '"European robin"' in build_query("European robin", kind="bird")
+    assert '"European robin"' in build_query("European robin")
     assert '"robin"' in build_query("robin")
 
 
-def test_the_kind_is_included_unless_it_adds_nothing():
-    assert "plant" in build_query("Common ivy", kind="plant")
-    assert "bird" in build_query("European robin", kind="bird")
-    assert "other" not in build_query("Something", kind="other")
-    assert "other" not in build_query("Something", kind=None)
+def test_the_kind_is_never_in_the_query():
+    """Measured against the live API: including it diluted results badly.
+
+    "European robin" bird sightings reported Hackney returned a birding PDF, a
+    Wikipedia biography and a restaurant guide. The kind is redundant with a
+    species name and costs more than it disambiguates.
+    """
+    from app.context import build_query as q
+
+    assert q("European robin", place="Hackney") == '"European robin" Hackney sightings'
+    assert "bird" not in q("European robin")
+    assert "plant" not in q("Common ivy")
 
 
 def test_a_place_is_included_only_when_given():
-    assert "Hackney" in build_query("Common ivy", place="Hackney, London")
-    assert "Hackney" not in build_query("Common ivy")
+    assert build_query("Common ivy", place="Hackney, London") == (
+        '"Common ivy" Hackney, London sightings'
+    )
+    assert build_query("Common ivy") == '"Common ivy" sightings'
+
+
+def test_no_time_filter_is_sent_by_default():
+    """A sighting is not a news event; recency filters returned junk results."""
+    client = TavilyContext("tvly-test", transport=handler({}))
+    client.search(species="European robin", place="Hackney")
+    assert "time_range" not in SEEN[0]["body"]
+    client.close()
+
+
+def test_a_caller_can_still_ask_for_recency():
+    client = TavilyContext("tvly-test", transport=handler({}))
+    client.search(species="European robin", time_range="week")
+    assert SEEN[0]["body"]["time_range"] == "week"
+    client.close()
 
 
 def test_whitespace_in_a_pasted_name_is_collapsed():
-    assert build_query("  Common   ivy \n") == '"Common ivy" sightings reported'
+    assert build_query("  Common   ivy \n") == '"Common ivy" sightings'
 
 
 def test_a_species_is_required():
@@ -115,7 +139,7 @@ def test_no_query_can_carry_a_coordinate():
 
 def test_a_search_returns_tidied_results_and_credits():
     client = TavilyContext("tvly-test", transport=handler({}))
-    body = client.search(species="European robin", kind="bird", place="Hackney")
+    body = client.search(species="European robin", place="Hackney")
     assert body["provider"] == "tavily"
     assert body["answer"] == "Three recent reports."
     assert body["credits"] == 1
@@ -138,7 +162,6 @@ def test_the_request_asks_for_recent_results_cheaply():
     body = SEEN[0]["body"]
     assert body["search_depth"] == "basic", "one credit is enough for this query"
     assert body["max_results"] == 3
-    assert body["time_range"] == "month"
     client.close()
 
 

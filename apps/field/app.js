@@ -1870,7 +1870,6 @@
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
               species: summary.species,
-              kind: summary.kind,
               /* A place name the observer already chose to record. Never a
                * coordinate: the anchoring rule is not relaxed for a search. */
               place: settings.place || null,

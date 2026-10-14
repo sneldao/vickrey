@@ -45,6 +45,9 @@ class ContextIn(BaseModel):
     """
 
     species: str = Field(min_length=1, max_length=160)
+    # Accepted but not sent to Tavily: measured against the live API, including
+    # the kind diluted the query and pulled in irrelevant pages. See
+    # app/context.build_query.
     kind: str | None = Field(default=None, max_length=40)
     place: str | None = Field(default=None, max_length=160)
     limit: int = Field(default=DEFAULT_CONTEXT_LIMIT, ge=1, le=20)
@@ -406,7 +409,6 @@ def create_app(
         try:
             return web.search(
                 species=body.species,
-                kind=body.kind,
                 place=body.place,
                 limit=body.limit,
             )

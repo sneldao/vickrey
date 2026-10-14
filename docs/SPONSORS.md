@@ -88,11 +88,11 @@ The HYPE Buildathon (London, 14 October 2026) has its own partners and judges:
 affect the submitted entry, which was filed on October 11. Where a partner
 overlaps, the work is shared:
 
-| Buildathon partner | What was built                                                                                              | Verified?                                                                             |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| **MongoDB Atlas**  | Commons panel (`/observations/recent`, per-record vector similarity), `atlas.py`, `scripts/seed_commons.py` | **No.** Fake store only; `MONGODB_URI` has never pointed at a real cluster            |
-| **Vercel**         | Field client and explorer are already static and deploy as-is                                               | **No.** Not deployed; the ledger host decision went to Fly instead                    |
-| **Tavily**         | `app/context.py` — server-side web context beside an anchored record                                        | Partly. 24 tests against `scripts/fake_tavily.py`; the live API has never been called |
+| Buildathon partner | What was built                                                                                              | Verified?                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **MongoDB Atlas**  | Commons panel (`/observations/recent`, per-record vector similarity), `atlas.py`, `scripts/seed_commons.py` | **Yes.** Live M0 cluster, `EU_WEST_1`; 12 documents, 9/9 sample signatures re-verified in place |
+| **Vercel**         | Field client and explorer are already static and deploy as-is                                               | **No.** Not deployed; the ledger host decision went to Fly instead                              |
+| **Tavily**         | `app/context.py` — server-side web context beside an anchored record                                        | **Yes.** Live key on Fly; real results returned, 1 credit per lookup                            |
 
 The same discipline as above applies: a configured endpoint, a local fake or a
 scaffold is not a demonstrated integration. None of these three may be claimed

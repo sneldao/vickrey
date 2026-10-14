@@ -330,6 +330,27 @@ class ObservationStore:
         return self.similar(self.embed(text), **kwargs)
 
 
+def _ca_bundle() -> str | None:
+    """Point the driver at a CA bundle we can vouch for.
+
+    Atlas serves a public certificate, so verification should succeed against
+    any sane trust store. It does not always: ``python:3.12-slim`` -- the image
+    this ledger ships in -- has no ``ca-certificates``, and ``pymongo`` does not
+    pull in ``certifi`` the way ``httpx`` does. The result is
+    ``CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate``, which
+    reads like an Atlas outage but is not.
+
+    ``None`` falls back to the system store, so a host with a working trust
+    store is unaffected.
+    """
+    try:
+        import certifi
+
+        return certifi.where()
+    except Exception:  # pragma: no cover - certifi is a hard requirement now
+        return None
+
+
 def connect(
     uri: str,
     *,
@@ -354,6 +375,10 @@ def connect(
         ) from exc
     client_options.setdefault("serverSelectionTimeoutMS", 5000)
     client_options.setdefault("appname", "vickrey-ledger")
+    if "tlsCAFile" not in client_options:
+        bundle = _ca_bundle()
+        if bundle:
+            client_options["tlsCAFile"] = bundle
     client = MongoClient(uri, **client_options)
     return ObservationStore(
         client[database][collection],

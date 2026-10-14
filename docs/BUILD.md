@@ -174,8 +174,30 @@ context on. 91 JS tests and 111 ledger tests pass.
   count.
 - **No volume**, so the SQLite copy resets on every `fly deploy` — creating one
   needs a payment method, which was not worth blocking the evening on.
-- **Atlas and Tavily are still undeployed.** The Atlas write path has only run
-  against a fake store; Tavily only against `scripts/fake_tavily.py`.
+- **Atlas and Tavily are now both deployed and verified live.** `MONGODB_URI`
+  and `TAVILY_API_KEY` are Fly secrets; the Commons panel serves real anchors
+  from an M0 cluster and the context route returns real Tavily results. The
+  Atlas collection holds 12 documents: 9 labelled sample anchors across 3
+  observers, plus 3 mirrored live from the field client.
+- **Atlas took three fixes, each masquerading as the same fault.**
+  `tlsv1 alert internal error` on connect is not a certificate problem — it is
+  Atlas rejecting an IP that is not on the network access list, which is empty
+  on a new cluster. Once that was fixed the error honestly became
+  `CERTIFICATE_VERIFY_FAILED`, because local Python had no CA bundle for
+  Atlas's certificate; `app.atlas.connect` now passes certifi's bundle
+  explicitly, and `certifi` is a requirement rather than a transitive one.
+  Third, `atlas dbusers update` takes the username as a positional argument, so
+  `--username` changed nothing and auth failed with `bad auth`. Worth recording
+  because "TLS handshake failed" sent the diagnosis in the wrong direction
+  twice.
+
+### Later that evening
+
+Vickrey was **not** the project demoed at the Buildathon — a different project
+was chosen, because this one was not ready to present. Everything after that is
+consequence work on Vickrey itself: the live Atlas commons, the honest
+self-description, and the tests that keep both true.
+
 - **On-device inference remains unverified.** Still no offline phone run.
 
 ## Compliance

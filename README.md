@@ -46,10 +46,22 @@ verified or built:
   method), and **the app must be scaled to exactly one machine after every
   deploy**, because Fly's rolling deploy otherwise leaves two machines each
   holding their own block store. See the Fly section below.
-- **Atlas and Tavily are not deployed.** Both are wired but have never been
-  reached from a real service: the Atlas write path has only run against a fake
-  store, and the Tavily client only against `scripts/fake_tavily.py`. Treat both
-  as untested integrations.
+- **Atlas and Tavily are both live.** `MONGODB_URI` and `TAVILY_API_KEY` are set
+  as Fly secrets; `/health` reports `observations: true` and `context: true`, and
+  the Commons panel serves real anchors from a real M0 cluster. Getting there took
+  three fixes that are worth knowing about, because each failure looked like the
+  same thing:
+  1. **An empty IP access list.** Atlas refuses an unknown IP with a TLS alert
+     (`tlsv1 alert internal error`) that looks exactly like a certificate fault.
+     It is not — it is an access-list rejection.
+  2. **No CA bundle.** Local Python had no trust store for Atlas's certificate;
+     `app.atlas.connect` now passes certifi's bundle explicitly.
+  3. **`atlas dbusers update` needs the username positionally**, so a `--username`
+     flag silently changed nothing and auth failed with `bad auth`.
+     Atlas is reachable from anywhere (`0.0.0.0/0`) because Fly's egress IPs are
+     dynamic. That is acceptable here precisely because of the anchoring rule: the
+     collection holds commitments, coarse areas and species summaries — no photos,
+     no notes, no precise location.
 - A real **on-device/offline** model run is still unverified. A real
   server-hosted Gemma 3 4B vision inference through the field client did run
   over a private SSH tunnel: on a credited Wikimedia Commons European robin

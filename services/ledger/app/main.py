@@ -336,9 +336,13 @@ def create_app(
             web.close()
 
     app = FastAPI(
-        title="Veles evidence ledger",
-        summary="Application evidence compared with an independent Hornet read.",
-        version="0.2.0",
+        title="Vickrey evidence ledger",
+        summary=(
+            "Application evidence compared with an independently read tagged-data "
+            "block. With HORNET_EMBEDDED=1 the block store is in-process and the "
+            "check compares two stores rather than two processes."
+        ),
+        version="0.3.0",
         lifespan=lifespan,
     )
     app.state.db = database
@@ -358,13 +362,48 @@ def create_app(
         allow_headers=["*"],
     )
 
+    def _anchoring_mode() -> str:
+        """Name the current anchoring mode, and say what it costs.
+
+        A service that overstates its own guarantees is worse than no service,
+        so the honest mode string is part of the public surface rather than a
+        log line. In embedded mode the ledger writes the block before reading it
+        back, which is a weaker claim than "independently reads" and has to be
+        visible to anyone reading the API.
+        """
+        if anchoring is not None:
+            return "embedded"
+        return "messages-api"
+
     @app.get("/")
     def root() -> dict:
         return {
-            "service": "veles-evidence-ledger",
+            "service": "vickrey-evidence-ledger",
             "role": (
-                "Store the application event, then independently read the Hornet "
-                "block and compare tagged data. Not a tangle explorer."
+                "Store the application event, read the tagged-data block back, "
+                "and compare them. Not a tangle explorer."
+            ),
+            # Stated plainly, because in embedded mode the ledger both writes and
+            # reads the block, so it is not an independent source.
+            "anchoring": _anchoring_mode(),
+            "guarantee": (
+                {
+                    "independent_source": False,
+                    "note": (
+                        "The block store is in this process. The application copy "
+                        "is still a separate store, so an edited copy still yields "
+                        "PAYLOAD_MISMATCH -- but the block is not held by a "
+                        "separate process. Run with HORNET_URL to get that."
+                    ),
+                }
+                if anchoring is not None
+                else {
+                    "independent_source": True,
+                    "note": (
+                        "This service only ever reads the block; another process "
+                        "submitted it."
+                    ),
+                }
             ),
             "health": "/health",
             "docs": "/docs",
@@ -385,7 +424,8 @@ def create_app(
             "status": "ok",
             "service": "ledger",
             "hornet_url": app.state.hornet_url,
-            "anchoring": "embedded" if anchoring is not None else "messages-api",
+            "anchoring": _anchoring_mode(),
+            "independent_source": anchoring is None,
             "context": web is not None,
             "blocks_registered": (
                 anchoring.registered if anchoring is not None else None

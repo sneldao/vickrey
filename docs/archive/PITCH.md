@@ -1,8 +1,12 @@
 # Submission plan — Hacktoberfest 2026, Week 1: Touch Grass
 
+> **Archived.** The Week 1 entry was submitted on October 11, 2026; this is the
+> plan and record as filed, not a live document. Current status lives in
+> [`../STATUS.md`](../STATUS.md).
+
 > **Submitted.** The DEV post went in on October 11, 2026, and this document is
 > kept as the record of what was claimed and what was not. Changes after that
-> date are tracked separately in [`BUILD.md`](BUILD.md) under _Buildathon —
+> date are tracked separately in [`BUILD.md`](../BUILD.md) under _Buildathon —
 > HYPE / Buildathon London, 14 October 2026_, which is a **different event with
 > a different jury**. Do not retro-fit post-submission work into the Week 1
 > claims here: the entry said what it said, and that is the honest record.
@@ -12,7 +16,7 @@
 
 **Project:** Vickrey — a sealed bid on what you saw. Offline, open-source AI field
 identification with a tamper-evident ecological logbook. The name is the metaphor:
-William Vickrey's sealed-bid auction (see [`BRAND.md`](BRAND.md)).
+William Vickrey's sealed-bid auction (see [`BRAND.md`](../BRAND.md)).
 
 **Entry period:** October 5, 2026, 9:00 AM PDT – October 11, 2026, 11:59 PM PDT ([Week 1 rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules)). Publish one DEV post with the official [challenge template](https://dev.to/challenges/hacktoberfest-week1-2026-10-05) and tags `#devchallenge` and `#hf26challenge`. Include a demo URL or video, repository link, and why open innovation matters. One entry only; if more than one is submitted, only the first is judged.
 

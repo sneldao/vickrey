@@ -6,7 +6,7 @@ of losing a sealed observation:
     sync_observation -> POST to the Messages API -> poll solid / milestone
 
 Status: scaffold. It needs a Temporal server and a running Messages API to
-execute; it has not been run yet. Partner mapping lives in docs/SPONSORS.md.
+execute; it has not been run yet. Partner mapping lives in docs/archive/SPONSORS.md.
 
 Run (once Temporal and the API are up):
 

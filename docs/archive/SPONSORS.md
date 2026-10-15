@@ -1,5 +1,9 @@
 # Partner stack — maximising Hacktoberfest prize categories
 
+> **Archived.** Week 1 closed on October 11, 2026 and the Buildathon evening on
+> October 14. This is the prize-category plan as filed; what is actually running
+> is in [`../STATUS.md`](../STATUS.md).
+
 Week 1 offers one $250 overall prize, six $200 featured partner prizes, and ten $100 partner prizes. A participant may win **only one prize per challenge**: the amounts cannot be added together for a single entry. Every eligible entry is automatically considered for the overall prize and each partner category it meaningfully uses. Writing quality is weighted most heavily. See the [Week 1 rules](https://dev.to/page/hacktoberfest-week1-2026-10-05-contest-rules) and [challenge categories](https://dev.to/challenges/hacktoberfest-week1-2026-10-05).
 
 ## The target stack

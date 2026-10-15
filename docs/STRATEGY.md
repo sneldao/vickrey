@@ -6,14 +6,11 @@
 at its core that gets people off the screen and into the world. Vickrey is an
 offline, open-weight field identifier with a tamper-evident ecological logbook.
 
-**Status:** the seal → verify → anchor → crack loop is verified end-to-end
-locally against a mock Hornet, in both the three-process and single-process
-shapes (see the README status block); everything else in this document is the
-plan. Real server-hosted Gemma 3 4B inference through the field client was also
-verified on a credited robin image; no offline phone run. Atlas, Fly and Tavily
-are **wired and deployed** — the ledger on Fly.io, the commons on Atlas M0,
-web context on Tavily, and the field client on GitHub Pages. See the Buildathon
-section of [`BUILD.md`](BUILD.md). On-device inference remains unbuilt.
+**Status:** the single honest table is [`STATUS.md`](STATUS.md) — this document
+is the plan and the reasoning, not a live-state report. The seal → verify →
+anchor → crack loop is Live; the on-device model that opens the vision is Not
+built; the ledger anchors to embedded/mock Hornet, not a public tangle. Read
+STATUS.md before borrowing any claim from below.
 
 ## The re-frame: outcome first, domain second
 
@@ -93,18 +90,13 @@ missing key degrades to a line of text and can never move a status off
 
 ### Hosting shapes
 
-| Mode                           | Processes | Two-source check           | When                            |
-| ------------------------------ | --------- | -------------------------- | ------------------------------- |
-| `scripts/demo_field.sh`        | 3         | separate processes         | the faithful local demo         |
-| `scripts/demo_single.sh` (Fly) | 1         | separate stores, same proc | one container, simplest to host |
-| real `HORNET_URL`              | ≥ 2       | fully independent          | production                      |
-
-In embedded mode the ledger writes the block before reading it back, so it no
-longer only ever GETs. The two-source property survives at the **data** layer —
-the application copy is in SQLite, the block in a separate structure, so editing
-the copy alone still yields `PAYLOAD_MISMATCH` — but the guarantee that a
-different _process_ holds the block is lost. The block store is also in memory,
-so the app must run exactly one instance with auto-stop off.
+The three shapes — three-process faithful demo, single-process embedded (what
+Fly runs), and real independent Hornet — are documented with their deploy
+constraints in [`OPS.md`](OPS.md#hosting-shapes). The strategy point is the
+middle one: embedded mode keeps the two-source check at the **data** layer
+(application copy in SQLite, block in a separate structure) but gives up the
+guarantee that a _different process_ holds the block, so the ledger publishes
+`independent_source: false` rather than hiding it.
 
 ## The anchoring rule
 

@@ -1,5 +1,9 @@
 # Build log — Hacktoberfest 2026, Week 1: Touch Grass
 
+> **This is a log, not a status page.** Entries are dated, written in the tense
+> of the evening they happened, and kept as evidence. What is true _now_ is in
+> [`STATUS.md`](STATUS.md); how to run things is in [`OPS.md`](OPS.md).
+
 **Vickrey — Prove What You Saw.** Offline, open-source AI field identification
 with a tamper-evident ecological logbook. Entry period: October 5, 2026
 at 9:00 AM PDT through October 11, 2026 at 11:59 PM PDT
@@ -68,8 +72,8 @@ location + model_id + species summary`, never the raw record, reaching
    unit-tested against a fake store; `MONGODB_URI` was unset in the live demo,
    so similar-sightings reported "no observation store configured". Darwin
    Core export: not implemented.
-6. **Write-up.** DEV post per `PITCH.md` (submitted October 11, 2026); partner stack per
-   `SPONSORS.md` (targets, not realised integrations).
+6. **Write-up.** DEV post per `archive/PITCH.md` (submitted October 11, 2026); partner stack per
+   `archive/SPONSORS.md` (targets, not realised integrations).
 
 ## Field review and journal (October 11)
 
@@ -94,7 +98,7 @@ The Week 1 entry was submitted on October 11. Everything below is
 **after submission**: it does not change what was judged, and it is committed
 separately so the submitted state stays legible. The Buildathon partners
 (MongoDB, Vercel, Tavily) are a different event with a different jury from the
-Week 1 partners; see [`SPONSORS.md`](SPONSORS.md).
+Week 1 partners; see [`archive/SPONSORS.md`](archive/SPONSORS.md).
 
 The goal for the evening was not new mechanics. It was that the loop must be
 **demonstrable by a stranger on a laptop with no camera, no model and no

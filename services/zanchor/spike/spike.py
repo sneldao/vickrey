@@ -37,10 +37,12 @@ MIN_OP_TRIES = 240  # 10 min at 2.5s polls
 
 
 def make_client(rpc_url: str):
-    req = urllib.parse.Request(rpc_url.rstrip("/") + "/")
-    auth = b64encode(
-        f"{rpc_url.split('@')[0].split('//')[1].split(':')[0]}:{rpc_url.split('@')[0].split('//')[1].split(':')[1]}".encode()
-    ).decode()
+    # Credentials ride in the Authorization header, not the URL: urllib's
+    # Request mis-parses embedded userinfo in some versions.
+    cred, _sep, netloc = rpc_url.split("//", 1)[1].partition("@")
+    url = "http://" + netloc + "/"
+    req = urllib.request.Request(url)
+    auth = b64encode(cred.encode()).decode()
     req.add_header("Authorization", f"Basic {auth}")
     req.add_header("Content-Type", "application/json")
     counter = [0]
@@ -65,15 +67,17 @@ def make_client(rpc_url: str):
     return call
 
 
-def wait_op(call, opid, timeout_ops=MIN_OP_TRIES):
-    for _ in range(timeout_ops):
-        status = call("z_getoperationstatus", [opid])
-        if status.get("jobStatus") == "success":
+def wait_op(call, opid, timeout_ops=MIN_OP_TRIES, mine=None):
+    for i in range(timeout_ops):
+        status = call("z_getoperationstatus", [[opid]])[0]
+        if status.get("status") == "success":
             return status.get("result")
-        if status.get("jobStatus") in ("failure", "error"):
+        if status.get("status") in ("failed", "error"):
             raise RuntimeError(f"operation failed: {status}")
+        if mine is not None and i % 5 == 4:
+            mine()  # regtest: nobody mines for us; the op waits for a block
         time.sleep(2.5)
-    raise TimeoutError(f"operation {opid} still {status.get('jobStatus')}")
+    raise TimeoutError(f"operation {opid} still {status.get('status')}")
 
 
 def create_account(call, label):
@@ -107,7 +111,7 @@ def main():
     print(f"  {info.get('version')} chain={info.get('chain')} tip={tip}")
     if args.regtest:
         taddr = call("getnewaddress")
-        call("generatetoaddress", [101, taddr])
+        call("generate", [101])
         print(f"  mined 101 blocks, tip={call('getblockcount')}")
 
     print("== 1. accounts")
@@ -135,9 +139,11 @@ def main():
             "z_sendmany",
             [taddr, [{"address": anchor["zaddr"], "amount": "1.0"}], 10, FEE],
         )
-        wait_op(call, opid)
+        wait_op(
+            call, opid, mine=(lambda: call("generate", [1])) if args.regtest else None
+        )
         if args.regtest:
-            call("generatetoaddress", [1, taddr])
+            call("generate", [1])
         print(f"  note {i + 1} shielded")
 
     def commitment(tag):
@@ -180,12 +186,14 @@ def main():
                     FEE,
                 ],
             )
-        res = wait_op(call, opid)
+        res = wait_op(
+            call, opid, mine=(lambda: call("generate", [1])) if args.regtest else None
+        )
         txid = res["txid"] if isinstance(res, dict) else res
         txids.append((tag, txid))
         print(f"  anchor[{tag}] commitment={c[:16]}… txid={txid}")
         if args.regtest:
-            call("generatetoaddress", [1, taddr])
+            call("generate", [1])
 
     if args.regtest:
         time.sleep(1)

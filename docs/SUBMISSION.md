@@ -79,7 +79,7 @@ blocks are ours.
 | Replay protection                  | Node-enforced (nullifier); service 409 as defense in depth                                                                        |
 | Jittered anchor scheduling         | Built, 10 tests; 30 min floor / 20 min uniform                                                                                    |
 | Verifier receipts, no enumeration  | Built; no list endpoint by contract                                                                                               |
-| Memo mode (commitment in the memo) | Consensus-active in v6.20.0 (D0 proved the round-trip); not yet wired into the service — stretch                                  |
+| Memo mode (commitment in the memo) | Wired (`ZANCHOR_MODE=B`), verified on a live node: raw chain data shows ciphertext only, verifier decrypts the commitment         |
 | Field rewards (shielded payout)    | Design only — stretch, not claimed in the demo                                                                                    |
 | Mainnet node                       | Not running: testnet sync is stuck on zcashd 6.x (see above); the service is node-agnostic and the one-line change is in the docs |
 

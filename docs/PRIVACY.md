@@ -94,9 +94,13 @@ Two honest footnotes:
 
 Also verified in the same run: **Orchard memos are consensus-active in
 v6.20.0** — a 512-bit memo written on the anchor's output was read back
-intact by `z_viewtransaction`. Mode B (the commitment lives in the memo, the
-note burns nothing unique) is therefore implementable; it ships only if the
-build window allows, and only with the same fee and fallback rules as mode A.
+intact by `z_viewtransaction`. Mode B (the commitment lives in the memo) is
+wired (`ZANCHOR_MODE=B`) and live-verified: the raw transaction — the same
+bytes a public explorer sees — carries only the encrypted `outCiphertext`,
+while the verifier's wallet view decrypts the commitment. A mode-B anchor
+is indistinguishable from any other memo-bearing shielded transfer, and a
+node that refuses memos falls back to mode A, with the receipt saying
+which mode actually ran.
 
 ## Selective disclosure (policy set 2026-10-25)
 

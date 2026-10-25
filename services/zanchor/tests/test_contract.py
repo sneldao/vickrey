@@ -67,6 +67,61 @@ class FakeRpc:
         }
 
 
+def test_mode_b_carries_the_commitment_in_the_memo(tmp_path, monkeypatch):
+    # Mode B (docs/ZANCHOR_API.md): the commitment rides the anchor's memo,
+    # encrypted for the verifier. The service must hand the node
+    # "00" + commitment and say so on the receipt.
+    monkeypatch.setenv("ZANCHOR_DB", str(tmp_path / "b.db"))
+    monkeypatch.setenv("ZANCHOR_MODE", "B")
+    monkeypatch.setenv("ZANCHOR_ANCHOR_ZADDR", "u:anchor")
+    monkeypatch.setenv("ZANCHOR_RECIPIENT_ZADDR", "u:verifier")
+    monkeypatch.setenv("ZANCHOR_RECIPIENT_TADDR", "t:verifier")
+
+    from app.main import AnchorService, build_app
+
+    app = build_app()
+    service: AnchorService = app.state.service
+    service.rpc = FakeRpc()
+    with TestClient(app) as c:
+        commitment = _commitment(7)
+        r = c.post("/anchor", json={"commitment": commitment})
+        assert r.status_code == 202
+        assert r.json()["mode"] == "B"
+        assert r.json()["shielded"] is True
+        assert service.rpc.anchors[0]["memo"] == "00" + commitment
+
+
+def test_mode_b_falls_back_to_a_when_memos_are_refused(tmp_path, monkeypatch):
+    # If the node will not put a memo on the output (Orchard memos
+    # disabled), the anchor still happens — as mode A, and the receipt
+    # must say A, never B.
+    monkeypatch.setenv("ZANCHOR_DB", str(tmp_path / "b2.db"))
+    monkeypatch.setenv("ZANCHOR_MODE", "B")
+    monkeypatch.setenv("ZANCHOR_ANCHOR_ZADDR", "u:anchor")
+    monkeypatch.setenv("ZANCHOR_RECIPIENT_ZADDR", "u:verifier")
+    monkeypatch.setenv("ZANCHOR_RECIPIENT_TADDR", "t:verifier")
+
+    from app.main import AnchorService, build_app
+
+    app = build_app()
+    service: AnchorService = app.state.service
+    rpc = FakeRpc()
+    orig_send = rpc.send_shielded
+
+    def send_shielded(from_zaddr, to_zaddr, amount, fee, memo=None):
+        if memo is not None:
+            raise RpcError(-8, "Orchard actions disabled")
+        return orig_send(from_zaddr, to_zaddr, amount, fee, memo)
+
+    rpc.send_shielded = send_shielded
+    service.rpc = rpc
+    with TestClient(app) as c:
+        r = c.post("/anchor", json={"commitment": _commitment(8)})
+        assert r.status_code == 202
+        assert r.json()["mode"] == "A"
+        assert rpc.anchors[-1]["memo"] is None
+
+
 @pytest.fixture()
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("ZANCHOR_DB", str(tmp_path / "zanchor.db"))

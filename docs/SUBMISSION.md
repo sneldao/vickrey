@@ -59,7 +59,11 @@ Everything below runs from this repo, no secrets needed:
    `?anchor=shielded&zanchor=<service>`: seal a sample walk, sync, and
    the outbox receipts confirm with real txids; the explorer
    (`apps/explorer?receipt=…`) shows the `SHIELDED · VERIFIED` panel
-   after its proof-of-existence check.
+   after its proof-of-existence check. The tamper beat runs in the same
+   mode: edit a queued copy and the seal cracks, sync refuses to send
+   the edited entry, and putting the sealed copy back re-forms the seal.
+   A tampered observation also has no anchor: its commitment is a
+   different 32 bytes, and no receipt exists for it.
 3. **Mock-only, anywhere, any machine.** `scripts/demo_zcash.sh` with
    no arguments spins up a contract-exact mock and the same checks; it
    says plainly that no chain was involved.

@@ -35,3 +35,6 @@ services/ledger/data/
 
 # Vercel/Next local project metadata
 .vercel/
+
+# Local node configs with real credentials stay out of git.
+services/zanchor/docker/zcash.conf

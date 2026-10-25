@@ -1,0 +1,33 @@
+# zcashd v6.20.0 from source — no published binary images exist.
+# Build:  docker build -t <registry>/vickrey-zcashd:v6.20.0 .
+# Run:    zcashd with -datadir/-confdir pointed at the mounted volume.
+
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential git curl ca-certificates unzip ccache file wget xz-utils procps \
+      autoconf automake libtool pkg-config cmake bsdextrautils \
+      libssl-dev libevent-dev libgomp1 \
+      libboost-all-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+WORKDIR /build/zcash
+RUN git clone --recursive --branch v6.20.0 --depth 1 https://github.com/zcash/zcash .
+RUN ./zcutil/build.sh -j"$(nproc)"
+
+RUN install -d /usr/local/share/zcash-params \
+    && cp src/zcashd src/zcash-cli /usr/local/bin/ \
+    && cp share/params/* /usr/local/share/zcash-params/ \
+    && apt-get purge -y --auto-remove build-essential g++ gcc \
+       libboost-all-dev automake libtool pkg-config cmake ccache git \
+    && apt-get install -y --no-install-recommends \
+       libssl3t64 libevent-core-3-1t64 libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+VOLUME /data
+ENTRYPOINT ["/usr/local/bin/zcashd"]
+CMD ["-datadir=/data", "-confdir=/data"]

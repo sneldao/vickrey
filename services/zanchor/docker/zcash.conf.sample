@@ -1,0 +1,17 @@
+# Vickrey zcashd — mainnet node for the ECATHON shielded anchor.
+# Lives on the Fly volume; rpcbind is LAN-scoped by the machine's firewall.
+#
+# txindex intentionally OFF (~8GB of disk): the verifier keeps the raw
+# anchor tx it built; public proof-of-existence uses the block-explorer
+# API, which needs only block height + txid.
+
+rpcbind=0.0.0.0
+rpcallowip=0.0.0.0/0
+rpcuser=zanchor
+rpcpassword=__RPC_PASSWORD__
+rpcport=28232
+zmqpubhashblock=tcp://0.0.0.0:28332
+server=1
+daemon=0
+fallbacktodns=1
+prune=0

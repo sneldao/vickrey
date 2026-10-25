@@ -131,9 +131,22 @@ will name each leak and its mitigation:
 **Cut line: mode A + threat model + demo ship. Modes B, rewards, and film
 polish are stretch in that order of risk.**
 
-### D0 — Fri Oct 25: spikes + GO/NO-GO (tonight)
+### D0 — Fri Oct 25: spikes + GO/NO-GO — **GO (evening of the 25th)**
 
-**Findings so far (evening of the 25th):**
+**Verdict:** zcashd **v6.20.0 regtest**, run via `services/zanchor/spike/probe6.py`:
+
+1. Dedicated anchor account funded with shielded notes (`z_shieldcoinbase`) — shielded spends work.
+2. Constant-amount `z_sendmany` (0.001 ZEC) with a 512-bit commitment **memo** mined: the transaction is one unremarkable shielded transfer — mode A safe, and **Orchard memos are consensus-active, so mode B is viable**.
+3. The memo read back intact with `z_viewtransaction`.
+4. Resubmitting the identical raw tx: node rejects with **`bad-txns-orchard-duplicate-nullifier`** — replay protection is a consensus rule, not a service promise.
+
+Engineering notes from the run (all recorded in the probe): 6.x op-status
+RPC takes `[[opid]]` and reports `status`; ZIP 317 fee rules apply
+(2-action shielded tx = 0.0001 grace fee; fees > 4× conventional refused);
+regtest coinbase pays a legacy keypool address that `z_shieldcoinbase`
+consumes directly.
+
+**Findings (day of the 25th, for the record):**
 
 - No prebuilt `zcashd` binaries are published anywhere we can find
   (GitHub releases for v6.12.5/v6.20.0 carry no assets; the Docker Hub
@@ -153,8 +166,10 @@ polish are stretch in that order of risk.**
 
 - Register the single submitting account; lock track = Wildcard.
 - `docker-compose`: `zcashd` (mainnet, small real amounts — avoids testnet
-  faucet flakiness; ~0.01 ZEC total is enough). **Start the node sync
-  tonight** — this is the long pole.
+  faucet flakiness; ~0.01 ZEC total is enough). **Start the node sync** —
+  this is the long pole; image built from source on nuncio-vultr
+  (`vickrey-zcashd:v6.20.0`, Dockerfile committed) and pending push to the
+  registry for the Fly machine.
 - Spike (throwaway script): create wallet + viewing key, send a note to the
   anchor account, and make **one shielded tx via RPC** (`z_sendmany` from a
   shielded source), then confirm we can read the tx back with the viewing

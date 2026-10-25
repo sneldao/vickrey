@@ -11,10 +11,11 @@ client code, and the numbers in them are policy decisions.
 
 **What is built.** The client half (schedule, commitment-only wire body,
 receipt-aware explorer) and `services/zanchor` (the service that makes the
-transaction) are built and contract-tested; the Zcash node itself is still
-coming up, so the chain-level claims below (shielded spends, memo mode,
-nullifier replay) are design plus pending D0 evidence, not yet a run.
-`STATUS.md` is the authority on what actually runs.
+transaction) are built and contract-tested, and the chain-level claims below
+are backed by the D0 run on zcashd v6.20.0 (regtest): a constant-amount
+shielded anchor with a memo was mined and read back, and a resubmitted
+copy of the same transaction was rejected by the node. `STATUS.md` is the
+authority on what actually runs.
 
 ## What a shielded anchor puts on the chain (mode A, target)
 
@@ -67,21 +68,35 @@ What it does **not** buy — stated plainly:
    aloud; quoting the demo's numbers as the design would be the same lie in
    the other direction.
 
-## Replay protection (open — depends on the D0 spike)
+## Replay protection (answered by D0, 2026-10-25, zcashd v6.20.0 regtest)
 
-Two cases, and which one applies is not yet known:
+Shielded spends work: the D0 run funded a dedicated anchor account, burned
+one note in a constant-amount `z_sendmany` (0.001 ZEC), and the node mined it.
+Replaying the anchor therefore means double-spending that note, and the node
+enforces it at consensus: resubmitting the identical raw transaction is
+rejected with `bad-txns-orchard-duplicate-nullifier`. The service's `409` on
+a known commitment is defense in depth on top of that, not the mechanism.
 
-- **If shielded spends work:** mode A burns one dedicated note per commitment.
-  Replaying the anchor means double-spending that note, which the node rejects.
-  The service's `409` on a known commitment is defense in depth.
-- **If the node refuses shielded spends** (Orchard actions disabled in some
-  releases): there is no note and no nullifier to burn. The `409` is then the
-  **only** replay protection, and it is verifier-side — trust in the verifier's
-  database, not a chain guarantee.
+Two honest footnotes:
 
-Write this section only after the spike answers it. Do not let "unique
-nullifier" appear in the submission unless a test shows the node rejecting a
-replayed anchor.
+- **The transparent fallback has no nullifier.** If a node ever refuses
+  shielded spends, the fallback beacon is a transparent constant-amount
+  transfer and the `409` is the only replay protection — verifier-side trust,
+  not a chain guarantee. The fallback reports `shielded: false` so no one can
+  miss that. (The 6.12.5 Orchard-circuit vulnerability that motivated the
+  "temporarily disabled" flag in that release is fixed by NU6.2, which
+  v6.20.0 activates, and the D0 run is the direct check.)
+- **Replay protection is per-note, not per-commitment, on the chain side.**
+  The chain knows the spent note cannot be spent again; it does not know what
+  a commitment is. The commitment↔txid binding that makes "this exact anchor
+  is already anchored" checkable lives in the verifier. Both facts are true
+  at once; neither weakens the other.
+
+Also verified in the same run: **Orchard memos are consensus-active in
+v6.20.0** — a 512-bit memo written on the anchor's output was read back
+intact by `z_viewtransaction`. Mode B (the commitment lives in the memo, the
+note burns nothing unique) is therefore implementable; it ships only if the
+build window allows, and only with the same fee and fallback rules as mode A.
 
 ## Selective disclosure (policy set 2026-10-25)
 

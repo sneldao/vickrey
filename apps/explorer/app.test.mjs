@@ -300,3 +300,84 @@ test("block links open the Stardust dashboard and the Hornet block", () => {
     "http://localhost:8088/messages?limit=500",
   );
 });
+
+const receipt = {
+  receipt_id: "rec_01J",
+  commitment: "a".repeat(64),
+  status: "confirmed",
+  txid: "deadbeef",
+  height: 2712345,
+  anchored_at: "2026-10-27T12:34:56Z",
+};
+
+test("shieldedMessage maps a receipt into a row and carries nothing else", () => {
+  const row = api.shieldedMessage(receipt, null);
+  assert.equal(row.shielded, true);
+  assert.equal(row.block_id, "deadbeef");
+  assert.equal(row.flow_id, "shielded");
+  assert.equal(row.payload_json, null);
+  assert.equal(row.ledger_payload_json, null);
+  assert.equal(row.status, "PENDING", "a receipt alone is not yet VERIFIED");
+  assert.equal(api.incidentTitle(row), "Shielded anchor");
+  const wire = JSON.stringify(row);
+  for (const leak of ["species", "location", "summary", "observed_at"]) {
+    assert.equal(wire.includes(leak), false, `shielded row leaked ${leak}`);
+  }
+});
+
+test("shieldedState needs the receipt and the chain check to say VERIFIED", () => {
+  const confirmed = { status: "confirmed", txid: "t1", height: 5 };
+  assert.equal(
+    api.shieldedState(confirmed, { exists: true, height: 5 }),
+    "VERIFIED",
+  );
+  assert.equal(api.shieldedState(confirmed, null), "PENDING");
+  assert.equal(
+    api.shieldedState(confirmed, { exists: false }),
+    "PAYLOAD_MISMATCH",
+  );
+  assert.equal(
+    api.shieldedState({ status: "queued" }, { exists: true }),
+    "PENDING",
+  );
+  assert.equal(api.shieldedState(null, null), "PENDING");
+});
+
+test("shielded rows stamp SHIELDED before the verdict", () => {
+  assert.equal(
+    api.stampText({ shielded: true, status: "VERIFIED" }),
+    "SHIELDED · VERIFIED",
+  );
+  assert.equal(api.stampText({ status: "VERIFIED" }), "VERIFIED");
+});
+
+test("the reveal panel is the public checklist with nothing to check", () => {
+  const rows = api.revealRows();
+  const names = rows.map((row) => row.name);
+  for (const expected of [
+    "Species",
+    "Coarse area",
+    "Observer",
+    "Observation time",
+    "Purpose",
+    "Amount",
+  ]) {
+    assert.ok(names.includes(expected), `missing ${expected}`);
+  }
+  rows.forEach((row) => assert.equal(row.state, "hidden"));
+});
+
+test("receiptRows shows the binding, preferring the chain-checked height", () => {
+  const unchecked = api.receiptRows(receipt, null);
+  assert.deepEqual(
+    unchecked.map((row) => row.value),
+    ["a".repeat(64), "deadbeef", 2712345, "rec_01J"],
+  );
+  const checked = api.receiptRows(receipt, { exists: true, height: 2712400 });
+  assert.equal(checked[2].value, 2712400);
+  assert.equal(
+    api.blockExplorerUrl("deadbeef"),
+    "https://blockchair.com/zcash/transaction/deadbeef",
+  );
+  assert.equal(api.blockExplorerUrl(""), "");
+});

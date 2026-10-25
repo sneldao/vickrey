@@ -33,6 +33,7 @@
   var KEY_KEY = "vickrey.device_key";
   var FLOW_KEY = "vickrey.flow";
   var JOURNAL_KEY = "vickrey.journal";
+  var ANCHOR_PLAN_KEY = "vickrey.anchor_plan";
 
   var CONFIG_KEYS = [
     "ledgerUrl",
@@ -42,6 +43,10 @@
     "ledgerLabel",
     "area",
     "place",
+    "anchorMode",
+    "zanchorUrl",
+    "anchorMinDelayMs",
+    "anchorJitterMs",
   ];
 
   /* Query-string names, short for a demo URL, mapped to config keys. Both
@@ -57,6 +62,12 @@
     ledgerLabel: "ledgerLabel",
     area: "area",
     place: "place",
+    anchor: "anchorMode",
+    mode: "anchorMode",
+    zanchor: "zanchorUrl",
+    zanchorUrl: "zanchorUrl",
+    minDelay: "anchorMinDelayMs",
+    jitter: "anchorJitterMs",
   };
 
   /* Merge the file's config with URL overrides, so a demo can point one page at
@@ -67,6 +78,8 @@
     CONFIG_KEYS.forEach(function (key) {
       if (typeof source[key] === "string" && source[key].trim()) {
         out[key] = source[key].trim();
+      } else if (typeof source[key] === "number" && isFinite(source[key])) {
+        out[key] = source[key];
       }
     });
     var params;
@@ -184,7 +197,16 @@
     };
   }
 
-  async function drainVerified(queueImpl, publicKey, trustImpl, send) {
+  /* The shielded anchor body: the commitment and nothing else (see
+   * docs/ZANCHOR_API.md). No species, no area, no timestamp, no signature, no
+   * public key — nothing at the service edge can be correlated with the
+   * observation. The device's signature over the commitment stays on-device
+   * and is presented at selective-disclosure time. */
+  function shieldedBody(entry) {
+    return { commitment: entry.hash };
+  }
+
+  async function drainVerified(queueImpl, publicKey, trustImpl, send, only) {
     var entries = queueImpl.list();
     if (!entries.length) {
       return {
@@ -214,7 +236,7 @@
         empty: false,
       };
     }
-    var drained = await queueImpl.drain(send);
+    var drained = await queueImpl.drain(send, only);
     drained.verdict = verdict;
     drained.empty = false;
     return drained;
@@ -261,6 +283,12 @@
     NOT_SOLID: "The commitment matches, but the block is not solid yet.",
     PAYLOAD_MISMATCH:
       "The anchored commitment no longer matches the application copy. The block never changed — the copy did.",
+    queued:
+      "The shielded anchor is queued at the anchor service; its transaction is not yet broadcast.",
+    broadcast:
+      "The shielded transaction is broadcast. The receipt takes its height when it settles.",
+    confirmed:
+      "The shielded transaction settled at the recorded height. The public chain reveals nothing about this observation.",
   };
 
   function statusNote(status) {
@@ -509,6 +537,17 @@
         ledgerLabel: resolved.ledgerLabel || "mock Hornet demo",
         area: parseArea(resolved.area),
         place: resolved.place || "",
+        anchorMode:
+          String(resolved.anchorMode || "").toLowerCase() === "shielded"
+            ? "shielded"
+            : "public",
+        zanchorUrl: resolved.zanchorUrl || "",
+        schedule: root.VickreySchedule
+          ? root.VickreySchedule.normalizeOptions({
+              minDelayMs: resolved.anchorMinDelayMs,
+              jitterMs: resolved.anchorJitterMs,
+            })
+          : { minDelayMs: 0, jitterMs: 0 },
       };
     })();
     var flow =
@@ -967,27 +1006,60 @@
         ],
       ];
       if (sync.state === "anchored") {
-        items.push([
-          "Ledger status",
-          escapeHtml(sync.status) + " — " + escapeHtml(statusNote(sync.status)),
-        ]);
-        items.push([
-          "Block",
-          '<span class="mono wrap">' +
-            escapeHtml(sync.block_id || "—") +
-            "</span>",
-        ]);
-        items.push([
-          "Milestone",
-          '<span class="mono">' +
-            escapeHtml(
-              sync.milestone_index === null ||
-                sync.milestone_index === undefined
-                ? "—"
-                : sync.milestone_index,
-            ) +
-            "</span>",
-        ]);
+        if (sync.mode === "shielded") {
+          items.push([
+            "Shielded anchor",
+            escapeHtml(sync.status) +
+              " — " +
+              escapeHtml(statusNote(sync.status)),
+          ]);
+          items.push([
+            "Transaction",
+            '<span class="mono wrap">' +
+              escapeHtml(sync.txid || "—") +
+              "</span>",
+          ]);
+          items.push([
+            "Height",
+            '<span class="mono">' +
+              escapeHtml(
+                sync.height === null || sync.height === undefined
+                  ? "—"
+                  : sync.height,
+              ) +
+              "</span>",
+          ]);
+          items.push([
+            "Receipt",
+            '<span class="mono wrap">' +
+              escapeHtml(sync.receipt_id || "—") +
+              "</span>",
+          ]);
+        } else {
+          items.push([
+            "Ledger status",
+            escapeHtml(sync.status) +
+              " — " +
+              escapeHtml(statusNote(sync.status)),
+          ]);
+          items.push([
+            "Block",
+            '<span class="mono wrap">' +
+              escapeHtml(sync.block_id || "—") +
+              "</span>",
+          ]);
+          items.push([
+            "Milestone",
+            '<span class="mono">' +
+              escapeHtml(
+                sync.milestone_index === null ||
+                  sync.milestone_index === undefined
+                  ? "—"
+                  : sync.milestone_index,
+              ) +
+              "</span>",
+          ]);
+        }
       }
       return (
         '<dl class="proof">' +
@@ -1020,7 +1092,10 @@
     function statusChip(row) {
       var text = STATE_LABEL[row.state];
       if (row.state === "anchored") {
-        text = "Anchored · " + row.sync.status;
+        text =
+          row.sync.mode === "shielded"
+            ? "SHIELDED · " + row.sync.status
+            : "Anchored · " + row.sync.status;
       }
       if (row.state === "cracked" && row.refused) {
         text = "Seal cracked · sync refused";
@@ -1037,6 +1112,9 @@
     }
 
     function similarBlock(row) {
+      if (settings.anchorMode === "shielded") {
+        return '<p class="hint">Commons search is off in shielded mode — a species query would leak the observation.</p>';
+      }
       var result = state.similar[row.hash];
       var body = "";
       if (result && result.error) {
@@ -1640,18 +1718,88 @@
       render("sync");
     }
 
+    /* The drawn anchor times, one per commitment, kept across reloads so the
+     * jitter is never re-rolled (schedule.js draws it exactly once). */
+    var anchorTimes = (function () {
+      try {
+        return (
+          JSON.parse(root.localStorage.getItem(ANCHOR_PLAN_KEY) || "{}") || {}
+        );
+      } catch (err) {
+        return {};
+      }
+    })();
+
+    function saveAnchorTimes() {
+      try {
+        root.localStorage.setItem(ANCHOR_PLAN_KEY, JSON.stringify(anchorTimes));
+      } catch (err) {
+        /* storage unavailable: the draws live for this session only */
+      }
+    }
+
+    var autoTimer = null;
+    function scheduleAutoSync(waitMs) {
+      if (autoTimer) {
+        root.clearTimeout(autoTimer);
+      }
+      autoTimer = root.setTimeout(async function () {
+        autoTimer = null;
+        if (state.busy) {
+          scheduleAutoSync(1000);
+          return;
+        }
+        await sync();
+      }, waitMs);
+    }
+
+    /* Public mode sends every queued entry now. Shielded mode consults the
+     * batched, jittered schedule first: only entries whose anchor window has
+     * opened leave the device, the rest are held and picked up by an automatic
+     * follow-up. Nothing is anchored at the moment of capture or at "back in
+     * range". */
     async function sync() {
       state.busy = true;
       state.syncError = null;
       render();
+      var shielded = settings.anchorMode === "shielded";
+      var plan = null;
+      var due = null;
+      if (shielded) {
+        if (!root.VickreySchedule) {
+          state.busy = false;
+          state.syncError =
+            "Shielded mode needs schedule.js, which failed to load. Nothing was sent.";
+          render();
+          return;
+        }
+        plan = root.VickreySchedule.planAnchors(
+          queue.list(),
+          anchorTimes,
+          Date.now(),
+          settings.schedule,
+        );
+        saveAnchorTimes();
+        due = {};
+        plan.send.forEach(function (entry) {
+          due[entry.hash] = true;
+        });
+      }
       var rows = {};
       var drained = await drainVerified(
         queue,
         state.publicKey,
         root.VickreyTrust,
         async function (entry) {
-          rows[entry.hash] = await postAnchor(entry);
+          rows[entry.hash] = shielded
+            ? await postShieldedAnchor(entry)
+            : await postAnchor(entry);
         },
+        due
+          ? function (entry) {
+              return !!due[entry.hash];
+            }
+          : null,
       );
       state.busy = false;
       if (drained.empty) {
@@ -1668,6 +1816,20 @@
           (sent ? "Sync stopped after " + sent + ": " : "Sync refused: ") +
           drained.error.message +
           ". Nothing unsent left the device.";
+      } else if (plan && plan.hold.length) {
+        var held = plan.hold.length;
+        if (plan.nextCheckAt !== null) {
+          scheduleAutoSync(Math.max(0, plan.nextCheckAt - Date.now()));
+        }
+        toast(
+          sent
+            ? "Anchored " +
+                sent +
+                "; " +
+                held +
+                " waiting for their anchor window"
+            : "Nothing due yet — " + held + " waiting for their anchor window",
+        );
       } else {
         toast("Anchored " + sent + " sighting" + (sent === 1 ? "" : "s"));
       }
@@ -1693,9 +1855,45 @@
       return row;
     }
 
+    /* Shielded mode: the commitment goes to the anchor service (docs/
+     * ZANCHOR_API.md), never to the public commons. The receipt — the
+     * commitment-to-txid-to-height binding — is kept here and by the verifier;
+     * nothing about the observation is published anywhere. */
+    async function postShieldedAnchor(entry) {
+      var response = await root.fetch(
+        trimUrl(settings.zanchorUrl) + "/anchor",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(shieldedBody(entry)),
+        },
+      );
+      var row = null;
+      try {
+        row = await response.json();
+      } catch (err) {
+        row = null;
+      }
+      if (!response.ok) {
+        throw new Error(
+          (row && row.detail) || "zanchor returned " + response.status,
+        );
+      }
+      row.mode = "shielded";
+      return row;
+    }
+
     async function similar(hash) {
       var record = journal.get(hash);
       if (!record) {
+        return;
+      }
+      if (settings.anchorMode === "shielded") {
+        state.similar[hash] = {
+          error:
+            "Commons search is off in shielded mode — a species query would leak the observation.",
+        };
+        render();
         return;
       }
       var query = entryTitle(record.entry);
@@ -1925,6 +2123,7 @@
     mount: mount,
     relayBody: relayBody,
     resolveConfig: resolveConfig,
+    shieldedBody: shieldedBody,
     sampleIdentification: sampleIdentification,
     shortHash: shortHash,
     statusNote: statusNote,

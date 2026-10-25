@@ -23,4 +23,19 @@ window.VICKREY_CONFIG = {
   model: "gemma3",
   ledgerLabel: "fly.io",
   place: "Hackney, London",
+
+  // Shielded anchoring — docs/ECATHON.md, wire contract in
+  // docs/ZANCHOR_API.md. "public" is today's behaviour (anchor message to the
+  // commons). "shielded" sends ONLY the commitment to zanchorUrl and never
+  // touches the public commons; the receipt (commitment <-> txid <-> height)
+  // stays with the device and the verifier.
+  anchorMode: "public",
+  zanchorUrl: "http://127.0.0.1:8092",
+
+  // The anchor schedule (timing-leak mitigation). No anchor may sit closer
+  // than 30 minutes to its capture, and a batch is spread over a 20-minute
+  // jitter window — never at capture, never at "back in range". Demos pass
+  // small values via ?minDelay=…&jitter=…; do not shrink these here.
+  anchorMinDelayMs: 30 * 60 * 1000,
+  anchorJitterMs: 20 * 60 * 1000,
 };

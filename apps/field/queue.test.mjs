@@ -99,6 +99,54 @@ test("a store adapter persists the queue across instances", () => {
   );
 });
 
+test("drain with an only-filter sends due entries and keeps the rest in order", async () => {
+  const q = queue.createQueue();
+  entries.forEach((entry) => q.enqueue(entry));
+  const sent = [];
+  const result = await q.drain(
+    async (entry) => {
+      sent.push(entry.hash);
+    },
+    (entry) => entry.hash !== "b",
+  );
+  assert.deepEqual(sent, ["a", "c"]);
+  assert.deepEqual(
+    result.sent.map((entry) => entry.hash),
+    ["a", "c"],
+  );
+  assert.deepEqual(
+    result.remaining.map((entry) => entry.hash),
+    ["b"],
+  );
+  assert.deepEqual(
+    q.list().map((entry) => entry.hash),
+    ["b"],
+    "the held entry stays queued, in order",
+  );
+});
+
+test("a failure stops at the first due entry and keeps the held ones", async () => {
+  const q = queue.createQueue();
+  entries.forEach((entry) => q.enqueue(entry));
+  const result = await q.drain(
+    async (entry) => {
+      if (entry.hash === "c") {
+        throw new Error("offline");
+      }
+    },
+    (entry) => entry.hash !== "b",
+  );
+  assert.deepEqual(
+    q.list().map((entry) => entry.hash),
+    ["b", "c"],
+  );
+  assert.equal(result.error.message, "offline");
+  assert.deepEqual(
+    result.sent.map((entry) => entry.hash),
+    ["a"],
+  );
+});
+
 test("replace swaps one queued entry in place and persists", () => {
   const saved = [];
   const q = queue.createQueue({

@@ -85,18 +85,26 @@
     }
 
     /* Try to send every queued entry, oldest first. Stop at the first failure
-     * and keep the rest so nothing is dropped. */
-    async function drain(send) {
+     * and keep the rest so nothing is dropped. `only` (optional) marks whose
+     * turn it is: held entries are skipped and kept in order, so the jittered
+     * anchor schedule can hold one back without disturbing the rest. */
+    async function drain(send, only) {
       var sent = [];
       var error = null;
-      while (items.length) {
+      var i = 0;
+      while (i < items.length) {
+        if (only && !only(items[i])) {
+          i += 1;
+          continue;
+        }
         try {
-          await send(items[0]);
+          await send(items[i]);
         } catch (err) {
           error = err;
           break;
         }
-        sent.push(items.shift());
+        sent.push(items[i]);
+        items.splice(i, 1);
       }
       persist();
       return { sent: sent, remaining: items.slice(), error: error };

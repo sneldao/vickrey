@@ -36,6 +36,7 @@
     fail: "Fail",
     wait: "Waiting",
     unknown: "Unknown",
+    hidden: "Hidden",
   };
 
   function apiUrl(base, path) {
@@ -152,6 +153,9 @@
   }
 
   function incidentTitle(message) {
+    if (message && message.shielded) {
+      return "Shielded anchor";
+    }
     var payload = isPlainObject(message && message.payload_json)
       ? message.payload_json
       : {};
@@ -421,6 +425,109 @@
     };
   }
 
+  /* ------------------------------------------------------------- shielded */
+
+  /* A shielded anchor's verdict. The receipt says what the verifier holds;
+   * the chain check says what anyone can confirm. VERIFIED needs both — a
+   * receipt nobody has checked against the chain is only PENDING, and a
+   * receipt the chain contradicts is a MISMATCH. */
+  function shieldedState(receipt, chain) {
+    if (!receipt || !receipt.txid) {
+      return "PENDING";
+    }
+    if (chain && chain.exists === false) {
+      return "PAYLOAD_MISMATCH";
+    }
+    if (receipt.status === "confirmed" && chain && chain.exists === true) {
+      return "VERIFIED";
+    }
+    return "PENDING";
+  }
+
+  /* A shielded receipt shaped like a timeline row (docs/ZANCHOR_API.md). It
+   * carries the receipt and nothing else — there is no payload to leak,
+   * because the anchor never had one. */
+  function shieldedMessage(receipt, chain) {
+    receipt = receipt || {};
+    return {
+      shielded: true,
+      receipt: receipt,
+      chain: chain || null,
+      block_id: receipt.txid || receipt.receipt_id || "",
+      status: shieldedState(receipt, chain),
+      inserted_at: receipt.anchored_at || "",
+      flow_id: "shielded",
+      tag: null,
+      payload_json: null,
+      ledger_payload_json: null,
+    };
+  }
+
+  /* What the public chain reveals about a shielded anchor: the public
+   * checklist with nothing to check. Every row is empty by construction. */
+  function revealRows() {
+    function hidden(name, detail) {
+      return {
+        name: name,
+        state: "hidden",
+        label: "Not revealed",
+        detail: detail,
+      };
+    }
+    return [
+      hidden("Species", "The transaction carries no summary of what was seen."),
+      hidden(
+        "Coarse area",
+        "No location of any resolution rides with the anchor.",
+      ),
+      hidden("Observer", "No key or identity is linked to the transaction."),
+      hidden(
+        "Observation time",
+        "Only the block's own timestamp exists, far enough from the capture to be uncorrelatable.",
+      ),
+      hidden("Purpose", "Nothing marks this transaction as an anchor."),
+      {
+        name: "Amount",
+        state: "hidden",
+        label: "Constant",
+        detail:
+          "Every anchor moves the same amount, so amounts cannot fingerprint events.",
+      },
+    ];
+  }
+
+  /* The verifier-held binding: commitment <-> txid <-> height. */
+  function receiptRows(receipt, chain) {
+    receipt = receipt || {};
+    var height =
+      chain && chain.height != null
+        ? chain.height
+        : receipt.height != null
+          ? receipt.height
+          : "—";
+    return [
+      { label: "Commitment", value: receipt.commitment || "—", mono: true },
+      { label: "Transaction", value: receipt.txid || "—", mono: true },
+      { label: "Height", value: height, mono: true },
+      { label: "Receipt", value: receipt.receipt_id || "—", mono: true },
+    ];
+  }
+
+  function blockExplorerUrl(txid) {
+    if (!txid) {
+      return "";
+    }
+    return (
+      "https://blockchair.com/zcash/transaction/" + encodeURIComponent(txid)
+    );
+  }
+
+  function stampText(message) {
+    return message && message.shielded
+      ? "SHIELDED · " + statusLabel(message.status)
+      : statusLabel(message && message.status);
+  }
+
   function pitchLine(message) {
     if (!message) {
       return "";
@@ -651,10 +758,24 @@
         "vickrey.hornetUrl",
         cfg.hornetUrl || "http://localhost:14265",
       ),
+      zanchorUrl: pick(
+        "zanchor",
+        "vickrey.zanchorUrl",
+        cfg.zanchorUrl || "http://localhost:8092",
+      ),
+      /* Shielded receipts are handed to this page one id at a time
+       * (?receipt=…&receipt=…): the contract has no list endpoint on purpose. */
+      receipts: params
+        .getAll("receipt")
+        .map(function (value) {
+          return String(value || "").trim();
+        })
+        .filter(Boolean),
       defaults: {
         ledgerUrl: cfg.ledgerUrl || "http://localhost:8088",
         dashboardUrl: cfg.dashboardUrl || "http://localhost:31011",
         hornetUrl: cfg.hornetUrl || "http://localhost:14265",
+        zanchorUrl: cfg.zanchorUrl || "http://localhost:8092",
       },
     };
   }
@@ -699,7 +820,12 @@
       ledgerUrl: config.ledgerUrl,
       dashboardUrl: config.dashboardUrl,
       hornetUrl: config.hornetUrl,
+      zanchorUrl: config.zanchorUrl,
       defaults: config.defaults,
+      receiptIds: config.receipts,
+      shielded: [],
+      shieldedChain: {},
+      shieldedErrors: {},
       filter: normalizeFilter(params.get("status")),
       blockQuery: "",
       messages: [],
@@ -719,6 +845,42 @@
       walk: { tampered: false, sawMismatch: false, reverified: false },
       walkDismissed: storedFlag("vickrey.walk.dismissed"),
     };
+
+    /* Public rows and shielded receipts in one timeline: the two anchor
+     * modes, side by side. */
+    function rows() {
+      return state.messages.concat(
+        state.shielded.map(function (receipt) {
+          return shieldedMessage(
+            receipt,
+            state.shieldedChain[receipt.txid] || null,
+          );
+        }),
+      );
+    }
+
+    /* Read the receipts this page was handed. A failed receipt is named, not
+     * hidden: a missing panel would be a worse lie than an error. */
+    async function loadShielded() {
+      if (!state.receiptIds.length) {
+        return;
+      }
+      var fetched = [];
+      for (var i = 0; i < state.receiptIds.length; i++) {
+        var id = state.receiptIds[i];
+        try {
+          var body = await requestJson(
+            apiUrl(state.zanchorUrl, "/receipts/" + encodeURIComponent(id)),
+          );
+          fetched.push(body);
+          delete state.shieldedErrors[id];
+        } catch (error) {
+          state.shieldedErrors[id] =
+            error instanceof Error ? error.message : String(error);
+        }
+      }
+      state.shielded = fetched;
+    }
 
     function storedFlag(key) {
       try {
@@ -1064,6 +1226,9 @@
         filter: state.filter,
         query: state.blockQuery,
         selected: state.selectedId,
+        shielded: state.shielded,
+        shieldedChain: state.shieldedChain,
+        shieldedErrors: state.shieldedErrors,
         error: state.error,
         notice: state.notice,
         actionError: state.actionError,
@@ -1122,7 +1287,19 @@
         );
         return;
       }
-      var visible = applyFilter(state.messages, state.filter, state.blockQuery);
+      Object.keys(state.shieldedErrors).forEach(function (id) {
+        timeline.append(
+          el("p", {
+            class: "empty",
+            text:
+              "Shielded receipt " +
+              id +
+              " could not be read: " +
+              state.shieldedErrors[id],
+          }),
+        );
+      });
+      var visible = applyFilter(rows(), state.filter, state.blockQuery);
       if (!visible.length) {
         var emptyText = "No observations in this filter.";
         if (String(state.blockQuery || "").trim()) {
@@ -1158,7 +1335,7 @@
           timeline.append(el("section", { class: "flow" }, [title, list]));
         });
       }
-      var selected = state.messages.find(function (message) {
+      var selected = rows().find(function (message) {
         return message.block_id === state.selectedId;
       });
       var walk = renderWalkthrough(selected);
@@ -1264,7 +1441,7 @@
               el("span", {
                 class: "stamp",
                 "data-status": message.status || "",
-                text: statusLabel(message.status),
+                text: stampText(message),
               }),
               el("span", {
                 class: "event-title",
@@ -1282,6 +1459,9 @@
     }
 
     function renderDetail(message) {
+      if (message && message.shielded) {
+        return renderShieldedDetail(message);
+      }
       var checks = checklist(message);
       var differ = payloadsDiffer(
         message.payload_json,
@@ -1368,6 +1548,129 @@
         );
       }
       return el("article", { class: flash ? flash.slice(1) : "" }, nodes);
+    }
+
+    /* The money shot: SHIELDED · VERIFIED over a public checklist that has
+     * nothing to check — beside the verifier's binding and the one check
+     * anyone can run. */
+    function renderShieldedDetail(message) {
+      var receipt = message.receipt || {};
+      var chain = message.chain;
+      var explorer = blockExplorerUrl(receipt.txid);
+      return el("article", { class: "shielded-detail" }, [
+        el("span", {
+          class: "stamp large",
+          "data-status": message.status || "",
+          text: stampText(message),
+        }),
+        el("h2", { text: "Shielded anchor" }),
+        el("p", { class: "block-line mono" }, [
+          el("button", {
+            type: "button",
+            class: "id-btn",
+            title: "Copy the transaction id",
+            text: receipt.txid || receipt.receipt_id || "—",
+            onClick: function () {
+              copyText(
+                receipt.txid || receipt.receipt_id,
+                "Transaction id copied",
+              );
+            },
+          }),
+          document.createTextNode(
+            " · " +
+              (receipt.anchored_at
+                ? formatTime(receipt.anchored_at)
+                : "not yet confirmed") +
+              (receipt.receipt_id ? " · " + receipt.receipt_id : ""),
+          ),
+        ]),
+        el("p", {
+          class: "pitch",
+          text: "The public chain proves that a transaction exists at a height — and reveals nothing else. No species, no area, no observer, no purpose. This checklist is not short of checks; there is nothing on the chain to check against.",
+        }),
+        el("section", { class: "shield-block" }, [
+          el("h3", { text: "What the public chain reveals" }),
+          el(
+            "ul",
+            { class: "checklist" },
+            revealRows().map(function (row) {
+              return checkItem(row.name, row);
+            }),
+          ),
+        ]),
+        el("section", { class: "shield-block" }, [
+          el("h3", { text: "What anyone can check" }),
+          el("p", {
+            class: "hint",
+            text: "Proof of existence: the transaction id sits at a block height. Anyone can run this check, and it answers nothing about the observation.",
+          }),
+          el("div", { class: "links" }, [
+            el("button", {
+              type: "button",
+              class: "link-btn",
+              text: chain ? "Check the chain again" : "Check the chain",
+              onClick: function () {
+                checkChain(message);
+              },
+            }),
+            explorer
+              ? el("a", {
+                  href: explorer,
+                  target: "_blank",
+                  rel: "noopener noreferrer",
+                  text: "Open the transaction in a block explorer",
+                })
+              : null,
+          ]),
+          chain ? renderChainCheck(chain) : null,
+        ]),
+        el("section", { class: "shield-block" }, [
+          el("h3", { text: "What the verifier holds" }),
+          el(
+            "ul",
+            { class: "receipt" },
+            receiptRows(receipt, chain).map(function (row) {
+              return el("li", {}, [
+                el("b", { text: row.label }),
+                el("span", {
+                  class: row.mono ? "mono wrap" : "",
+                  text: String(row.value),
+                }),
+              ]);
+            }),
+          ),
+          el("p", {
+            class: "hint",
+            text: "The verifier holds this binding and can disclose one anchor at a time through the viewing key — to a researcher or a court, and to nobody else.",
+          }),
+        ]),
+      ]);
+    }
+
+    function renderChainCheck(chain) {
+      if (chain && chain.exists) {
+        return el("ul", { class: "checklist" }, [
+          el("li", { class: "check pass" }, [
+            el("b", { text: CHECK_WORD.pass }),
+            el("span", {
+              text:
+                "The transaction exists at height " +
+                chain.height +
+                (chain.confirmations == null
+                  ? ""
+                  : " · " + chain.confirmations + " confirmations") +
+                ". Nothing else is on the chain.",
+            }),
+          ]),
+        ]);
+      }
+      return el("ul", { class: "checklist" }, [
+        el("li", { class: "check fail" }, [
+          el("b", { text: CHECK_WORD.fail }),
+          el("span", { text: "The node does not know this transaction." }),
+        ]),
+      ]);
     }
 
     function highlightedFlag(message) {
@@ -1602,11 +1905,13 @@
           pair[1] && typeof pair[1].total === "number"
             ? pair[1].total
             : state.messages.length;
-        var stillThere = state.messages.some(function (message) {
+        await loadShielded();
+        var all = rows();
+        var stillThere = all.some(function (message) {
           return message.block_id === state.selectedId;
         });
         if (!stillThere) {
-          state.selectedId = chooseInitial(state.messages);
+          state.selectedId = chooseInitial(all);
         }
       } catch (error) {
         if (gen !== loadGen) {
@@ -1702,6 +2007,40 @@
       }
     }
 
+    /* The check anyone can run: this transaction id exists at a height. It
+     * answers nothing about the observation. */
+    async function checkChain(message) {
+      var receipt = (message && message.receipt) || {};
+      if (!receipt.txid) {
+        return;
+      }
+      state.busy = true;
+      state.notice = "";
+      state.actionError = "";
+      renderBoard();
+      try {
+        var body = await requestJson(
+          apiUrl(
+            state.zanchorUrl,
+            "/chain/tx/" + encodeURIComponent(receipt.txid),
+          ),
+        );
+        state.shieldedChain[receipt.txid] = body;
+        state.notice =
+          body && body.exists
+            ? "Public check: the transaction exists at height " +
+              body.height +
+              ". Nothing else is on the chain."
+            : "Public check: the node does not know this transaction.";
+      } catch (error) {
+        state.actionError =
+          error instanceof Error ? error.message : String(error);
+      } finally {
+        state.busy = false;
+        renderBoard();
+      }
+    }
+
     async function tamper(message) {
       state.busy = true;
       state.notice = "";
@@ -1756,6 +2095,7 @@
   return {
     apiUrl: apiUrl,
     applyFilter: applyFilter,
+    blockExplorerUrl: blockExplorerUrl,
     changedKeys: changedKeys,
     checklist: checklist,
     chooseInitial: chooseInitial,
@@ -1770,7 +2110,12 @@
     normalizeFilter: normalizeFilter,
     payloadsDiffer: payloadsDiffer,
     pitchLine: pitchLine,
+    receiptRows: receiptRows,
     relativeTime: relativeTime,
+    revealRows: revealRows,
+    shieldedMessage: shieldedMessage,
+    shieldedState: shieldedState,
+    stampText: stampText,
     statusLabel: statusLabel,
     tamperBody: tamperBody,
     verdictLine: verdictLine,

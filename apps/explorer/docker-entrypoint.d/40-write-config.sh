@@ -21,12 +21,14 @@ json_escape() {
 LEDGER_URL="${EXPLORER_LEDGER_URL:-http://localhost:8088}"
 DASHBOARD_URL="${DASHBOARD_URL:-http://localhost:31011}"
 HORNET_PUBLIC_URL="${HORNET_PUBLIC_URL:-http://localhost:14265}"
+ZANCHOR_URL="${ZANCHOR_URL:-http://localhost:8092}"
 OUT="${CONFIG_JS_PATH:-/usr/share/nginx/html/config.js}"
 
 cat >"$OUT" <<EOF
 window.VICKREY_CONFIG = {
   ledgerUrl: "$(json_escape "$LEDGER_URL")",
   dashboardUrl: "$(json_escape "$DASHBOARD_URL")",
-  hornetUrl: "$(json_escape "$HORNET_PUBLIC_URL")"
+  hornetUrl: "$(json_escape "$HORNET_PUBLIC_URL")",
+  zanchorUrl: "$(json_escape "$ZANCHOR_URL")"
 };
 EOF

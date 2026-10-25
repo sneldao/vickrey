@@ -254,6 +254,35 @@ test("an anchored record is not downgraded by a later refusal", async () => {
   assert.equal(journal.get(entry.hash).sync.state, "anchored");
 });
 
+test("markAnchored keeps the shielded receipt binding", async () => {
+  const { journal, entry } = await sealedPair();
+  journal.markAnchored(entry.hash, {
+    status: "confirmed",
+    mode: "shielded",
+    receipt_id: "rec_01J",
+    txid: "deadbeef",
+    height: 2712345,
+  });
+  const sync = journal.get(entry.hash).sync;
+  assert.equal(sync.mode, "shielded");
+  assert.equal(sync.status, "confirmed");
+  assert.equal(sync.txid, "deadbeef");
+  assert.equal(sync.height, 2712345);
+  assert.equal(sync.receipt_id, "rec_01J");
+  assert.equal(sync.block_id, null);
+});
+
+test("a public anchor stays public and keeps no receipt", async () => {
+  const { journal, entry } = await sealedPair();
+  journal.markAnchored(entry.hash, { status: "VERIFIED" });
+  const sync = journal.get(entry.hash).sync;
+  assert.equal(sync.mode, "public");
+  assert.equal(sync.status, "VERIFIED");
+  assert.equal(sync.txid, null);
+  assert.equal(sync.receipt_id, null);
+  assert.equal(sync.height, null);
+});
+
 test("parseArea accepts lat,lon and rejects nonsense", () => {
   assert.deepEqual(field.parseArea("51.5074, -0.1278"), {
     lat: 51.5074,

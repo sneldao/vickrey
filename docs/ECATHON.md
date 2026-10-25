@@ -133,6 +133,24 @@ polish are stretch in that order of risk.**
 
 ### D0 — Fri Oct 25: spikes + GO/NO-GO (tonight)
 
+**Findings so far (evening of the 25th):**
+
+- No prebuilt `zcashd` binaries are published anywhere we can find
+  (GitHub releases for v6.12.5/v6.20.0 carry no assets; the Docker Hub
+  images are from 2020). **Source build is the path.**
+- Current release: **v6.20.0** (NU6.2, June 2026 — Orchard circuit
+  remediation). v6.12.5 notes mention "temporary disabling of Orchard
+  actions" (GHSA-ghc3-g8w4-whf9); the v6.20.0 builder code fully supports
+  memos, so whether on-chain memos are currently consensus-enabled is an
+  **empirical question the spike answers**. Mode A (beacon) does not depend
+  on it; mode B and memo-carried reward signalling do.
+- Dev loop: `zcashd` built from source locally (regtest — we mine, no
+  funding dependency); `services/zanchor/spike/spike.py` runs the full
+  GO/NO-GO against any node.
+- **Demo chain still to host** (needs ~20GB disk): mainnet node on a box
+  with room (Fly volume or another server). The spike + zanchor service
+  are node-agnostic — only the RPC URL changes.
+
 - Register the single submitting account; lock track = Wildcard.
 - `docker-compose`: `zcashd` (mainnet, small real amounts — avoids testnet
   faucet flakiness; ~0.01 ZEC total is enough). **Start the node sync
@@ -156,6 +174,9 @@ polish are stretch in that order of risk.**
     **not** published to the commons' public API in shielded mode).
   - `GET /chain/tx/{txid}` — proof-of-existence check anyone can run
     ("this tx exists at height H") without learning anything about C.
+- **Wire format is pinned in [ZANCHOR_API.md](ZANCHOR_API.md)** — shapes,
+  status enum, error codes, and the deliberate absence of a receipts list
+  endpoint. Change the contract there first; the client codes against it.
 - Verifier mode: read tx back with the viewing key, confirm shape, file the
   receipt.
 - Unit tests against a mocked RPC; integration test = one real mainnet tx
@@ -164,6 +185,29 @@ polish are stretch in that order of risk.**
   truth).
 
 ### D2 — Sun Oct 27: integration + threat model + demo
+
+**Client slice already landed (evening of Oct 25), ahead of D2:**
+
+- **Field client shielded mode** — `?anchor=shielded` (or the config
+  default) routes **only** `{commitment}` to `zanchorUrl`; no species, area,
+  timestamp, signature, or key reaches any service edge. Public mode is
+  byte-for-byte unchanged. Held entries stay queued rather than reordering
+  the outbox, and "find similar" is disabled in shielded mode because a
+  species query would leak the observation.
+- **Batched/jittered scheduler** — `apps/field/schedule.js`: each
+  commitment gets exactly one anchor time,
+  `max(capture + 30 min, planned) + U(0, 20 min)`, persisted so a reload
+  never re-rolls. The `planned` base spreads a dead-zone backlog instead of
+  firing a burst on reconnect.
+- **Explorer `SHIELDED · VERIFIED` panel** — `?receipt=…` renders the
+  shielded card beside the public checklist: receipt binding, "what the
+  public chain reveals" (every row Hidden), and a live proof-of-existence
+  check. `VERIFIED` is claimed only when the receipt is confirmed **and**
+  the chain check agrees.
+- 17 new JS tests (113 total). Verified against a **stubbed** zanchor written
+  to the contract; the real end-to-end leg waits on D1.
+
+The remaining D2 work below is unchanged.
 
 - **Field client + ledger:** a `shielded` anchor mode in the sync path
   (commitment goes to `zanchor`, not the public commons); explorer renders

@@ -59,6 +59,41 @@ test("relayBody posts the camelCase blockId the anchor relay requires", () => {
   assert.equal(body.message.schema, "veles.observation/1");
 });
 
+test("shieldedBody carries the commitment and nothing else", () => {
+  const body = field.shieldedBody(entry());
+  assert.deepEqual(Object.keys(body), ["commitment"]);
+  assert.equal(body.commitment, "a".repeat(64));
+  const wire = JSON.stringify(body);
+  for (const leak of [
+    "Common blackbird",
+    "species",
+    "summary",
+    "location",
+    "observed_at",
+    "signature",
+    "public_key",
+    "prev",
+    "flow",
+  ]) {
+    assert.equal(wire.includes(leak), false, `shieldedBody leaked ${leak}`);
+  }
+});
+
+test("resolveConfig keeps numeric config values and shielded query aliases", () => {
+  const merged = field.resolveConfig(
+    {
+      anchorMode: "shielded",
+      anchorMinDelayMs: 1500,
+      zanchorUrl: "http://localhost:8092",
+    },
+    "?anchor=public&jitter=250",
+  );
+  assert.equal(merged.anchorMode, "public");
+  assert.equal(merged.anchorMinDelayMs, 1500);
+  assert.equal(merged.anchorJitterMs, "250");
+  assert.equal(merged.zanchorUrl, "http://localhost:8092");
+});
+
 test("drainVerified refuses a tampered queue and sends nothing", async () => {
   const pair = await trust.generateKeyPair();
   const sealed = await trust.sealObservation({
@@ -152,6 +187,47 @@ test("drainVerified is a no-op on an empty queue", async () => {
   assert.equal(posts, 0);
   assert.equal(drained.empty, true);
   assert.equal(drained.error, null);
+});
+
+test("drainVerified sends only the entries the anchor window has opened for", async () => {
+  const pair = await trust.generateKeyPair();
+  const first = await trust.sealObservation({
+    privateKey: pair.privateKey,
+    payload: { kind: "bird", species: "European robin", confidence: 0.9 },
+    modelId: "gemma3",
+  });
+  const second = await trust.sealObservation({
+    privateKey: pair.privateKey,
+    prev: first.hash,
+    payload: { kind: "plant", species: "Male fern", confidence: 0.7 },
+    modelId: "gemma3",
+  });
+  const q = queue.createQueue();
+  q.enqueue(first);
+  q.enqueue(second);
+
+  const sent = [];
+  const drained = await field.drainVerified(
+    q,
+    pair.publicKey,
+    trust,
+    async (entry) => {
+      sent.push(entry);
+    },
+    (entry) => entry.hash === first.hash,
+  );
+
+  assert.equal(drained.error, null);
+  assert.equal(drained.verdict.ok, true, "the held entry still chain-verifies");
+  assert.deepEqual(
+    sent.map((e) => e.hash),
+    [first.hash],
+  );
+  assert.deepEqual(
+    drained.remaining.map((e) => e.hash),
+    [second.hash],
+  );
+  assert.equal(q.size(), 1);
 });
 
 test("summaryOf and entryTitle fall back sensibly", () => {

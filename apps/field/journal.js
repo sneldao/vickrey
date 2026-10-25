@@ -99,9 +99,15 @@
       records[i].sync = {
         state: "anchored",
         status: typeof row.status === "string" ? row.status : "UNKNOWN",
+        mode: row.mode === "shielded" ? "shielded" : "public",
         block_id: row.block_id || null,
         milestone_index:
           row.milestone_index === undefined ? null : row.milestone_index,
+        /* Shielded receipts (docs/ZANCHOR_API.md): the commitment-to-txid-to-
+         * height binding. All null in public mode. */
+        receipt_id: row.receipt_id || null,
+        txid: row.txid || null,
+        height: row.height === undefined ? null : row.height,
         at: at || new Date().toISOString(),
       };
       persist();

@@ -130,6 +130,7 @@ covers it, including what that does _not_ prove.
 - [docs/STRATEGY.md](docs/STRATEGY.md) — positioning, architecture, anchoring
   design, competitors, risks, interop.
 - [docs/ECATHON.md](docs/ECATHON.md) — **current milestone:** the Zcash shielded-anchor build plan and threat model (submission due Oct 28 2026).
+- [docs/ZANCHOR_API.md](docs/ZANCHOR_API.md) — the pinned wire contract between the field client / explorer and the shielded anchor service.
 - [docs/BRAND.md](docs/BRAND.md) — the seal narrative, colour and type system.
 - [docs/BUILD.md](docs/BUILD.md) — build log (history; status moved to STATUS.md).
 - [docs/archive/](docs/archive/) — the Hacktoberfest Week 1 submission record

@@ -25,7 +25,19 @@ class RpcError(Exception):
 
 class ZcashRpc:
     def __init__(self, url: str, timeout: float = 120.0) -> None:
-        self.url = url.rstrip("/") + "/"
+        # Split credentials off the URL: Python 3.12's urllib cannot
+        # connect to URLs containing user:pass@ (it fails at the socket
+        # layer). The Basic header below is what the node actually sees.
+        raw = url.rstrip("/") + "/"
+        at = raw.rfind("@")
+        scheme_end = raw.find("://")
+        if at != -1 and at > scheme_end:
+            cred = raw[scheme_end + 3 : at]
+            self.url = raw[: scheme_end + 3] + raw[at + 1 :]
+            self._auth_cached = b64encode(cred.encode()).decode()
+        else:
+            self.url = raw
+            self._auth_cached = None
         self.timeout = timeout
         self._counter = 0
         self._lock = threading.Lock()
@@ -49,10 +61,8 @@ class ZcashRpc:
 
     @property
     def _auth(self) -> str:
-        # url is http://user:password@host:port/
-        if not hasattr(self, "_auth_cached"):
-            cred = self.url.split("//", 1)[1].partition("@")[0]
-            self._auth_cached = b64encode(cred.encode()).decode()
+        if self._auth_cached is None:
+            return ""
         return self._auth_cached
 
     # -- convenience -----------------------------------------------------
@@ -63,18 +73,17 @@ class ZcashRpc:
     def block_count(self) -> int:
         return int(self.call("getblockcount"))
 
-    def spendable_notes(self) -> list[dict[str, Any]]:
-        notes = self.call("z_listshieldedreceivednotes")
-        return [
-            n
-            for n in notes
-            if isinstance(n, dict)
-            and str(n.get("address", "")).startswith("u:")
-            and n.get("availableConfirmed", 0) >= 1
-        ]
+    def note_count(self) -> int:
+        # 6.x removed z_listshieldedreceivednotes; the verified note count
+        # is the spendability signal (dedicated wallet: every verified note
+        # is an anchor note).
+        counts = self.call("z_getnotescount")
+        return sum(
+            int(counts.get(pool, 0) or 0) for pool in ("sprout", "sapling", "orchard")
+        )
 
     def notes_available(self) -> int:
-        return len(self.spendable_notes())
+        return self.note_count()
 
     def transparent_balance(self) -> float:
         return float(self.call("getbalance"))
@@ -99,7 +108,8 @@ class ZcashRpc:
         return str(self.call("sendtoaddress", [to_taddr, amount]))
 
     def operation_status(self, opid: str) -> dict[str, Any]:
-        return self.call("z_getoperationstatus", [opid])
+        # 6.x takes a list of operation ids as its single parameter.
+        return self.call("z_getoperationstatus", [[opid]])[0]
 
     def transaction(self, txid: str) -> dict[str, Any]:
         return self.call("gettransaction", [txid])

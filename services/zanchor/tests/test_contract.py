@@ -50,10 +50,10 @@ class FakeRpc:
         n = int(opid.split("_")[1])
         if 0 < n <= len(self.anchors):
             return {
-                "jobStatus": "success",
+                "status": "success",
                 "result": {"txid": self.anchors[n - 1]["txid"]},
             }
-        return {"jobStatus": "queued"}
+        return {"status": "queued"}
 
     def transaction(self, txid) -> dict:
         if not any(a.get("txid") == txid for a in self.anchors):

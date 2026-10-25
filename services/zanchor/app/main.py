@@ -198,19 +198,21 @@ class AnchorService:
             if not receipt["opid"]:
                 return
             status = self.rpc.operation_status(receipt["opid"])
-            state = status.get("jobStatus")
+            state = status.get("status")
             if state == "success":
                 result = status.get("result")
                 txid = result.get("txid") if isinstance(result, dict) else result
                 self.store.set_broadcast(rid, str(txid))
                 receipt = self.store.get(rid)
-            elif state in ("failure", "error"):
+            elif state in ("failed", "error"):
                 logger.error("receipt %s op failed: %s", rid, status)
                 return
             return
         if receipt["status"] == "broadcast" and receipt["txid"]:
             tx = self.rpc.transaction(receipt["txid"])
-            height = tx.get("blockheight")
+            height = tx.get("blockheight") or _block_height(
+                self.rpc, tx.get("blockhash")
+            )
             if height:
                 self.store.set_confirmed(
                     rid,
@@ -227,6 +229,16 @@ def _block_time(rpc: ZcashRpc, blockhash: str | None) -> int | None:
         return None
     try:
         return int(rpc.call("getblock", [blockhash])["time"])
+    except RpcError:
+        return None
+
+
+def _block_height(rpc: ZcashRpc, blockhash: str | None) -> int | None:
+    # 6.x gettransaction carries blockhash but no height field.
+    if not blockhash:
+        return None
+    try:
+        return int(rpc.call("getblockheader", [blockhash])["height"])
     except RpcError:
         return None
 
@@ -316,7 +328,8 @@ def build_app() -> FastAPI:
         return {
             "txid": txid,
             "exists": True,
-            "height": tx.get("blockheight"),
+            "height": tx.get("blockheight")
+            or _block_height(service.rpc, tx.get("blockhash")),
             "confirmations": tx.get("confirmations"),
             "block_time": _iso(
                 tx.get("blocktime") or _block_time(service.rpc, tx.get("blockhash"))

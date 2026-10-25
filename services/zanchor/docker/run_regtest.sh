@@ -14,21 +14,29 @@ PASS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
 WORK="$(mktemp -d)"
 cat > "$WORK/regtest.conf" <<EOF
 regtest=1
-rpcbind=127.0.0.1
-rpcallowip=127.0.0.1
+rpcbind=0.0.0.0
+rpcallowip=0.0.0.0/0
 rpcuser=zanchor
 rpcpassword=$PASS
 rpcport=28432
+i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
 EOF
 
 docker rm -f vickrey-zcashd-regtest 2>/dev/null || true
 docker volume rm vickrey-regtest-data 2>/dev/null || true
 docker volume create vickrey-regtest-data >/dev/null
+# zcashd 6.x refuses to start without a conf file present (it may be
+# empty); the real options ride on the command line below.
+docker run --rm -v vickrey-regtest-data:/mnt -v "$WORK":/w ubuntu:24.04 \
+  sh -c "cp /w/regtest.conf /mnt/zcash.conf && chmod 600 /mnt/zcash.conf"
 docker run -d --name vickrey-zcashd-regtest \
   -p 127.0.0.1:28432:28432 \
   -v vickrey-regtest-data:/data \
-  "$IMAGE" -datadir=/data -confdir=/data -regtest -rpcbind=127.0.0.1 -rpcallowip=127.0.0.1 \
-  -rpcuser=zanchor -rpcpassword="$PASS" -rpcport=28432
+  "$IMAGE" -datadir=/data -confdir=/data -regtest -rpcbind=0.0.0.0 -rpcallowip=0.0.0.0/0 \
+  -rpcuser=zanchor -rpcpassword="$PASS" -rpcport=28432 \
+  -allowdeprecated=getnewaddress \
+  -nuparams=5437f330:10 \
+  -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
 
 echo "waiting for rpc..."
 for i in $(seq 1 60); do

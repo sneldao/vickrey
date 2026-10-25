@@ -1,8 +1,11 @@
 # zcashd v6.20.0 from source — no published binary images exist.
-# Build:  docker build -t <registry>/vickrey-zcashd:v6.20.0 .
-# Run:    zcashd with -datadir/-confdir pointed at the mounted volume.
+# Two stages: the build stage is heavy (and slow); the runtime image
+# carries only the two binaries and their shared libraries, so it stays
+# push-sized for the Fly node.
+#
+#   docker build -f Dockerfile.zcashd -t <registry>/vickrey-zcashd:v6.20.0 .
 
-FROM ubuntu:24.04
+FROM ubuntu:24.04 AS build
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -17,17 +20,19 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /build/zcash
 RUN git clone --recursive --branch v6.20.0 --depth 1 https://github.com/zcash/zcash .
+# No `| tail`: a piped exit code would swallow configure failures.
 RUN ./zcutil/build.sh -j"$(nproc)"
 
-# Proving parameters are embedded in the binary since 5.x; there is no
-# params directory to ship. Only the two binaries move to /usr/local/bin.
-RUN install -d /usr/local/bin \
-    && cp src/zcashd src/zcash-cli /usr/local/bin/ \
-    && apt-get purge -y --auto-remove build-essential g++ gcc \
-       libboost-all-dev automake libtool pkg-config cmake ccache git \
-    && apt-get install -y --no-install-recommends \
-       libssl3t64 libevent-core-2.1-7t64 libgomp1 \
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+# Proving parameters are embedded in the binary since 5.x; runtime needs
+# only the shared libraries. noble's libevent is 2.1-7t64.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libssl3t64 libevent-core-2.1-7t64 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
+
+COPY --from=build /build/zcash/src/zcashd /build/zcash/src/zcash-cli /usr/local/bin/
 
 VOLUME /data
 ENTRYPOINT ["/usr/local/bin/zcashd"]

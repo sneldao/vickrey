@@ -204,25 +204,30 @@ polish are stretch in that order of risk.**
   public chain reveals" (every row Hidden), and a live proof-of-existence
   check. `VERIFIED` is claimed only when the receipt is confirmed **and**
   the chain check agrees.
-- 17 new JS tests (113 total). Verified against a **stubbed** zanchor written
+- **Receipt truth in the contract and both clients** — `mode` and
+  `shielded` are now part of every receipt. The `SHIELDED` stamp is derived
+  from the service's answer, never from the routing: a node that refuses
+  shielded spends yields `TRANSPARENT · …` and an Exposed-rows checklist
+  instead of a false claim. This is the honesty gate the D0 spike may force.
+- **`scripts/mock_zanchor.py` + `scripts/demo_zcash.sh`** — the mock speaks
+  the contract; the demo runs the whole walk against it (health → anchor →
+  409 replay → 400 bad body → settle → proof of existence → no leak → no list
+  endpoint) and exits non-zero on any breach. `--zanchor URL` points the same
+  checks at the real service, so D1's acceptance test is one command.
+- 25 new JS tests (121 total). Verified against the **mock** zanchor written
   to the contract; the real end-to-end leg waits on D1.
 
-The remaining D2 work below is unchanged.
+**Still D2, and still not mine to pre-build:** the service itself, the
+`zcashd` compose entry, note burn, verifier receipts, and the D2 numbers in
+`PRIVACY.md` that depend on them (replay protection among them).
 
-- **Field client + ledger:** a `shielded` anchor mode in the sync path
-  (commitment goes to `zanchor`, not the public commons); explorer renders
-  `SHIELDED · VERIFIED` with an explicit "public chain reveals nothing"
-  panel next to the existing public-mode checklist — the two modes side by
-  side _is_ the demo's money shot.
-- **Batched/jittered scheduler** in the anchor path (interval + jitter
-  configurable, defaults documented in the threat model).
 - **Rewards (stretch):** commons → per-observer shielded TAZ payout, memo =
   observation id, jittered.
-- **`docs/PRIVACY.md`** threat model, filled in with the real numbers
-  (amounts, intervals, keypair policy) from what we actually built.
-- `scripts/demo_zcash.sh`: cold start → seal the sample walk → shielded
-  anchor → open a block explorer on the anchor tx ("see: nothing") →
-  tamper → crack refuses sync → verifier receipt view.
+- **`docs/PRIVACY.md`**: timing section is written and complete; replay,
+  verifier trust, disclosure and keypair policy stay **open** until the spike
+  and the lead answer them.
+- `scripts/demo_zcash.sh` against the **real** service, then the seal →
+  anchor → block explorer → crack → receipt demo, recorded.
 
 ### D3 — Mon Oct 28 (deadline 23:59 UTC): harden + submit
 

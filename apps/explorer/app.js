@@ -37,6 +37,9 @@
     wait: "Waiting",
     unknown: "Unknown",
     hidden: "Hidden",
+    /* On the chain, in the open — the honest word for a transparent anchor's
+     * own transaction, which is not "hidden" and not a failure either. */
+    exposed: "Exposed",
   };
 
   function apiUrl(base, path) {
@@ -153,8 +156,11 @@
   }
 
   function incidentTitle(message) {
-    if (message && message.shielded) {
-      return "Shielded anchor";
+    if (message && message.zanchor) {
+      if (message.shielded === false) {
+        return "Anchor (transparent)";
+      }
+      return message.shielded === true ? "Shielded anchor" : "Anchored receipt";
     }
     var payload = isPlainObject(message && message.payload_json)
       ? message.payload_json
@@ -450,7 +456,16 @@
   function shieldedMessage(receipt, chain) {
     receipt = receipt || {};
     return {
-      shielded: true,
+      /* `zanchor` says where this row came from; `shielded` is the service's
+       * own answer about the transaction (docs/ZANCHOR_API.md). The row is
+       * anchored either way — the stamp is what must not lie. */
+      zanchor: true,
+      shielded:
+        receipt.shielded === true
+          ? true
+          : receipt.shielded === false
+            ? false
+            : null,
       receipt: receipt,
       chain: chain || null,
       block_id: receipt.txid || receipt.receipt_id || "",
@@ -463,9 +478,12 @@
     };
   }
 
-  /* What the public chain reveals about a shielded anchor: the public
-   * checklist with nothing to check. Every row is empty by construction. */
-  function revealRows() {
+  /* What the public chain reveals about an anchor. For a shielded transaction
+   * every row is empty by construction. For the transparent fallback the
+   * transaction itself is on the chain, so those rows say "Exposed" and name
+   * exactly what shows — the difference between "nothing to check" and "a
+   * constant-amount transfer that does not say what it anchors". */
+  function revealRows(shielded) {
     function hidden(name, detail) {
       return {
         name: name,
@@ -474,26 +492,53 @@
         detail: detail,
       };
     }
-    return [
+    var transparent = shielded === false;
+    var rows = [
       hidden("Species", "The transaction carries no summary of what was seen."),
       hidden(
         "Coarse area",
         "No location of any resolution rides with the anchor.",
       ),
       hidden("Observer", "No key or identity is linked to the transaction."),
-      hidden(
-        "Observation time",
-        "Only the block's own timestamp exists, far enough from the capture to be uncorrelatable.",
-      ),
+      transparent
+        ? {
+            name: "Observation time",
+            state: "exposed",
+            label: "Block time only",
+            detail:
+              "The block's timestamp is public; the capture time is not. The anchor waits at least 30 minutes after capture, then up to 20 minutes more.",
+          }
+        : hidden(
+            "Observation time",
+            "Only the block's own timestamp exists, far enough from the capture to be uncorrelatable.",
+          ),
       hidden("Purpose", "Nothing marks this transaction as an anchor."),
-      {
-        name: "Amount",
-        state: "hidden",
-        label: "Constant",
-        detail:
-          "Every anchor moves the same amount, so amounts cannot fingerprint events.",
-      },
+      transparent
+        ? {
+            name: "Amount",
+            state: "exposed",
+            label: "Constant",
+            detail:
+              "Every anchor moves the same amount, so the visible amount cannot fingerprint an event.",
+          }
+        : {
+            name: "Amount",
+            state: "hidden",
+            label: "Constant",
+            detail:
+              "Every anchor moves the same amount, so amounts cannot fingerprint events.",
+          },
     ];
+    if (transparent) {
+      rows.push({
+        name: "Transaction",
+        state: "exposed",
+        label: "Public",
+        detail:
+          "A transparent transaction shows its amount, its addresses and its block. None of them describe the observation.",
+      });
+    }
+    return rows;
   }
 
   /* The verifier-held binding: commitment <-> txid <-> height. */
@@ -522,10 +567,21 @@
     );
   }
 
+  /* The stamp is a claim, so it is derived from the service's answer and not
+   * from the routing: SHIELDED only when the transaction really is shielded,
+   * TRANSPARENT when the service fell back, plain status when it did not say. */
   function stampText(message) {
-    return message && message.shielded
-      ? "SHIELDED · " + statusLabel(message.status)
-      : statusLabel(message && message.status);
+    var verdict = statusLabel(message && message.status);
+    if (!message || !message.zanchor) {
+      return verdict;
+    }
+    if (message.shielded === true) {
+      return "SHIELDED · " + verdict;
+    }
+    if (message.shielded === false) {
+      return "TRANSPARENT · " + verdict;
+    }
+    return verdict;
   }
 
   function pitchLine(message) {
@@ -1272,7 +1328,7 @@
         timeline.append(skeleton);
         return;
       }
-      if (state.error && !state.messages.length) {
+      if (state.error && !state.messages.length && !state.shielded.length) {
         timeline.append(
           el("p", {
             class: "empty",
@@ -1459,7 +1515,7 @@
     }
 
     function renderDetail(message) {
-      if (message && message.shielded) {
+      if (message && message.zanchor) {
         return renderShieldedDetail(message);
       }
       var checks = checklist(message);
@@ -1552,18 +1608,27 @@
 
     /* The money shot: SHIELDED · VERIFIED over a public checklist that has
      * nothing to check — beside the verifier's binding and the one check
-     * anyone can run. */
+     * anyone can run. When the service reports a transparent fallback the
+     * card keeps the shape and changes the claims: TRANSPARENT stamp, the
+     * exposure rows, and a paragraph that says what the chain does show. */
     function renderShieldedDetail(message) {
       var receipt = message.receipt || {};
       var chain = message.chain;
       var explorer = blockExplorerUrl(receipt.txid);
+      var shielded = message.shielded;
+      var pitch =
+        shielded === true
+          ? "The public chain proves that a transaction exists at a height — and reveals nothing else. No species, no area, no observer, no purpose. This checklist is not short of checks; there is nothing on the chain to check against."
+          : shielded === false
+            ? "This anchor is not shielded. The transaction is public — its amount, its addresses, its block time — and none of that names a species, an area, or an observer. What links this transaction to an observation is the receipt, which the verifier holds."
+            : "The service did not report whether this transaction is shielded, so this page claims nothing about it. The receipt is still the only link to the observation.";
       return el("article", { class: "shielded-detail" }, [
         el("span", {
           class: "stamp large",
           "data-status": message.status || "",
           text: stampText(message),
         }),
-        el("h2", { text: "Shielded anchor" }),
+        el("h2", { text: incidentTitle(message) }),
         el("p", { class: "block-line mono" }, [
           el("button", {
             type: "button",
@@ -1585,16 +1650,13 @@
               (receipt.receipt_id ? " · " + receipt.receipt_id : ""),
           ),
         ]),
-        el("p", {
-          class: "pitch",
-          text: "The public chain proves that a transaction exists at a height — and reveals nothing else. No species, no area, no observer, no purpose. This checklist is not short of checks; there is nothing on the chain to check against.",
-        }),
+        el("p", { class: "pitch", text: pitch }),
         el("section", { class: "shield-block" }, [
           el("h3", { text: "What the public chain reveals" }),
           el(
             "ul",
             { class: "checklist" },
-            revealRows().map(function (row) {
+            revealRows(shielded).map(function (row) {
               return checkItem(row.name, row);
             }),
           ),
@@ -1623,7 +1685,7 @@
                 })
               : null,
           ]),
-          chain ? renderChainCheck(chain) : null,
+          chain ? renderChainCheck(chain, shielded) : null,
         ]),
         el("section", { class: "shield-block" }, [
           el("h3", { text: "What the verifier holds" }),
@@ -1648,7 +1710,7 @@
       ]);
     }
 
-    function renderChainCheck(chain) {
+    function renderChainCheck(chain, shielded) {
       if (chain && chain.exists) {
         return el("ul", { class: "checklist" }, [
           el("li", { class: "check pass" }, [
@@ -1660,7 +1722,9 @@
                 (chain.confirmations == null
                   ? ""
                   : " · " + chain.confirmations + " confirmations") +
-                ". Nothing else is on the chain.",
+                (shielded === false
+                  ? ". It is transparent — what it anchors is not on the chain."
+                  : ". Nothing else is on the chain."),
             }),
           ]),
         ]);
@@ -1888,6 +1952,14 @@
     async function load() {
       var gen = ++loadGen;
       state.error = null;
+      /* Receipts are read first and outside the ledger's try: the two services
+       * run separately, and a receipt link must still open the shielded card
+       * when the ledger is down. loadShielded records its own per-receipt
+       * errors, so a zanchor failure is named rather than swallowed. */
+      await loadShielded();
+      if (gen !== loadGen) {
+        return;
+      }
       try {
         var healthUrl = apiUrl(state.ledgerUrl, "/health");
         var listUrl = apiUrl(state.ledgerUrl, "/messages?limit=500");
@@ -1905,14 +1977,6 @@
           pair[1] && typeof pair[1].total === "number"
             ? pair[1].total
             : state.messages.length;
-        await loadShielded();
-        var all = rows();
-        var stillThere = all.some(function (message) {
-          return message.block_id === state.selectedId;
-        });
-        if (!stillThere) {
-          state.selectedId = chooseInitial(all);
-        }
       } catch (error) {
         if (gen !== loadGen) {
           return;
@@ -1926,6 +1990,15 @@
       } finally {
         if (gen === loadGen) {
           state.loaded = true;
+          /* Selection happens here, not in the try: a receipt row must be
+           * selectable even when the ledger fetch threw. */
+          var all = rows();
+          var stillThere = all.some(function (message) {
+            return message.block_id === state.selectedId;
+          });
+          if (!stillThere) {
+            state.selectedId = chooseInitial(all);
+          }
           renderBoard();
         }
       }

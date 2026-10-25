@@ -1129,6 +1129,15 @@ button.primary.seal-btn:hover {
   font-size: 0.82rem;
 }
 
+/* Receipt -> explorer: the one click that turns the demo into a link someone
+ * else can open. */
+.proof .receipt-link {
+  display: inline-block;
+  margin-top: 2px;
+  font-size: 0.78rem;
+  color: var(--notary);
+}
+
 .proof-wrap summary {
   cursor: pointer;
   color: var(--notary);

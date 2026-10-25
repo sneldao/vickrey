@@ -259,17 +259,37 @@ test("markAnchored keeps the shielded receipt binding", async () => {
   journal.markAnchored(entry.hash, {
     status: "confirmed",
     mode: "shielded",
+    shielded: true,
     receipt_id: "rec_01J",
     txid: "deadbeef",
     height: 2712345,
   });
   const sync = journal.get(entry.hash).sync;
   assert.equal(sync.mode, "shielded");
+  assert.equal(sync.shielded, true);
   assert.equal(sync.status, "confirmed");
   assert.equal(sync.txid, "deadbeef");
   assert.equal(sync.height, 2712345);
   assert.equal(sync.receipt_id, "rec_01J");
   assert.equal(sync.block_id, null);
+});
+
+test("a receipt that does not say whether it is shielded persists null", async () => {
+  const { journal, entry } = await sealedPair();
+  journal.markAnchored(entry.hash, { status: "confirmed", mode: "shielded" });
+  const sync = journal.get(entry.hash).sync;
+  assert.equal(sync.mode, "shielded");
+  assert.equal(sync.shielded, null, "silence is not a shielding claim");
+});
+
+test("a transparent fallback persists as false", async () => {
+  const { journal, entry } = await sealedPair();
+  journal.markAnchored(entry.hash, {
+    status: "confirmed",
+    mode: "shielded",
+    shielded: false,
+  });
+  assert.equal(journal.get(entry.hash).sync.shielded, false);
 });
 
 test("a public anchor stays public and keeps no receipt", async () => {

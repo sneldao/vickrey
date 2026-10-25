@@ -100,6 +100,10 @@
         state: "anchored",
         status: typeof row.status === "string" ? row.status : "UNKNOWN",
         mode: row.mode === "shielded" ? "shielded" : "public",
+        /* What the service said the transaction is (docs/ZANCHOR_API.md).
+         * null when it did not say: the page must not assume shielding. */
+        shielded:
+          row.shielded === true ? true : row.shielded === false ? false : null,
         block_id: row.block_id || null,
         milestone_index:
           row.milestone_index === undefined ? null : row.milestone_index,

@@ -32,6 +32,11 @@ window.VICKREY_CONFIG = {
   anchorMode: "public",
   zanchorUrl: "http://127.0.0.1:8092",
 
+  // Where the receipt goes next: the sealed entry's receipt links here with
+  // ?receipt=<id>&zanchor=<anchor service>, one click for the demo. Leave it
+  // empty to hide the link.
+  explorerUrl: "http://127.0.0.1:8080",
+
   // The anchor schedule (timing-leak mitigation). No anchor may sit closer
   // than 30 minutes to its capture, and a batch is spread over a 20-minute
   // jitter window — never at capture, never at "back in range". Demos pass

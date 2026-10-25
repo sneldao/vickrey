@@ -40,6 +40,8 @@ Response `202`:
   "receipt_id": "rec_01J...",
   "commitment": "…64-hex…",
   "status": "queued | broadcast | confirmed",
+  "mode": "A | B",
+  "shielded": true,
   "txid": "…hex… or null while queued",
   "height": 2712345 or null until confirmed,
   "anchored_at": "2026-10-27T12:34:56Z or null until confirmed"
@@ -54,11 +56,13 @@ Errors:
 | 409  | `{"detail": "commitment already anchored"}` | **Replay rejection.** This commitment already has a receipt; no second anchor |
 | 503  | `{"detail": "…"}`                           | node unreachable / no spendable note left                                     |
 
-The `409` is defense in depth: mode A's primary replay protection is the
-unique nullifier (replaying means double-spending the burned note, which the
-node rejects), and mode B additionally relies on this verifier-side rejection.
-State which guarantee comes from where in `docs/PRIVACY.md` — do not claim the
-database is the replay protection.
+Replay protection depends on what the node will actually do, so state it by
+case in `docs/PRIVACY.md` — do not claim the database is the replay protection.
+With shielded spends available, mode A's primary protection is the unique
+nullifier: replaying means double-spending the burned note, and the node
+rejects it. When the node refuses shielded spends (see `shielded` below), there
+is no nullifier to burn, and **this `409` is the only replay protection left** —
+say so plainly rather than letting the nullifier claim stand.
 
 ## `GET /receipts/{receipt_id}`
 
@@ -70,6 +74,8 @@ The verifier-held binding. Returns the receipt row, or `404`
   "receipt_id": "rec_01J...",
   "commitment": "…64-hex…",
   "status": "queued | broadcast | confirmed",
+  "mode": "A | B",
+  "shielded": true,
   "txid": "…hex… or null",
   "height": 2712345 or null,
   "anchored_at": "…ISO 8601… or null"
@@ -78,6 +84,35 @@ The verifier-held binding. Returns the receipt row, or `404`
 
 There is **no** `GET /receipts` list endpoint on purpose: the service must not
 offer an enumeration of what has been anchored.
+
+## `mode` and `shielded` — say what the transaction actually is
+
+These two fields exist so the clients never have to guess, and they are **not
+redundant**.
+
+- `mode` is the mechanism the service ran: `A` = note-burn beacon, `B` =
+  commitment in the encrypted memo.
+- `shielded` is the empirical property of the transaction that actually went to
+  the node: `true` if it spends and receives in the shielded pool, `false` if
+  the service fell back to a **transparent constant-amount beacon** because the
+  node refused shielded spends (Orchard actions are disabled in some releases —
+  see `ECATHON.md`).
+
+A `mode: "A"` receipt with `shielded: false` is a correct, contract-legal
+answer, and it is the honest one when the fallback fires. The clients derive
+their labels from `shielded`, never from `mode` or from their own hopes:
+
+- `shielded: true` → the field client chips `SHIELDED · <status>`, the explorer
+  stamps `SHIELDED · VERIFIED` and its reveal checklist reads "nothing on the
+  chain to check".
+- `shielded: false` → `TRANSPARENT · <status>`; the explorer's checklist shows
+  what a transparent transaction really exposes (amount, addresses, block time)
+  and says what it still does not: species, area, observer, purpose.
+- absent / null → the clients claim nothing: the badge is the plain status.
+
+Printing `SHIELDED` over a transparent transaction is a false claim about the
+one thing this project is judged on. `scripts/demo_zcash.sh` fails a service
+that omits either field.
 
 ## `GET /chain/tx/{txid}`
 
@@ -100,12 +135,20 @@ endpoint must never echo a commitment.
 ## `GET /health`
 
 ```json
-{ "status": "ok", "node": "ok | down", "mode": "A | B", "notes_available": 3 }
+{
+  "status": "ok",
+  "node": "ok | down",
+  "mode": "A | B",
+  "shielded": true,
+  "notes_available": 3
+}
 ```
 
 `notes_available` is how many dedicated shielded notes remain to burn (mode A).
 `mode` is the running mode: A = note-burn beacon, B = commitment in the
-encrypted memo (stretch).
+encrypted memo (stretch). `shielded` says whether the running pipeline produces
+shielded transactions or has fallen back to transparent; the receipt is still
+the authority per anchor, because the answer can change with a node upgrade.
 
 ## Client-side scheduling (owned by the field client)
 

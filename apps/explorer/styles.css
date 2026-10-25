@@ -628,6 +628,16 @@ pre,
   opacity: 0.85;
 }
 
+/* A transparent anchor's own transaction: not hidden, not a failure — it is
+ * on the chain, and the panel should look like it says so. */
+.check.exposed b {
+  color: var(--wax);
+}
+
+.check.exposed span {
+  opacity: 0.92;
+}
+
 .check small {
   display: block;
   margin-top: 2px;

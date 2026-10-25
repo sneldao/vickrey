@@ -305,10 +305,14 @@ const receipt = {
   receipt_id: "rec_01J",
   commitment: "a".repeat(64),
   status: "confirmed",
+  mode: "A",
+  shielded: true,
   txid: "deadbeef",
   height: 2712345,
   anchored_at: "2026-10-27T12:34:56Z",
 };
+
+const transparentReceipt = { ...receipt, shielded: false };
 
 test("shieldedMessage maps a receipt into a row and carries nothing else", () => {
   const row = api.shieldedMessage(receipt, null);
@@ -343,12 +347,70 @@ test("shieldedState needs the receipt and the chain check to say VERIFIED", () =
   assert.equal(api.shieldedState(null, null), "PENDING");
 });
 
-test("shielded rows stamp SHIELDED before the verdict", () => {
+test("the stamp is the service's answer, not the row's routing", () => {
   assert.equal(
-    api.stampText({ shielded: true, status: "VERIFIED" }),
+    api.stampText({ zanchor: true, shielded: true, status: "VERIFIED" }),
     "SHIELDED · VERIFIED",
   );
+  assert.equal(
+    api.stampText({ zanchor: true, shielded: false, status: "VERIFIED" }),
+    "TRANSPARENT · VERIFIED",
+    "a transparent fallback must never print SHIELDED",
+  );
+  assert.equal(
+    api.stampText({ zanchor: true, shielded: null, status: "VERIFIED" }),
+    "VERIFIED",
+    "a receipt that does not say gets no claim",
+  );
   assert.equal(api.stampText({ status: "VERIFIED" }), "VERIFIED");
+});
+
+test("a transparent receipt keeps the row honest end to end", () => {
+  const row = api.shieldedMessage(transparentReceipt, {
+    exists: true,
+    height: 2712345,
+  });
+  assert.equal(row.zanchor, true);
+  assert.equal(row.shielded, false);
+  assert.equal(row.status, "VERIFIED");
+  assert.equal(api.incidentTitle(row), "Anchor (transparent)");
+  assert.equal(api.stampText(row), "TRANSPARENT · VERIFIED");
+});
+
+test("a receipt with no shielded flag claims nothing", () => {
+  const { shielded, ...older } = receipt;
+  const row = api.shieldedMessage(older, null);
+  assert.equal(shielded, true);
+  assert.equal(row.shielded, null);
+  assert.equal(api.stampText(row), "PENDING");
+  assert.equal(api.incidentTitle(row), "Anchored receipt");
+});
+
+test("the reveal rows say Exposed only for a transparent anchor", () => {
+  const shieldedRows = api.revealRows(true);
+  assert.equal(
+    shieldedRows.some((row) => row.state === "exposed"),
+    false,
+    "a shielded anchor has nothing exposed",
+  );
+  const transparentRows = api.revealRows(false);
+  const byName = Object.fromEntries(
+    transparentRows.map((row) => [row.name, row]),
+  );
+  assert.equal(byName.Transaction.state, "exposed");
+  assert.equal(byName.Transaction.label, "Public");
+  assert.equal(byName.Amount.state, "exposed");
+  assert.equal(byName.Amount.label, "Constant");
+  assert.equal(byName["Observation time"].state, "exposed");
+  // What the observation is stays hidden in both cases.
+  for (const name of ["Species", "Coarse area", "Observer", "Purpose"]) {
+    assert.equal(byName[name].state, "hidden", `${name} must stay hidden`);
+  }
+  assert.equal(
+    transparentRows.some((row) => row.detail.includes("reveals nothing")),
+    false,
+    "nothing may claim the chain reveals nothing when the tx is transparent",
+  );
 });
 
 test("the reveal panel is the public checklist with nothing to check", () => {

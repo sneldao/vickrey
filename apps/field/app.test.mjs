@@ -79,6 +79,48 @@ test("shieldedBody carries the commitment and nothing else", () => {
   }
 });
 
+test("the anchor word comes from the service, never from the routing", () => {
+  assert.equal(field.anchorWord({ shielded: true }), "SHIELDED");
+  assert.equal(field.anchorWord({ shielded: false }), "TRANSPARENT");
+  // A receipt that does not say gets the neutral word: no false claim.
+  assert.equal(field.anchorWord({}), "ANCHORED");
+  assert.equal(field.anchorWord(null), "ANCHORED");
+});
+
+test("the transparent fallback does not repeat the shielded note", () => {
+  assert.equal(
+    field.statusNote("confirmed", true).includes("reveals nothing"),
+    true,
+    "a shielded anchor may say the chain reveals nothing",
+  );
+  const transparent = field.statusNote("confirmed", false);
+  assert.equal(transparent.includes("reveals nothing"), false);
+  assert.equal(transparent.includes("transparent"), true);
+  // Public ledger statuses are unaffected by the flag.
+  assert.equal(
+    field.statusNote("VERIFIED"),
+    field.statusNote("VERIFIED", true),
+  );
+});
+
+test("the explorer handoff carries the receipt id and the anchor service", () => {
+  const url = field.explorerReceiptUrl(
+    "http://127.0.0.1:8080/",
+    { receipt_id: "rec_01J", txid: "deadbeef" },
+    "http://127.0.0.1:8092/",
+  );
+  assert.equal(
+    url,
+    "http://127.0.0.1:8080/index.html?receipt=rec_01J&zanchor=http%3A%2F%2F127.0.0.1%3A8092#deadbeef",
+  );
+  // No explorer configured, or no receipt yet: no link rather than a broken one.
+  assert.equal(
+    field.explorerReceiptUrl("", { receipt_id: "rec_01J" }, "x"),
+    "",
+  );
+  assert.equal(field.explorerReceiptUrl("http://x", {}, "y"), "");
+});
+
 test("resolveConfig keeps numeric config values and shielded query aliases", () => {
   const merged = field.resolveConfig(
     {
@@ -92,6 +134,10 @@ test("resolveConfig keeps numeric config values and shielded query aliases", () 
   assert.equal(merged.anchorMinDelayMs, 1500);
   assert.equal(merged.anchorJitterMs, "250");
   assert.equal(merged.zanchorUrl, "http://localhost:8092");
+  assert.equal(
+    field.resolveConfig({}, "?explorer=http://127.0.0.1:8080").explorerUrl,
+    "http://127.0.0.1:8080",
+  );
 });
 
 test("drainVerified refuses a tampered queue and sends nothing", async () => {

@@ -45,6 +45,7 @@
     "place",
     "anchorMode",
     "zanchorUrl",
+    "explorerUrl",
     "anchorMinDelayMs",
     "anchorJitterMs",
   ];
@@ -66,6 +67,8 @@
     mode: "anchorMode",
     zanchor: "zanchorUrl",
     zanchorUrl: "zanchorUrl",
+    explorer: "explorerUrl",
+    explorerUrl: "explorerUrl",
     minDelay: "anchorMinDelayMs",
     jitter: "anchorJitterMs",
   };
@@ -291,8 +294,57 @@
       "The shielded transaction settled at the recorded height. The public chain reveals nothing about this observation.",
   };
 
-  function statusNote(status) {
+  /* A service that cannot shield falls back to a transparent constant-amount
+   * beacon and says so (`shielded: false`). The chain then shows the
+   * transaction itself, so the note must not repeat the shielded claim —
+   * docs/ZANCHOR_API.md, "mode and shielded". */
+  var TRANSPARENT_NOTE = {
+    queued:
+      "The anchor is queued at the anchor service; no transaction has been broadcast yet.",
+    broadcast:
+      "A transparent transaction is broadcast. It settles at a height, in the open.",
+    confirmed:
+      "The transaction settled at the recorded height. It is transparent: the chain shows the transaction, not what it anchors.",
+  };
+
+  function statusNote(status, shielded) {
+    if (shielded === false && TRANSPARENT_NOTE[status]) {
+      return TRANSPARENT_NOTE[status];
+    }
     return STATUS_NOTE[status] || "Unrecognised ledger status.";
+  }
+
+  /* The anchor's own word for itself, taken from what the service reported and
+   * never inferred: an old receipt with no `shielded` field gets the neutral
+   * word instead of a claim we cannot back. */
+  function anchorWord(sync) {
+    if (sync && sync.shielded === true) {
+      return "SHIELDED";
+    }
+    if (sync && sync.shielded === false) {
+      return "TRANSPARENT";
+    }
+    return "ANCHORED";
+  }
+
+  /* One click from the sealed entry to the explorer, carrying the receipt id
+   * and nothing else: the explorer has no list endpoint on purpose, so the
+   * receipt is handed over explicitly (docs/ZANCHOR_API.md). */
+  function explorerReceiptUrl(explorerUrl, receipt, zanchorUrl) {
+    if (!explorerUrl || !receipt || !receipt.receipt_id) {
+      return "";
+    }
+    var url =
+      trimUrl(explorerUrl) +
+      "/index.html?receipt=" +
+      encodeURIComponent(receipt.receipt_id);
+    if (zanchorUrl) {
+      url += "&zanchor=" + encodeURIComponent(trimUrl(zanchorUrl));
+    }
+    if (receipt.txid) {
+      url += "#" + encodeURIComponent(receipt.txid);
+    }
+    return url;
   }
 
   /* --------------------------------------------------------------- tamper */
@@ -542,6 +594,7 @@
             ? "shielded"
             : "public",
         zanchorUrl: resolved.zanchorUrl || "",
+        explorerUrl: resolved.explorerUrl || "",
         schedule: root.VickreySchedule
           ? root.VickreySchedule.normalizeOptions({
               minDelayMs: resolved.anchorMinDelayMs,
@@ -1007,11 +1060,20 @@
       ];
       if (sync.state === "anchored") {
         if (sync.mode === "shielded") {
+          var link = explorerReceiptUrl(
+            settings.explorerUrl,
+            sync,
+            settings.zanchorUrl,
+          );
           items.push([
-            "Shielded anchor",
+            sync.shielded === true
+              ? "Shielded anchor"
+              : sync.shielded === false
+                ? "Anchor (transparent)"
+                : "Anchor",
             escapeHtml(sync.status) +
               " — " +
-              escapeHtml(statusNote(sync.status)),
+              escapeHtml(statusNote(sync.status, sync.shielded)),
           ]);
           items.push([
             "Transaction",
@@ -1033,7 +1095,12 @@
             "Receipt",
             '<span class="mono wrap">' +
               escapeHtml(sync.receipt_id || "—") +
-              "</span>",
+              "</span>" +
+              (link
+                ? ' <a class="receipt-link" href="' +
+                  escapeHtml(link) +
+                  '" target="_blank" rel="noopener noreferrer">Open the receipt in the explorer</a>'
+                : ""),
           ]);
         } else {
           items.push([
@@ -1094,7 +1161,7 @@
       if (row.state === "anchored") {
         text =
           row.sync.mode === "shielded"
-            ? "SHIELDED · " + row.sync.status
+            ? anchorWord(row.sync) + " · " + row.sync.status
             : "Anchored · " + row.sync.status;
       }
       if (row.state === "cracked" && row.refused) {
@@ -1879,7 +1946,13 @@
           (row && row.detail) || "zanchor returned " + response.status,
         );
       }
+      /* Routing and truth are separate: `mode` records that this anchor went to
+       * zanchor and never to the commons; `shielded` records what the service
+       * says the transaction actually is. A missing flag stays null — the page
+       * then claims no shielding rather than assuming it. */
       row.mode = "shielded";
+      row.shielded =
+        row.shielded === true ? true : row.shielded === false ? false : null;
       return row;
     }
 
@@ -2112,7 +2185,9 @@
     JOURNAL_KEY: JOURNAL_KEY,
     KEY_KEY: KEY_KEY,
     anchorMessage: anchorMessage,
+    anchorWord: anchorWord,
     applyTamper: applyTamper,
+    explorerReceiptUrl: explorerReceiptUrl,
     drainVerified: drainVerified,
     entryTitle: entryTitle,
     journalView: journalView,

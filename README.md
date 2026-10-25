@@ -64,6 +64,25 @@ Three layers, one job each:
 that the ID was right. The model carries accuracy; the ledger carries
 provenance.
 
+## Milestone 2: ECATHON (Zcash privacy hackathon, due Oct 28 23:59 UTC)
+
+Week 1 (Hacktoberfest) proved the seal; **ECATHON** closes the privacy gap
+it left open. The current anchor ledger publishes `who + what + coarse where +
+when` — an immutable correlation map. A stranger who checks block height can
+still build "who observed the rare bird, where, and when".
+
+The fix: **move the anchor into the shielded pool.** The anchor becomes an
+unremarkable shielded beacon transaction — nothing on-chain identifies what
+was sealed, who sealed it, or why the tx exists at all; the commitment-to-tx
+link lives only with the verifier, and block height still fixes the time.
+Shielded TAZ field rewards are the stretch: money that moves without
+publishing who got paid for what.
+
+The whole repository is in-window: first commit **2026-10-06**, inside the
+Sep 28 – Oct 28 build window, so every line of code was written for this
+hackathon's window. Milestone 1 was the foundation; the Zcash layer is the
+submission. Plan and threat model: [docs/ECATHON.md](docs/ECATHON.md).
+
 ## Run it locally
 
 ```bash
@@ -110,6 +129,7 @@ covers it, including what that does _not_ prove.
   gotchas, seeding, the ledger API, tests.
 - [docs/STRATEGY.md](docs/STRATEGY.md) — positioning, architecture, anchoring
   design, competitors, risks, interop.
+- [docs/ECATHON.md](docs/ECATHON.md) — **current milestone:** the Zcash shielded-anchor build plan and threat model (submission due Oct 28 2026).
 - [docs/BRAND.md](docs/BRAND.md) — the seal narrative, colour and type system.
 - [docs/BUILD.md](docs/BUILD.md) — build log (history; status moved to STATUS.md).
 - [docs/archive/](docs/archive/) — the Hacktoberfest Week 1 submission record

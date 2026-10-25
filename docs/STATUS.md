@@ -38,6 +38,25 @@ Tests on `main`: 91 JS + 119 ledger, all passing._
 | Darwin Core export                                                                                            | **Not built**                    | Planned interop layer; see [STRATEGY.md](STRATEGY.md)                                                                                                                                                                         |
 | Showcase page truthfulness                                                                                    | **Live**                         | "What is actually running" fetches `/health` at page load; the page cannot claim what has stopped being true                                                                                                                  |
 
+## ECATHON (Zcash privacy hackathon — submission due 2026-10-28 23:59 UTC)
+
+Hacktoberfest Week 1 was milestone 1; ECATHON is the current target. Plan:
+[ECATHON.md](ECATHON.md). Everything in this table is **Not built** as of
+2026-10-25.
+
+| Claim                                                                | Status        | Evidence / how to check                                                                                         |
+| -------------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------- |
+| Whole repo written in the Sep 28 – Oct 28 build window               | **Verified**  | First commit `ced42d0` dated 2026-10-06 17:09 +0100; `git log --reverse --date=iso` — no pre-window code exists |
+| Zcash node (mainnet or testnet) running locally                      | **Not built** | `docker-compose` entry for `zcashd` + synced state                                                              |
+| Shielded beacon anchor: commitment sealed, unidentifiable tx         | **Not built** | `services/zanchor`; a block-explorer view of the anchor tx must reveal nothing about species, area, or observer |
+| Commitment carried in encrypted shielded memo (stretch)              | **Not built** | Same service, memo mode; verifier decrypts with viewing key                                                     |
+| Per-commitment note burn → unique nullifier (replay = double-spend)  | **Not built** | One dedicated shielded note per commitment; replaying an anchor must be rejected as a double-spend              |
+| Verifier receipt + selective disclosure via viewing key              | **Not built** | Receipt endpoint; disclosure flow documented in the threat model                                                |
+| Batched, jittered anchor scheduling (timing-leak mitigation)         | **Not built** | Scheduler in the field client / ledger; interval + jitter documented                                            |
+| Shielded TAZ field rewards (stretch)                                 | **Not built** | Verified-observation payout to a shielded address, memo = observation id, jittered                              |
+| Threat model: timing / memo / address-reuse / verifier trust         | **Not built** | `docs/PRIVACY.md` (or inside ECATHON.md); names each leak and its mitigation                                    |
+| End-to-end demo: seal → shielded anchor → crack → "nothing on-chain" | **Not built** | `scripts/demo_zcash.sh`; demo video under 2 min                                                                 |
+
 ## What the product claims about itself
 
 - **Integrity is not accuracy.** The ledger proves a record was not altered after

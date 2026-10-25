@@ -1,5 +1,9 @@
 # Build log — Hacktoberfest 2026, Week 1: Touch Grass
 
+> **Week 1 is milestone 1, filed October 11, 2026.** The current milestone is
+> **ECATHON** (Zcash privacy hackathon, due Oct 28 23:59 UTC) — its plan and
+> status live in [ECATHON.md](ECATHON.md) and [STATUS.md](STATUS.md).
+
 > **This is a log, not a status page.** Entries are dated, written in the tense
 > of the evening they happened, and kept as evidence. What is true _now_ is in
 > [`STATUS.md`](STATUS.md); how to run things is in [`OPS.md`](OPS.md).

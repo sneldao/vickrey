@@ -2,9 +2,17 @@
 
 **One line:** Identify it offline. Prove it later.
 
-**Hacktoberfest 2026 — Week 1: Touch Grass.** Build something with open-source AI
-at its core that gets people off the screen and into the world. Vickrey is an
-offline, open-weight field identifier with a tamper-evident ecological logbook.
+**Milestone 1 (done): Hacktoberfest 2026 — Week 1: Touch Grass.** An
+offline, open-weight field identifier with a tamper-evident ecological
+logbook — submitted October 11, 2026. The entry period and the record of
+what was filed live in [`BUILD.md`](BUILD.md) and [`archive/`](archive/).
+
+**Milestone 2 (current): ECATHON — a Zcash privacy hackathon.** Submission
+due **October 28, 2026, 23:59 UTC**. The target is the privacy gap the Week
+1 build left open: our public anchor ledger still reveals _who_ sealed _what_
+_where_ _when_ — a correlation map, not a poaching map, but a map nonetheless.
+ECATHON is where the anchor moves into the shielded pool. Full plan in
+[`ECATHON.md`](ECATHON.md).
 
 **Status:** the single honest table is [`STATUS.md`](STATUS.md) — this document
 is the plan and the reasoning, not a live-state report. The seal → verify →
@@ -179,6 +187,8 @@ two-source truth table is domain-agnostic and unchanged:
 
 ## Leave for later
 
+- Shielded field rewards in TAZ (promoted to the ECATHON build window —
+  see [ECATHON.md](ECATHON.md)).
 - Micro-credits / incentives for verified observations.
 - Webhook alerts on status flip (mismatch → page, not poll).
 - Signed, anchored audit summaries fed back to the commons.

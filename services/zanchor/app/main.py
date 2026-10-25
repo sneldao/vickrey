@@ -115,6 +115,14 @@ class AnchorService:
             raise HTTPException(503, "node unreachable")
 
         with self._lock:
+            # One anchor at a time: the wallet picks its note when the
+            # operation is created, and its shielded view lags the chain
+            # by a few blocks. A second anchor started before the first
+            # one confirms can pick the same note — the node then rejects
+            # it as a duplicate nullifier. The field scheduler already
+            # spaces anchors by tens of minutes; this is the backstop.
+            if self.store.unconfirmed():
+                raise HTTPException(503, "anchor in flight; retry once it confirms")
             opid, txid, mode, shielded = self._anchor_tx(commitment)
 
         status = "broadcast" if txid else "queued"
@@ -206,6 +214,7 @@ class AnchorService:
                 receipt = self.store.get(rid)
             elif state in ("failed", "error"):
                 logger.error("receipt %s op failed: %s", rid, status)
+                self.store.set_failed(rid, str(status.get("error", "operation failed")))
                 return
             return
         if receipt["status"] == "broadcast" and receipt["txid"]:
@@ -252,7 +261,7 @@ def _iso(ts: int | None) -> str | None:
 
 
 def _public(receipt: dict[str, Any]) -> dict[str, Any]:
-    return {
+    out = {
         "receipt_id": receipt["receipt_id"],
         "commitment": receipt["commitment"],
         "status": receipt["status"],
@@ -262,6 +271,9 @@ def _public(receipt: dict[str, Any]) -> dict[str, Any]:
         "height": receipt.get("height"),
         "anchored_at": receipt.get("anchored_at"),
     }
+    if receipt.get("error"):
+        out["error"] = receipt["error"]
+    return out
 
 
 def build_app() -> FastAPI:
@@ -301,8 +313,12 @@ def build_app() -> FastAPI:
         commitment = (payload or {}).get("commitment", "")
         if not isinstance(commitment, str) or not COMMITMENT_RE.match(commitment):
             raise HTTPException(400, "body is not a 64-hex commitment")
-        if service.store.by_commitment(commitment) is not None:
+        existing = service.store.by_commitment(commitment)
+        if existing is not None and existing["status"] != "failed":
             raise HTTPException(409, "commitment already anchored")
+        if existing is not None:
+            # A failed attempt did not anchor anything; allow the retry.
+            service.store.delete(existing["receipt_id"])
         try:
             return service.anchor(commitment)
         except HTTPException:
@@ -321,10 +337,14 @@ def build_app() -> FastAPI:
             raise HTTPException(503, "no node")
         try:
             tx = service.rpc.transaction(txid)
-        except RpcError as exc:
-            if exc.code in (-5, -8):  # no such transaction / invalid address
-                raise HTTPException(404, "node does not know this transaction")
-            raise HTTPException(503, f"node error: {exc.message}")
+        except RpcError:
+            # Any node-side refusal means "the node does not know this
+            # transaction" (unknown id, invalid id, node http crash on a
+            # degenerate id). A dead node is a different failure: URLError
+            # falls through to 503 below.
+            raise HTTPException(404, "node does not know this transaction")
+        except Exception as exc:  # noqa: BLE001 - any transport failure
+            raise HTTPException(503, f"node unreachable: {type(exc).__name__}")
         return {
             "txid": txid,
             "exists": True,

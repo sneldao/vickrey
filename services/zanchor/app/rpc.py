@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import threading
+import urllib.error
 import urllib.request
 from base64 import b64encode
 from typing import Any
@@ -50,9 +51,25 @@ class ZcashRpc:
             {"jsonrpc": "1.0", "id": req_id, "method": method, "params": params or []}
         ).encode()
         req = urllib.request.Request(self.url, data=body, method="POST")
-        req.add_header("Authorization", f"Basic {self._auth}")
+        if self._auth:
+            req.add_header("Authorization", f"Basic {self._auth}")
         req.add_header("Content-Type", "application/json")
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+        try:
+            resp = urllib.request.urlopen(req, timeout=self.timeout)
+        except urllib.error.HTTPError as exc:
+            # The 6.x node answers some bad inputs (e.g. the all-zeros
+            # txid in gettransaction) with a bare HTTP 500 instead of a
+            # JSON-RPC error. Parse the body if it is JSON, else surface
+            # the HTTP status so callers can map it (unknown txid -> 404).
+            try:
+                out = json.load(exc)
+            except Exception:
+                raise RpcError(-32000, f"node http {exc.code}") from None
+            if out.get("error"):
+                err = out["error"]
+                raise RpcError(err.get("code", -1), str(err.get("message", err)))
+            raise RpcError(exc.code, "node http error") from None
+        with resp:
             out = json.load(resp)
         if out.get("error"):
             err = out["error"]

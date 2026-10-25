@@ -18,13 +18,14 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS receipts (
     receipt_id  TEXT PRIMARY KEY,
     commitment  TEXT NOT NULL UNIQUE,
-    status      TEXT NOT NULL,          -- queued | broadcast | confirmed
+    status      TEXT NOT NULL,          -- queued | broadcast | confirmed | failed
     mode        TEXT NOT NULL,          -- A | B
     shielded    INTEGER NOT NULL,       -- 1 | 0
     opid        TEXT,
     txid        TEXT,
     height      INTEGER,
     anchored_at TEXT,
+    error       TEXT,
     created_at  TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS kv (
@@ -33,7 +34,7 @@ CREATE TABLE IF NOT EXISTS kv (
 );
 """
 
-STATUS_VALUES = ("queued", "broadcast", "confirmed")
+STATUS_VALUES = ("queued", "broadcast", "confirmed", "failed")
 
 
 def new_receipt_id() -> str:
@@ -47,6 +48,10 @@ class Receipts:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(SCHEMA)
+            try:  # databases from before the error column
+                self._conn.execute("ALTER TABLE receipts ADD COLUMN error TEXT")
+            except sqlite3.OperationalError:
+                pass
             self._conn.commit()
 
     # -- receipts ----------------------------------------------------------
@@ -121,6 +126,21 @@ class Receipts:
                 "UPDATE receipts SET status = 'confirmed', height = ?,"
                 " anchored_at = ? WHERE receipt_id = ?",
                 (height, anchored_at, receipt_id),
+            )
+            self._conn.commit()
+
+    def set_failed(self, receipt_id: str, reason: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "UPDATE receipts SET status = 'failed', error = ? WHERE receipt_id = ?",
+                (reason[:200], receipt_id),
+            )
+            self._conn.commit()
+
+    def delete(self, receipt_id: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM receipts WHERE receipt_id = ?", (receipt_id,)
             )
             self._conn.commit()
 

@@ -39,22 +39,23 @@ Response `202`:
 {
   "receipt_id": "rec_01J...",
   "commitment": "…64-hex…",
-  "status": "queued | broadcast | confirmed",
+  "status": "queued | broadcast | confirmed | failed",
   "mode": "A | B",
   "shielded": true,
   "txid": "…hex… or null while queued",
   "height": 2712345 or null until confirmed,
-  "anchored_at": "2026-10-27T12:34:56Z or null until confirmed"
+  "anchored_at": "2026-10-27T12:34:56Z or null until confirmed",
+  "error": "node-side reason, present only when failed"
 }
 ```
 
 Errors:
 
-| Code | Shape                                       | Meaning                                                                       |
-| ---- | ------------------------------------------- | ----------------------------------------------------------------------------- |
-| 400  | `{"detail": "…"}`                           | body is not a 64-hex commitment                                               |
-| 409  | `{"detail": "commitment already anchored"}` | **Replay rejection.** This commitment already has a receipt; no second anchor |
-| 503  | `{"detail": "…"}`                           | node unreachable / no spendable note left                                     |
+| Code | Shape                                       | Meaning                                                                                              |
+| ---- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 400  | `{"detail": "…"}`                           | body is not a 64-hex commitment                                                                      |
+| 409  | `{"detail": "commitment already anchored"}` | **Replay rejection.** This commitment already has a receipt; no second anchor                        |
+| 503  | `{"detail": "…"}`                           | node unreachable / no spendable note left / anchor in flight (one at a time; retry once it confirms) |
 
 Replay protection depends on what the node will actually do, so state it by
 case in `docs/PRIVACY.md` — do not claim the database is the replay protection.
@@ -161,5 +162,11 @@ defaults).
 
 ## Status words
 
-The receipt `status` enum is exactly `queued`, `broadcast`, `confirmed`. The
-client maps unknown values to its generic status note rather than guessing.
+The receipt `status` enum is exactly `queued`, `broadcast`, `confirmed`,
+`failed`. A `failed` receipt anchored nothing (the node rejected its note
+selection); re-submitting the same commitment is allowed and replaces it.
+While a receipt is `queued` or `broadcast`, the service accepts no further
+anchors (`503`) — the wallet's shielded view lags the chain by a few
+blocks, and a concurrent anchor could select the same note, which the node
+would reject as a duplicate nullifier. The client maps unknown values to
+its generic status note rather than guessing.

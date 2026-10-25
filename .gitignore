@@ -38,3 +38,4 @@ services/ledger/data/
 
 # Local node configs with real credentials stay out of git.
 services/zanchor/docker/zcash.conf
+services/zanchor/data/

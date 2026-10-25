@@ -157,12 +157,16 @@ consumes directly.
   memos, so whether on-chain memos are currently consensus-enabled is an
   **empirical question the spike answers**. Mode A (beacon) does not depend
   on it; mode B and memo-carried reward signalling do.
-- Dev loop: `zcashd` built from source locally (regtest — we mine, no
-  funding dependency); `services/zanchor/spike/spike.py` runs the full
-  GO/NO-GO against any node.
-- **Demo chain still to host** (needs ~20GB disk): mainnet node on a box
-  with room (Fly volume or another server). The spike + zanchor service
-  are node-agnostic — only the RPC URL changes.
+- Dev loop: `zcashd` built from source on nuncio-vultr (regtest — we
+  mine, no funding dependency); `services/zanchor/spike/probe6.py` is the
+  D0 gate and it ran to GO.
+- **Demo chain: regtest on nuncio-vultr.** Mainnet cannot sync in the
+  window on this hardware, and zcashd 6.x's testnet sync thread does not
+  start against the current Zebra-dominated testnet (reproducible; init
+  and peering complete, then nothing). Regtest is therefore the demo
+  chain, documented as such in the submission. The service is
+  node-agnostic — one RPC URL. (The image push to GHCR is blocked on a
+  token-scope quirk; nothing depends on it.)
 
 - Register the single submitting account; lock track = Wildcard.
 - `docker-compose`: `zcashd` (mainnet, small real amounts — avoids testnet
@@ -180,24 +184,33 @@ consumes directly.
 - Decide note-burn mechanics concretely (one note per commitment: fund the
   anchor account with N notes, one per planned anchor).
 
-### D1 — Sat Oct 26: `services/zanchor` core
+### D1 — Sat Oct 26: `services/zanchor` core — **done, a day early**
 
-- FastAPI (matches the ledger's stack):
-  - `POST /anchor` — takes commitment C, burns one dedicated note, returns
-    `{txid, receipt_id}` (broadcast; height at confirmation).
-  - `GET /receipts/{id}` — the C ↔ txid ↔ height binding (verifier-held;
-    **not** published to the commons' public API in shielded mode).
-  - `GET /chain/tx/{txid}` — proof-of-existence check anyone can run
-    ("this tx exists at height H") without learning anything about C.
-- **Wire format is pinned in [ZANCHOR_API.md](ZANCHOR_API.md)** — shapes,
-  status enum, error codes, and the deliberate absence of a receipts list
-  endpoint. Change the contract there first; the client codes against it.
-- Verifier mode: read tx back with the viewing key, confirm shape, file the
-  receipt.
-- Unit tests against a mocked RPC; integration test = one real mainnet tx
-  behind an env flag.
-- Status table updated as things land (STATUS.md is the single source of
-  truth).
+Everything below landed Oct 25 and was verified against a live v6.20.0
+node, not a mock:
+
+- `POST /anchor` (202 + receipt), `GET /receipts/{id}`, `GET /chain/tx/{txid}`
+  — exactly the pinned contract, plus the live-learned bits: one anchor in
+  flight (503) because the wallet's shielded view lags the chain, a
+  `failed` receipt state with retry-after-failure, and node HTTP-500
+  tolerance (6.x answers degenerate inputs with bare 500s).
+- **Mode A (beacon) and mode B (memo) both verified live.** Mode B's
+  decisive check: the raw transaction carries only encrypted
+  `outCiphertext`; the verifier's wallet decrypts the commitment.
+- Note burn: dedicated anchor account, constant 0.001 ZEC, ZIP 317 grace
+  fee 0.0001; funding via `z_shieldcoinbase` (regtest) documented in
+  `docker/fund_regtest.sh`.
+- 12 contract tests (mocked RPC) + `demo_zcash.sh` **33/33 against the
+  live node**, including the 409 replay and the unknown-txid 404.
+- 6.x migration recorded along the way: `z_getoperationstatus [[opid]]`,
+  `status` field, `z_listshieldedreceivednotes` gone (note count from
+  `z_getnotescount`), `gettransaction` height via `getblockheader`, and
+  Python 3.12 urllib refusing `user:pass@` URLs (creds split into the
+  Basic header).
+
+**Wire format is pinned in [ZANCHOR_API.md](ZANCHOR_API.md)** — shapes,
+status enum, error codes, and the deliberate absence of a receipts list
+endpoint. Change the contract there first; the client codes against it.
 
 ### D2 — Sun Oct 27: integration + threat model + demo
 
@@ -229,15 +242,22 @@ consumes directly.
   409 replay → 400 bad body → settle → proof of existence → no leak → no list
   endpoint) and exits non-zero on any breach. `--zanchor URL` points the same
   checks at the real service, so D1's acceptance test is one command.
-- 25 new JS tests (121 total). Verified against the **mock** zanchor written
-  to the contract; the real end-to-end leg waits on D1.
+- 25 new JS tests (121 total). Written against the **mock** zanchor that
+  implements the contract — and since Oct 25 the same walk has also run
+  against the live stack in a real browser (seal → sync → confirmed
+  receipts → tamper → restore → explorer `SHIELDED · VERIFIED`).
 
 **Still D2, and still not mine to pre-build:** the service itself, the
 `zcashd` compose entry, note burn, verifier receipts, and the D2 numbers in
 `PRIVACY.md` that depend on them (replay protection among them).
 
+_Updated evening of Oct 25 — all of the above landed; what remains of D2:
+the demo video (parked by the lead, 2026-10-25) and the D3 full walk.
+`docs/PRIVACY.md` is fully closed: replay answered by D0, verifier trust,
+disclosure and keypair policy set the same day._
+
 - **Rewards (stretch):** commons → per-observer shielded TAZ payout, memo =
-  observation id, jittered.
+  observation id, jittered. Design only — not claimed in the submission.
 - **`docs/PRIVACY.md`**: timing section is written and complete; replay,
   verifier trust, disclosure and keypair policy stay **open** until the spike
   and the lead answer them.
@@ -246,11 +266,16 @@ consumes directly.
 
 ### D3 — Mon Oct 28 (deadline 23:59 UTC): harden + submit
 
-- Full end-to-end run on the real chain, recorded; demo video < 2 min.
-- Submission README: what is the Zcash submission vs. the in-window
-  foundation, how to run it in 10 minutes, honest status table.
+- Full end-to-end run on the live node, recorded; demo video < 2 min
+  (parked by the lead 2026-10-25; the walk itself is one browser session —
+  sample walk → sync → receipts → tamper → restore → explorer VERIFIED).
+- Submission text: drafted in [SUBMISSION.md](SUBMISSION.md); what is the
+  Zcash submission vs. the in-window foundation, how to run it, honest
+  status table.
 - Commit before ~21:00 UTC, buffer for the submit click; keep editing
   rights until the deadline (we can fix post-commit bugs until 23:59).
+- Repo is public on GitHub (sneldao/vickrey) and in sync as of Oct 25 —
+  nothing in the submission lives only on a laptop.
 
 ## Team split (2 developers + you as lead)
 

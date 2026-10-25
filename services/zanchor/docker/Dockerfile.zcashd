@@ -19,13 +19,14 @@ WORKDIR /build/zcash
 RUN git clone --recursive --branch v6.20.0 --depth 1 https://github.com/zcash/zcash .
 RUN ./zcutil/build.sh -j"$(nproc)"
 
-RUN install -d /usr/local/share/zcash-params \
+# Proving parameters are embedded in the binary since 5.x; there is no
+# params directory to ship. Only the two binaries move to /usr/local/bin.
+RUN install -d /usr/local/bin \
     && cp src/zcashd src/zcash-cli /usr/local/bin/ \
-    && cp share/params/* /usr/local/share/zcash-params/ \
     && apt-get purge -y --auto-remove build-essential g++ gcc \
        libboost-all-dev automake libtool pkg-config cmake ccache git \
     && apt-get install -y --no-install-recommends \
-       libssl3t64 libevent-core-3-1t64 libgomp1 \
+       libssl3t64 libevent-core-2.1-7t64 libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 VOLUME /data

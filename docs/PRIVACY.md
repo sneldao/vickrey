@@ -9,12 +9,12 @@ what is still true afterwards.
 **open** need the lead: they depend on how the verifier is operated, not on
 client code, and the numbers in them are policy decisions.
 
-**What is built.** Only the client half is built: the schedule, the
-commitment-only wire body, and the receipt-aware explorer. `services/zanchor`
-(the service that makes the transaction) is **not** built. So nothing below is
-evidence about a chain — it is the design the client already enforces plus the
-leaks that will remain once the service exists. `STATUS.md` is the authority on
-what actually runs.
+**What is built.** The client half (schedule, commitment-only wire body,
+receipt-aware explorer) and `services/zanchor` (the service that makes the
+transaction) are built and contract-tested; the Zcash node itself is still
+coming up, so the chain-level claims below (shielded spends, memo mode,
+nullifier replay) are design plus pending D0 evidence, not yet a run.
+`STATUS.md` is the authority on what actually runs.
 
 ## What a shielded anchor puts on the chain (mode A, target)
 
@@ -83,29 +83,70 @@ Write this section only after the spike answers it. Do not let "unique
 nullifier" appear in the submission unless a test shows the node rejecting a
 replayed anchor.
 
-## Selective disclosure (open)
+## Selective disclosure (policy set 2026-10-25)
 
 The verifier holds `commitment ↔ txid ↔ height` and, in mode B, a viewing key.
 Disclosure is one anchor at a time, to a named recipient (researcher, court),
 and to nobody else — the receipt endpoint answers only for a receipt id and
-there is no list endpoint. Open questions for the lead: who holds the key, what
-is logged when a receipt is disclosed, and what a recipient is told about the
-rest of the corpus.
+there is no list endpoint.
 
-## Verifier trust (open)
+- **Who holds the key:** the verifier operator, in the verifier process
+  environment only; the receipt database never stores the viewing key or any
+  memo contents. Mode B memo bytes are decrypted in memory, used, and dropped.
+- **What is logged when a receipt is disclosed:** an append-only local audit
+  line — receipt id, UTC timestamp, and the operator-supplied purpose string.
+  No recipient identity is stored by the service; the operator's own records
+  are the operator's policy. The audit log is not exposed by any endpoint.
+- **What a recipient is told about the rest of the corpus:** exactly one fact
+  per disclosure — that this commitment was anchored at this height and time.
+  The existence of other anchors, of the corpus, or of the observing program
+  is not revealed. A recipient who holds one receipt cannot enumerate any
+  others.
+
+## Verifier trust (policy set 2026-10-25)
 
 Shielding moves the linkage from the chain to the verifier. That is the real
 trade: the chain no longer knows what the transaction is, and the verifier
 does. What it must never do: publish receipts, enumerate anchors, or answer
-"what was anchored this week". What has to be stated for judging: who operates
-it, what it stores, and what happens to receipts when the demo ends.
+"what was anchored this week" — and the service enforces the first two by
+construction (no list endpoint, receipts served only by id).
 
-## Keypair policy (open)
+- **Who operates it:** the project (sneldao) operates the verifier for the
+  hackathon demo and the initial commons. It is one FastAPI process in front
+  of one zcashd wallet, same trust domain as the existing Vickrey ledger.
+- **What it stores:** the receipt table (commitment, txid, height, status,
+  mode, shielded) and a two-entry capability cache. It never receives a
+  species, an area, a timestamp, a signature, or a public key — the wire body
+  is the 64-hex commitment and nothing else (`docs/ZANCHOR_API.md`).
+- **What happens to receipts when the demo ends:** the demo receipt database
+  is kept as a demo artifact of the submission (it is small and contains no
+  observation data); a production commons would define and publish its own
+  retention policy before taking real traffic. Both statements go in the
+  submission README.
+
+## Keypair policy (policy set 2026-10-25)
 
 Device keys sign observations and stay on the device; an anchor carries no
 signature and no public key, so the chain cannot link two anchors of the same
-observer. Open for the lead: whether the same key is reused across devices or
-trips, and what a key rotation looks like.
+observer. The verifier's Zcash keypairs follow the same rule as the chain-side
+policy: per-role, never reused.
+
+- **Observer device:** one Ed25519 keypair per device, generated on-device,
+  never transmitted. Anchors carry no key material, so device key reuse is
+  invisible on-chain; off-chain, the sealed record binds observation to
+  device.
+- **Anchor account:** a dedicated Zcash account that only burns anchor notes;
+  it is funded in a single transparent transaction _before_ the observation
+  window opens, and is never funded again mid-window (a funding tx during the
+  window would be a timing marker).
+- **Verifier account:** a separate receiving account, separate from the
+  anchor account. Anchor, verifier, and any future reward accounts are
+  distinct keypairs; cross-account transfers are how a pool's privacy is
+  actually spent, and we do not do them.
+- **Rotation:** there is nothing to rotate on-chain — the anchor account's
+  notes are its only state and are consumed, not reused. A compromised or
+  burned-out anchor account is replaced by funding a fresh one; old receipts
+  remain valid because they bind to txids, not to the account.
 
 ## What the demo may say
 

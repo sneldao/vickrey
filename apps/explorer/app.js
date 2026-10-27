@@ -1385,6 +1385,23 @@
             el("span", { text: countLabel }),
           ]);
           var list = el("ol", { class: "events" });
+          /* Arrow keys move focus between events in a flow; Enter or Space
+           * (native button behaviour) selects the focused one. */
+          list.addEventListener("keydown", function (event) {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") {
+              return;
+            }
+            var buttons = Array.prototype.slice.call(
+              list.querySelectorAll("button.event"),
+            );
+            var index = buttons.indexOf(document.activeElement);
+            var next = buttons[index + (event.key === "ArrowDown" ? 1 : -1)];
+            if (index < 0 || !next) {
+              return;
+            }
+            event.preventDefault();
+            next.focus();
+          });
           group.messages.forEach(function (message) {
             list.append(renderEvent(message));
           });
@@ -1949,6 +1966,21 @@
 
     var loadGen = 0;
 
+    function messagesKey(list) {
+      return (list || [])
+        .map(function (message) {
+          return [
+            message.block_id,
+            message.status,
+            message.updated_at,
+            message.ledger_tag,
+            message.solid,
+            message.payload_json,
+          ].join("|");
+        })
+        .join("\n");
+    }
+
     async function load() {
       var gen = ++loadGen;
       state.error = null;
@@ -1970,9 +2002,19 @@
         if (gen !== loadGen) {
           return;
         }
+        var previousKey = messagesKey(state.messages);
         state.health = pair[0];
         state.lastChecked = Date.now();
         state.messages = (pair[1] && pair[1].messages) || [];
+        /* Back off while the ledger is unchanged: each quiet poll adds one
+         * interval of wait, capped at 8 skipped ticks (about 32s). Any change
+         * or error returns to the 4s cadence. */
+        if (messagesKey(state.messages) === previousKey) {
+          pollIdle += 1;
+        } else {
+          pollIdle = 0;
+        }
+        pollWait = Math.min(pollIdle, 8);
         state.total =
           pair[1] && typeof pair[1].total === "number"
             ? pair[1].total
@@ -1982,6 +2024,8 @@
           return;
         }
         state.health = null;
+        pollIdle = 0;
+        pollWait = 0;
         state.error = error instanceof Error ? error.message : String(error);
         if (!state.loaded) {
           state.messages = [];
@@ -2154,8 +2198,14 @@
       }
     }
 
+    var pollIdle = 0;
+    var pollWait = 0;
     window.setInterval(function () {
       if (!state.auto || state.busy || document.hidden) {
+        return;
+      }
+      if (pollWait > 0) {
+        pollWait -= 1;
         return;
       }
       load();

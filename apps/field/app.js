@@ -1301,7 +1301,9 @@
         '">' +
         '<div class="sighting-main">' +
         (row.thumb
-          ? '<img class="thumb" alt="" src="' + row.thumb + '" />'
+          ? '<img class="thumb" alt="" loading="lazy" decoding="async" src="' +
+            row.thumb +
+            '" />'
           : '<div class="thumb thumb-none" aria-hidden="true"></div>') +
         '<div class="sighting-text">' +
         '<h3 class="sighting-name">' +

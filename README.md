@@ -132,6 +132,9 @@ covers it, including what that does _not_ prove.
 - [docs/ECATHON.md](docs/ECATHON.md) — **current milestone:** the Zcash shielded-anchor build plan and threat model (submission due Oct 28 2026).
 - [docs/ZANCHOR_API.md](docs/ZANCHOR_API.md) — the pinned wire contract between the field client / explorer and the shielded anchor service.
 - [docs/PRIVACY.md](docs/PRIVACY.md) — the threat model: the timing mitigation with its numbers, the residual leaks named, and the questions still open.
+- [docs/DISCLOSURE_DESIGN.md](docs/DISCLOSURE_DESIGN.md) — design for verifier receipts and selective disclosure; open decisions listed.
+- [docs/ON_DEVICE_SPIKE.md](docs/ON_DEVICE_SPIKE.md) — feasibility write-up for running field identification on-device; unmeasured.
+- [docs/SHIELDED_REWARDS_DESIGN.md](docs/SHIELDED_REWARDS_DESIGN.md) — design write-up for shielded TAZ rewards; no payouts.
 - `scripts/demo_zcash.sh` — one command: mock shielded anchor, contract walk, explorer link. `--zanchor URL` runs the same checks against the real service.
 - [docs/BRAND.md](docs/BRAND.md) — the seal narrative, colour and type system.
 - [docs/BUILD.md](docs/BUILD.md) — build log (history; status moved to STATUS.md).

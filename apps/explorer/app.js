@@ -1473,10 +1473,20 @@
           }),
         );
         detail.append(
-          el("p", {
-            class: "empty",
-            text: "Start the ledger on port 8088, or set Endpoints to the machine that publishes it.",
-          }),
+          el("div", { class: "empty" }, [
+            el("p", {
+              text: "Start the ledger on port 8088, or set Endpoints to the machine that publishes it.",
+            }),
+            el("button", {
+              type: "button",
+              class: "primary",
+              text: "Connect to live Fly.io ledger →",
+              onClick: function () {
+                ledgerInput.value = "https://vickrey-ledger.fly.dev";
+                applyEndpoints();
+              },
+            }),
+          ]),
         );
         return;
       }

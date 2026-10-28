@@ -24,10 +24,20 @@
   </head>
   <body>
     <nav class="appnav" aria-label="Vickrey apps">
-      <span class="appnav-id">Vickrey</span>
-      <a href="../">Site</a>
-      <a href="../field/">Field</a>
-      <a href="./" aria-current="page">Explorer</a>
+      <div class="appnav-inner">
+        <a class="appnav-brand" href="../">
+          <span class="appnav-seal" aria-hidden="true">V</span>
+          <span class="appnav-id">Vickrey</span>
+        </a>
+        <div class="appnav-loop">
+          <a href="../"><span class="step-num">01</span> Overview</a>
+          <span class="loop-arrow" aria-hidden="true">→</span>
+          <a href="../field/"><span class="step-num">02</span> Field Client</a>
+          <span class="loop-arrow" aria-hidden="true">→</span>
+          <a href="./" aria-current="page"><span class="step-num">03</span> Evidence Explorer</a>
+        </div>
+        <a class="appnav-cta" href="../field/">Seal a sighting in Field →</a>
+      </div>
     </nav>
     <header class="mast">
       <div class="mast-inner mast-grid">
@@ -39,28 +49,29 @@
           </svg>
         </div>
         <div class="mast-copy">
-          <p class="eyebrow">Hacktoberfest 2026 · Week 1 · Touch Grass</p>
+          <p class="eyebrow">Explorer · Independent evidence &amp; shielded-anchor verification</p>
           <div class="title-row">
             <h1>Vickrey</h1>
             <p class="motto">A sealed bid on what you saw</p>
           </div>
           <p class="lede">
-            Your phone seals the observation at capture. The private Tangle keeps
-            the block. This page proves the two still agree — and shows the moment
-            the seal cracks.
+            Your device seals the observation at capture; the ledger or Zcash’s
+            shielded pool anchors the commitment. This board reconciles the
+            application copy against the anchor — and shows the exact moment a
+            tampered record cracks the seal.
           </p>
           <ol class="beats">
             <li>Sealed on the device</li>
-            <li>Countersigned by the ledger</li>
-            <li>Verified together</li>
+            <li>Countersigned or shielded on-chain</li>
+            <li>Reconciled &amp; verified here</li>
           </ol>
         </div>
       </div>
     </header>
     <main id="app"></main>
     <footer class="colophon">
-      Vickrey compares the application record with a fresh ledger read. The block
-      never changes; the copy does. Apache-2.0.
+      Vickrey compares the application record with a fresh ledger or receipt read. The
+      anchor never changes; the copy does. Apache-2.0.
     </footer>
     <noscript
       >This explorer needs JavaScript to read the evidence ledger.</noscript

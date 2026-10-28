@@ -1,6 +1,6 @@
 # Submission — ECATHON (Wildcard track)
 
-_Draft, 2026-10-25. This is the text the judges read. Every claim in it
+_Draft, 2026-10-28. This is the text the judges read. Every claim in it
 points at something in the repo that runs; `docs/STATUS.md` is the honest
 table, and this document is not allowed to outrun it._
 
@@ -102,13 +102,14 @@ plain terms: _milestone 1 proved the seal; ECATHON shields the anchor._
 
 ## Where things are
 
-| Path                            | What it is                                                            |
-| ------------------------------- | --------------------------------------------------------------------- |
-| `services/zanchor/`             | The anchor service (FastAPI) + contract + tests                       |
-| `services/zanchor/docker/`      | zcashd v6.20.0 source-build image, regtest/testnet launchers, funding |
-| `services/zanchor/spike/`       | D0 GO/NO-GO probe with the replay-rejection evidence                  |
-| `apps/field/`, `apps/explorer/` | The two clients; shielded mode + the VERIFIED panel                   |
-| `docs/ZANCHOR_API.md`           | The pinned wire contract (both sides built against it)                |
-| `docs/PRIVACY.md`               | The threat model: timing, replay, disclosure, keys, residuals         |
-| `docs/STATUS.md`                | The one honest table                                                  |
-| `scripts/demo_zcash.sh`         | The demo: mock by default, `--zanchor` for the live node              |
+| Path                            | What it is                                                                                                                                                                 |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `services/zanchor/`             | The anchor service (FastAPI) + contract + tests                                                                                                                            |
+| `services/zanchor/docker/`      | zcashd v6.20.0 source-build image, regtest/testnet launchers, funding                                                                                                      |
+| `services/zanchor/spike/`       | D0 GO/NO-GO probe with the replay-rejection evidence                                                                                                                       |
+| `apps/field/`, `apps/explorer/` | The two clients; shielded mode + the VERIFIED panel                                                                                                                        |
+| `docs/ZANCHOR_API.md`           | The pinned wire contract (both sides built against it)                                                                                                                     |
+| `docs/PRIVACY.md`               | The threat model: timing, replay, disclosure, keys, residuals                                                                                                              |
+| `docs/STATUS.md`                | The one honest table                                                                                                                                                       |
+| `docs/film/ecathon/`            | The 92 s submission film (HyperFrames source): it seals its own narration through zanchor — `SEAL.json` is the receipt; the rendered run used the mock, labelled on screen |
+| `scripts/demo_zcash.sh`         | The demo: mock by default, `--zanchor` for the live node                                                                                                                   |

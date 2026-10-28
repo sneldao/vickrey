@@ -139,6 +139,7 @@ covers it, including what that does _not_ prove.
 - [docs/ON_DEVICE_SPIKE.md](docs/ON_DEVICE_SPIKE.md) — feasibility write-up for running field identification on-device; unmeasured.
 - [docs/SHIELDED_REWARDS_DESIGN.md](docs/SHIELDED_REWARDS_DESIGN.md) — design write-up for shielded TAZ rewards; no payouts.
 - `scripts/demo_zcash.sh` — one command: mock shielded anchor, contract walk, explorer link. `--zanchor URL` runs the same checks against the real service.
+- [docs/film/ecathon/](docs/film/ecathon/) — the 92 s ECATHON submission film source (HyperFrames): it seals its own narration hash through zanchor (`SEAL.json`); renders and media are not committed.
 - `scripts/seed_ledger.mjs` — refill a ledger's board from the sample walk, under a visible `sample-walk` flow (every deploy resets it; see OPS.md).
 - [docs/BRAND.md](docs/BRAND.md) — the seal narrative, colour and type system.
 - [docs/BUILD.md](docs/BUILD.md) — build log (history; status moved to STATUS.md).

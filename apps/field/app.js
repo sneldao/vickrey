@@ -634,6 +634,12 @@
       publicKey: null,
       privateKey: null,
       publicKeyText: "",
+      walkDismissed: false,
+      walk: {
+        tampered: false,
+        refused: false,
+        anchored: false,
+      },
     };
     var ticker = null;
 
@@ -1483,9 +1489,111 @@
       );
     }
 
+    function loopBanner() {
+      if (state.walkDismissed) {
+        return "";
+      }
+      var rows = journalView(journal.list(), queue.list(), state.verdict);
+      var hasSealed = rows.length > 0;
+      var hasCracked =
+        state.walk.tampered ||
+        rows.some(function (r) {
+          return r.state === "cracked";
+        });
+      var hasRefused =
+        state.walk.refused ||
+        rows.some(function (r) {
+          return r.refused;
+        });
+      var hasAnchored =
+        state.walk.anchored ||
+        rows.some(function (r) {
+          return r.state === "anchored";
+        });
+      var isShielded = settings.anchorMode === "shielded";
+      var nextBtn = "";
+      if (!hasSealed) {
+        nextBtn =
+          '<button type="button" class="loop-cta" data-act="seed"' +
+          (state.seeding ? " disabled" : "") +
+          ">" +
+          (state.seeding ? "Sealing walk…" : "Step 1: Load sample walk →") +
+          "</button>";
+      } else if (!hasCracked && queue.list().length) {
+        nextBtn =
+          '<button type="button" class="loop-cta danger" data-act="tamper">Step 2: Tamper queued copy →</button>';
+      } else if (hasCracked && !hasRefused && queue.list().length) {
+        nextBtn =
+          '<button type="button" class="loop-cta" data-act="sync">Step 3: Try to sync (watch refusal) →</button>';
+      } else if (
+        rows.some(function (r) {
+          return r.state === "cracked";
+        })
+      ) {
+        var crackedRow = rows.find(function (r) {
+          return r.state === "cracked";
+        });
+        nextBtn =
+          '<button type="button" class="loop-cta" data-act="restore" data-hash="' +
+          crackedRow.hash +
+          '">Step 4: Put sealed copy back →</button>';
+      } else if (!hasAnchored && queue.list().length) {
+        nextBtn =
+          '<button type="button" class="loop-cta" data-act="sync"' +
+          (state.busy ? " disabled" : "") +
+          ">Step 4: Sync &amp; anchor →</button>";
+      } else if (hasAnchored) {
+        nextBtn =
+          '<a class="loop-cta" href="../explorer/">Verify in Evidence Explorer →</a>';
+      }
+      var steps = [
+        ["1", "Seal a walk", hasSealed],
+        ["2", "Tamper queued copy", hasCracked],
+        ["3", "Watch sync refuse", hasRefused],
+        ["4", "Restore & anchor", hasAnchored],
+      ];
+      return (
+        '<section class="walkthrough" aria-label="Interactive walkthrough">' +
+        '<div class="walk-top">' +
+        '<div class="walk-title-group">' +
+        '<span class="walk-kicker mono">INTERACTIVE LOOP</span>' +
+        '<ol class="walk-steps">' +
+        steps
+          .map(function (s) {
+            return (
+              '<li class="' +
+              (s[2] ? "done" : "") +
+              '"><span class="walk-num mono">' +
+              (s[2] ? "✓" : s[0]) +
+              "</span><span>" +
+              s[1] +
+              "</span></li>"
+            );
+          })
+          .join("") +
+        "</ol>" +
+        "</div>" +
+        '<div class="walk-controls">' +
+        '<div class="mode-switch" role="group" aria-label="Anchor privacy mode">' +
+        '<button type="button" class="mode-btn' +
+        (!isShielded ? " active" : "") +
+        '" data-act="mode-public">Public Ledger</button>' +
+        '<button type="button" class="mode-btn' +
+        (isShielded ? " active" : "") +
+        '" data-act="mode-shielded">Shielded (Zcash)</button>' +
+        "</div>" +
+        nextBtn +
+        '<button type="button" class="walk-dismiss" data-act="dismiss-walk">Hide</button>' +
+        "</div>" +
+        "</div>" +
+        "</section>"
+      );
+    }
+
     function render(focusId) {
       var active = document.activeElement && document.activeElement.id;
       el.innerHTML =
+        loopBanner() +
         '<div class="field-grid">' +
         '<div class="col-main">' +
         capturePanel() +
@@ -1642,6 +1750,20 @@
             commons: function () {
               loadCommons();
             },
+            "dismiss-walk": function () {
+              state.walkDismissed = true;
+              render();
+            },
+            "mode-public": function () {
+              settings.anchorMode = "public";
+              toast("Switched to Public Ledger mode");
+              render();
+            },
+            "mode-shielded": function () {
+              settings.anchorMode = "shielded";
+              toast("Switched to Shielded (Zcash) mode — commitment only");
+              render();
+            },
           };
           if (actions[act]) {
             actions[act]();
@@ -1769,6 +1891,7 @@
       state.verdict = null;
       state.syncError = null;
       state.justCracked = entries[last].hash;
+      state.walk.tampered = true;
       toast("Edited the queued copy — the seal no longer matches");
       render();
     }
@@ -1880,7 +2003,11 @@
       }
       settleSync(journal, drained, rows);
       var sent = drained.sent.length;
+      if (sent > 0) {
+        state.walk.anchored = true;
+      }
       if (drained.error) {
+        state.walk.refused = true;
         state.syncError =
           (sent ? "Sync stopped after " + sent + ": " : "Sync refused: ") +
           drained.error.message +

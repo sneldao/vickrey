@@ -1,0 +1,23 @@
+{
+  "sealed": "docs/film/ecathon/narration.json",
+  "sha256": "2f52a6cb7c76394971dd6777af18108fb4957061486d4252685aa3461a5c6856",
+  "zanchor": "http://127.0.0.1:8804",
+  "service_health": {
+    "status": "ok",
+    "node": "ok",
+    "mode": "A",
+    "shielded": true,
+    "notes_available": 20
+  },
+  "receipt": {
+    "receipt_id": "rec_mock_dc7ef5df423fe585",
+    "commitment": "2f52a6cb7c76394971dd6777af18108fb4957061486d4252685aa3461a5c6856",
+    "status": "confirmed",
+    "mode": "A",
+    "shielded": true,
+    "txid": "bdccef2abbdcad56b817fe494f24a0e68bd4f27803d7eba13ca6e2fef643c068",
+    "height": 2712345,
+    "anchored_at": "2026-10-28T20:15:11Z"
+  },
+  "is_mock": true
+}

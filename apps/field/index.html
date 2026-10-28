@@ -22,10 +22,20 @@
   </head>
   <body>
     <nav class="appnav" aria-label="Vickrey apps">
-      <span class="appnav-id">Vickrey</span>
-      <a href="../">Site</a>
-      <a href="./" aria-current="page">Field</a>
-      <a href="../explorer/">Explorer</a>
+      <div class="appnav-inner">
+        <a class="appnav-brand" href="../">
+          <span class="appnav-seal" aria-hidden="true">V</span>
+          <span class="appnav-id">Vickrey</span>
+        </a>
+        <div class="appnav-loop">
+          <a href="../"><span class="step-num">01</span> Overview</a>
+          <span class="loop-arrow" aria-hidden="true">→</span>
+          <a href="./" aria-current="page"><span class="step-num">02</span> Field Client</a>
+          <span class="loop-arrow" aria-hidden="true">→</span>
+          <a href="../explorer/"><span class="step-num">03</span> Evidence Explorer</a>
+        </div>
+        <a class="appnav-cta" href="../explorer/">Inspect Evidence Board →</a>
+      </div>
     </nav>
     <header class="mast">
       <div class="mast-inner mast-grid">
@@ -38,17 +48,17 @@
           </svg>
         </div>
         <div class="mast-copy">
-          <p class="eyebrow">Field · a field journal that can be checked</p>
+          <p class="eyebrow">Field · Tamper-evident device logbook &amp; anchor client</p>
           <div class="title-row">
             <h1>Vickrey</h1>
             <p class="motto">A sealed bid on what you saw</p>
             <span class="ledger-badge mono" id="ledger-label">Ledger: mock Hornet demo</span>
           </div>
           <p class="lede">
-            A sighting written down today can be quietly changed tomorrow, and
-            nobody can tell. Here, a model suggests what you saw, you confirm or
-            correct it, and the record is signed on this device. Any later edit
-            cracks the seal.
+            A field note written down today can be quietly changed tomorrow, and
+            nobody can tell. Here, an open-weight model suggests what you saw,
+            you confirm or correct it, and your decision is signed on this
+            device and chained to the last entry. Any later edit cracks the seal.
           </p>
         </div>
       </div>

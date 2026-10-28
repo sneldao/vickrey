@@ -24,7 +24,7 @@ window.VICKREY_CONFIG = {
   ledgerLabel: "fly.io",
   place: "Hackney, London",
 
-  // Shielded anchoring — docs/ECATHON.md, wire contract in
+  // Shielded anchoring — docs/PRIVACY.md, wire contract in
   // docs/ZANCHOR_API.md. "public" is today's behaviour (anchor message to the
   // commons). "shielded" sends ONLY the commitment to zanchorUrl and never
   // touches the public commons; the receipt (commitment <-> txid <-> height)

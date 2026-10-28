@@ -269,6 +269,11 @@ disclosure and keypair policy set the same day._
 - Full end-to-end run on the live node, recorded; demo video < 2 min
   (parked by the lead 2026-10-25; the walk itself is one browser session —
   sample walk → sync → receipts → tamper → restore → explorer VERIFIED).
+  _Update 2026-10-28: the film is built — `docs/film/ecathon/`, 92 s,
+  narrated, and it seals its own narration hash through zanchor (the
+  rendered run used the mock, labelled on screen; `SEAL.json` is the
+  receipt). Renders and media are not committed; rebuild steps in
+  `docs/film/ecathon/README.md`._
 - Submission text: drafted in [SUBMISSION.md](SUBMISSION.md); what is the
   Zcash submission vs. the in-window foundation, how to run it, honest
   status table.

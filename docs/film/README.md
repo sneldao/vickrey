@@ -1,5 +1,8 @@
 # Launch film source (HyperFrames)
 
+The ECATHON submission film lives in [`ecathon/`](ecathon/) — 92 s, narrated,
+and it seals its own narration hash through zanchor (`ecathon/SEAL.json`).
+
 92-second, 16:9 narrated film. The rendered MP4 and media assets are **not** committed
 (500 KB hook); the MP4 is delivered as a session artifact.
 

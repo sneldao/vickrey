@@ -124,6 +124,27 @@ watch `blocks_registered` drop to 0. `fly.toml` therefore sets
 `auto_stop_machines = "off"` and `min_machines_running = 1`: scale to zero and
 a restart drops every registered block, stranding its record at `PENDING`.
 
+### The deployed board's contents
+
+**Every deploy resets the ledger's copy**, so the board comes up empty. Refill it
+with the product's own sample walk — sealed by the real modules, not a fixture:
+
+```bash
+node scripts/seed_ledger.mjs                        # https://vickrey-ledger.fly.dev
+node scripts/seed_ledger.mjs http://127.0.0.1:8088   # a local ledger
+```
+
+The script runs `apps/field`'s own `trust.js`, `logbook.js` and `app.js` over
+`seed.js`'s walk, so every hash, chain link and Ed25519 signature is genuine and
+the ledger's two-source check reads `VERIFIED`. It anchors them under flow id
+`sample-walk`, which the board shows as a flow label — the rows read as the demo
+they are, not as a contributor's walk. One labelled probe row (`seed-probe`) is
+left over from a seeding check; it says what it is in its payload.
+
+`POST /ingest` is an upsert keyed on block id, and a sample-walk entry's hash
+covers its `observed_at`, so `--now <ISO>` reproduces an earlier walk's three
+block ids and overwrites those rows instead of adding a second copy.
+
 ### Point the field client at it
 
 Append `?ledger=https://vickrey-ledger.fly.dev&commons=…`, or change the

@@ -128,7 +128,7 @@ def observation_document(
         "block_id_norm": normalize_block_id(block_id),
         "tag": tag,
         "flow_id": flow_id,
-        "schema": body.get("schema") or "veles.observation/1",
+        "schema": body.get("schema") or "vickrey.observation/1",
         "observed_at": body.get("observed_at"),
         "model_id": body.get("model_id"),
         "commitment": body.get("commitment"),

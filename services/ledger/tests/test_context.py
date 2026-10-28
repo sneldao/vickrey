@@ -278,7 +278,7 @@ def test_context_cannot_change_a_status_or_touch_the_record(tmp_path):
     web = TavilyContext("tvly-test", transport=status_transport(500))
     anchor = {
         "blockId": "a" * 64,
-        "tag": "veles.observation",
+        "tag": "vickrey.observation",
         "message": {
             "commitment": "a" * 64,
             "signature": "sig",

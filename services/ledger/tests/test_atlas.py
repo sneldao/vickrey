@@ -31,7 +31,7 @@ from app.main import create_app
 from tests.support import BLOCK_ID, TAG, matching_fetch
 
 ANCHOR = {
-    "schema": "veles.observation/1",
+    "schema": "vickrey.observation/1",
     "observed_at": "2026-10-11T08:00:00.000Z",
     "model_id": "gemma3:4b",
     "commitment": "a" * 64,
@@ -191,7 +191,7 @@ def test_label_text_uses_the_coarse_label_only():
 
 def test_observation_document_keeps_the_seal_and_drops_the_detail():
     document = observation_document(
-        block_id="0xAbC123", tag="veles.observation", flow_id="walk-1", message=ANCHOR
+        block_id="0xAbC123", tag="vickrey.observation", flow_id="walk-1", message=ANCHOR
     )
     assert document["block_id_norm"] == "abc123"
     assert document["flow_id"] == "walk-1"
@@ -324,7 +324,7 @@ def test_connect_fails_clearly_without_pymongo(monkeypatch):
 
 ANCHOR_MESSAGE = {
     "flow_id": "walk-1",
-    "schema": "veles.observation/1",
+    "schema": "vickrey.observation/1",
     "observed_at": "2026-10-11T08:00:00.000Z",
     "model_id": "gemma3:4b",
     "commitment": "b" * 64,

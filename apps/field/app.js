@@ -27,8 +27,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function (root) {
   "use strict";
 
-  var TAG = "veles.observation";
-  var SCHEMA = "veles.observation/1";
+  var TAG = "vickrey.observation";
+  var SCHEMA = "vickrey.observation/1";
   var QUEUE_KEY = "vickrey.queue";
   var KEY_KEY = "vickrey.device_key";
   var FLOW_KEY = "vickrey.flow";

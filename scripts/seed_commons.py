@@ -88,8 +88,8 @@ OBSERVERS = [
     },
 ]
 
-TAG = "veles.observation"
-SCHEMA = "veles.observation/1"
+TAG = "vickrey.observation"
+SCHEMA = "vickrey.observation/1"
 # Named once so the seeded commitment is reproducible and --verify can rebuild
 # the exact body that was signed.
 DETAIL = "Sample observer record, seeded for the demo commons."

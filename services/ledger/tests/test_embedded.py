@@ -11,9 +11,9 @@ from app.verify import verify_record
 
 ANCHOR = {
     "blockId": "a" * 64,
-    "tag": "veles.observation",
+    "tag": "vickrey.observation",
     "message": {
-        "schema": "veles.observation/1",
+        "schema": "vickrey.observation/1",
         "observed_at": "2026-10-14T10:00:00.000Z",
         "commitment": "a" * 64,
         "signature": "sig",

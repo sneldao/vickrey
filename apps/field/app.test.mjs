@@ -23,7 +23,7 @@ function entry(extra = {}) {
 test("anchorMessage publishes the commitment, never the record", () => {
   const anchor = field.anchorMessage(entry(), "walk-1");
   assert.equal(anchor.flow_id, "walk-1");
-  assert.equal(anchor.schema, "veles.observation/1");
+  assert.equal(anchor.schema, "vickrey.observation/1");
   assert.equal(anchor.commitment, "a".repeat(64));
   assert.equal(anchor.signature, "c2ln");
   assert.equal(anchor.prev, null);
@@ -53,10 +53,10 @@ test("relayBody posts the camelCase blockId the anchor relay requires", () => {
   const body = field.relayBody(entry(), "walk-1");
   assert.equal(body.blockId, "a".repeat(64));
   assert.equal("block_id" in body, false);
-  assert.equal(body.tag, "veles.observation");
+  assert.equal(body.tag, "vickrey.observation");
   assert.equal(body.flow_id, "walk-1");
   assert.equal(body.message.commitment, "a".repeat(64));
-  assert.equal(body.message.schema, "veles.observation/1");
+  assert.equal(body.message.schema, "vickrey.observation/1");
 });
 
 test("shieldedBody carries the commitment and nothing else", () => {

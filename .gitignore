@@ -33,6 +33,19 @@ services/ledger/data/
 /iota-tangle/
 /iota-messages-api/
 
+# Agent / editor scratch state
+.freebuff/
+
+# Rendered media is delivered, not tracked (docs/film/README.md). The film's
+# source — index.html, narration.json, the audio scripts — stays committed; the
+# MP4, the generated voice/music takes and the capture assets do not.
+*.mp4
+*.mov
+*.m4v
+*.webm
+docs/film/audio/
+docs/film/assets/
+
 # Vercel/Next local project metadata
 .vercel/
 

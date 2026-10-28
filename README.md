@@ -1,4 +1,4 @@
-# Vickrey — Prove What You Saw
+# Vickrey
 
 **A sealed bid on what you saw.** Point your phone at a bird, a plant, a fall
 tree — with no signal. An open-weight model running on the device names what
@@ -104,6 +104,8 @@ covers it, including what that does _not_ prove.
 ## Live pieces
 
 - **Field client:** <https://sneldao.github.io/vickrey/field/>
+- **Explorer:** <https://sneldao.github.io/vickrey/explorer/> — the evidence board,
+  with a plain-language glossary and the same definition on every status stamp
 - **Showcase:** <https://sneldao.github.io/vickrey/> — its "What is actually
   running" panel fetches `/health` at page load, so the page can't claim what
   has stopped being true.
@@ -116,7 +118,8 @@ covers it, including what that does _not_ prove.
 - **Identify:** open-weight model (Gemma 3 4B verified server-hosted; on-device planned)
 - **Prove:** WebCrypto Ed25519 seal + hash-chained journal (`apps/field`)
 - **Commons / anchor verifier:** `services/ledger` — FastAPI + SQLite, optional Atlas + Tavily
-- **Explorer:** `apps/explorer` — static, port 8090
+- **Explorer:** `apps/explorer` — static; published at `/explorer/`, also served
+  on port 8090 for the local demo box
 - **Hosting:** Fly.io (ledger), GitHub Pages (client + showcase)
 - **Anchor (optional):** private Hornet via
   [eclipse-aerios/iota-tangle](https://github.com/eclipse-aerios/iota-tangle)

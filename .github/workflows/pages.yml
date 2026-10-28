@@ -28,18 +28,36 @@ jobs:
       - name: Assemble the site
         run: |
           # apps/site stays at the root so the existing showcase URL keeps
-          # working, and the field client is published alongside it at /field/.
-          # The field client is pure static JS, so it needs nothing from Pages:
-          # it talks to the ledger on Fly.io, which apps/field/config.js points at.
-          mkdir -p _site/field
+          # working; the field client and the explorer are published beside it
+          # at /field/ and /explorer/, so the shared nav's relative links resolve
+          # from any of the three pages.
+          mkdir -p _site/field _site/explorer
           cp -r apps/site/. _site/
-          for f in apps/field/*.js apps/field/*.html apps/field/*.css; do
-            [ -e "$f" ] || continue
-            case "$f" in
-              *.test.mjs) continue ;;
-            esac
-            cp "$f" _site/field/
+          for app in field explorer; do
+            for f in apps/$app/*.js apps/$app/*.html apps/$app/*.css; do
+              [ -e "$f" ] || continue
+              case "$f" in
+                *.test.mjs) continue ;;
+              esac
+              cp "$f" _site/$app/
+            done
           done
+          # The committed explorer/config.js keeps localhost defaults, because
+          # the Docker entrypoint rewrites it from EXPLORER_LEDGER_URL for the
+          # demo box. The published copy has to talk to the deployed ledger, so
+          # it is patched here and nowhere else.
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("_site/explorer/config.js")
+          text = path.read_text()
+          patched = text.replace(
+              'ledgerUrl: "http://localhost:8088"',
+              'ledgerUrl: "https://vickrey-ledger.fly.dev"',
+          )
+          assert patched != text, "explorer config.js: ledgerUrl default not found"
+          path.write_text(patched)
+          PY
           echo "published:"; find _site -maxdepth 2 -type f | sort
       - name: Upload artifact
         uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3

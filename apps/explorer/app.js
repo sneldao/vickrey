@@ -31,6 +31,91 @@
     { id: "NOT_SOLID", label: "Not solid" },
   ];
 
+  /* The board speaks ledger jargon, so the board carries its own glossary.
+   * One entry per term a first-time reader meets, in plain language and with
+   * the product's own honesty: a seal is not a claim of accuracy. */
+  var GLOSSARY = [
+    {
+      term: "Sealed",
+      definition:
+        "The record was signed on the device when it was written. Any later edit breaks that signature.",
+    },
+    {
+      term: "Verified",
+      definition:
+        "The application copy still matches the anchored block, byte for byte.",
+    },
+    {
+      term: "Mismatch",
+      definition:
+        "The two copies disagree — the application copy was edited after the record was anchored.",
+    },
+    {
+      term: "Pending",
+      definition: "A check has not finished yet; the ledger has not answered.",
+    },
+    {
+      term: "Solid / not solid",
+      definition:
+        "The node holds every earlier record this one depends on. Not solid means the check cannot run yet.",
+    },
+    {
+      term: "Shielded",
+      definition:
+        "The commitment went into a shielded transaction, so the amount, the sender and the receiver stay off the public chain.",
+    },
+    {
+      term: "Transparent",
+      definition:
+        "The commitment went into a public transaction instead: its amount, its addresses and its block time are visible, though none of them names a species, an area or an observer.",
+    },
+    {
+      term: "Anchored",
+      definition:
+        "A commitment to the record was written to the ledger at a fixed time. The record itself stays on the device.",
+    },
+    {
+      term: "Block",
+      definition:
+        "One write-once entry in the ledger. Its block id is the address used to find it again.",
+    },
+    {
+      term: "Milestone",
+      definition:
+        "The ordered batch the ledger assigned to a block — its position in the chain.",
+    },
+    {
+      term: "Tag",
+      definition:
+        "The label stored beside the block. Tag matches means that label has not changed.",
+    },
+    {
+      term: "Flow",
+      definition:
+        "Observations captured together in one session, grouped under one flow id.",
+    },
+    {
+      term: "Commitment",
+      definition:
+        "A value that pins the record's contents without revealing them.",
+    },
+    {
+      term: "Transaction id and height",
+      definition:
+        "Where a commitment sits: a transaction id at a block height. That is proof of existence — not that the observation is right.",
+    },
+    {
+      term: "Viewing key",
+      definition:
+        "The key that lets a chosen holder reveal one anchor at a time — to a researcher or a court, and to nobody else.",
+    },
+    {
+      term: "Hornet",
+      definition:
+        "The Tangle node the ledger talks to. Its dashboard and REST addresses are set under Endpoints.",
+    },
+  ];
+
   var CHECK_WORD = {
     pass: "Pass",
     fail: "Fail",
@@ -584,6 +669,48 @@
     return verdict;
   }
 
+  /* A stamp is a single word doing a lot of work, so it carries its own
+   * explanation on hover. The wording comes from GLOSSARY rather than a second
+   * set of strings, so the tooltip cannot drift from the panel under the
+   * filters. The glossary stays the accessible path: a title is hover-only. */
+  var STATUS_TERM = {
+    VERIFIED: "Verified",
+    PENDING: "Pending",
+    PAYLOAD_MISMATCH: "Mismatch",
+    NOT_SOLID: "Solid / not solid",
+  };
+
+  function glossaryTerm(term) {
+    var wanted = String(term == null ? "" : term).toLowerCase();
+    for (var i = 0; i < GLOSSARY.length; i++) {
+      if (GLOSSARY[i].term.toLowerCase() === wanted) {
+        return GLOSSARY[i].definition;
+      }
+    }
+    return "";
+  }
+
+  /* Returns null rather than "" when there is nothing to say, so el() can skip
+   * the attribute instead of stamping an empty tooltip. */
+  function stampHint(message) {
+    if (!message) {
+      return null;
+    }
+    var parts = [];
+    var verdict = glossaryTerm(STATUS_TERM[message.status]);
+    if (verdict) {
+      parts.push(verdict);
+    }
+    if (message.zanchor) {
+      if (message.shielded === true) {
+        parts.push(glossaryTerm("Shielded"));
+      } else if (message.shielded === false) {
+        parts.push(glossaryTerm("Transparent"));
+      }
+    }
+    return parts.length ? parts.join(" ") : null;
+  }
+
   function pitchLine(message) {
     if (!message) {
       return "";
@@ -1104,9 +1231,19 @@
     var timeline = el("div", { id: "timeline", class: "timeline" });
     var detail = el("div", { id: "detail", class: "detail" });
     var hint = el("p", { class: "hint", id: "truncation" });
+    var glossaryItems = [];
+    GLOSSARY.forEach(function (entry) {
+      glossaryItems.push(el("dt", { text: entry.term }));
+      glossaryItems.push(el("dd", { text: entry.definition }));
+    });
+    var glossary = el("details", { class: "glossary" }, [
+      el("summary", { text: "What do these words mean?" }),
+      el("dl", {}, glossaryItems),
+    ]);
     root.append(
       toolbar,
       filterRow,
+      glossary,
       el("div", { class: "workspace" }, [timeline, detail]),
       hint,
       toast,
@@ -1514,6 +1651,7 @@
               el("span", {
                 class: "stamp",
                 "data-status": message.status || "",
+                title: stampHint(message),
                 text: stampText(message),
               }),
               el("span", {
@@ -1556,6 +1694,7 @@
         el("span", {
           class: "stamp large" + (flash ? " stamp-flip" : ""),
           "data-status": message.status || "",
+          title: stampHint(message),
           text: statusLabel(message.status),
         }),
         highlightedFlag(message),
@@ -1643,6 +1782,7 @@
         el("span", {
           class: "stamp large",
           "data-status": message.status || "",
+          title: stampHint(message),
           text: stampText(message),
         }),
         el("h2", { text: incidentTitle(message) }),
@@ -2224,6 +2364,8 @@
     chooseInitial: chooseInitial,
     dashboardBlockUrl: dashboardBlockUrl,
     groupByFlow: groupByFlow,
+    glossary: GLOSSARY,
+    glossaryTerm: glossaryTerm,
     hornetBlockUrl: hornetBlockUrl,
     httpOrigin: httpOrigin,
     highlightLabel: highlightLabel,
@@ -2236,6 +2378,7 @@
     receiptRows: receiptRows,
     relativeTime: relativeTime,
     revealRows: revealRows,
+    stampHint: stampHint,
     shieldedMessage: shieldedMessage,
     shieldedState: shieldedState,
     stampText: stampText,

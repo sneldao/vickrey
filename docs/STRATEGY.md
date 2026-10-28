@@ -1,4 +1,4 @@
-# Strategy — Vickrey: Prove What You Saw
+# Strategy — Vickrey: A sealed bid on what you saw
 
 **One line:** Identify it offline. Prove it later.
 

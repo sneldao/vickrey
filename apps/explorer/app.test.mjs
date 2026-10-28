@@ -443,3 +443,92 @@ test("receiptRows shows the binding, preferring the chain-checked height", () =>
   );
   assert.equal(api.blockExplorerUrl(""), "");
 });
+
+test("the glossary defines every jargon term the board shows", () => {
+  const terms = api.glossary.map((entry) => entry.term.toLowerCase());
+  for (const word of [
+    "sealed",
+    "verified",
+    "pending",
+    "mismatch",
+    "solid / not solid",
+    "anchored",
+    "block",
+    "milestone",
+    "tag",
+    "flow",
+    "commitment",
+    "hornet",
+    "shielded",
+    "transparent",
+  ]) {
+    assert.ok(terms.includes(word), `missing glossary term: ${word}`);
+  }
+});
+
+test("a stamp's tooltip is the glossary's own words, not a second copy", () => {
+  const definitions = api.glossary.map((entry) => entry.definition);
+  for (const status of [
+    "VERIFIED",
+    "PENDING",
+    "PAYLOAD_MISMATCH",
+    "NOT_SOLID",
+  ]) {
+    const hint = api.stampHint({ status });
+    assert.ok(hint, `no tooltip for ${status}`);
+    assert.ok(
+      definitions.includes(hint),
+      `${status} tooltip drifted from the glossary`,
+    );
+  }
+});
+
+test("a tooltip claims shielded or transparent only when the row says so", () => {
+  const shielded = api.stampHint({
+    status: "VERIFIED",
+    zanchor: true,
+    shielded: true,
+  });
+  assert.ok(shielded.includes(api.glossaryTerm("Shielded")));
+  assert.equal(shielded.includes(api.glossaryTerm("Transparent")), false);
+
+  const transparent = api.stampHint({
+    status: "VERIFIED",
+    zanchor: true,
+    shielded: false,
+  });
+  assert.ok(transparent.includes(api.glossaryTerm("Transparent")));
+  assert.equal(transparent.includes(api.glossaryTerm("Shielded")), false);
+
+  const unknown = api.stampHint({
+    status: "VERIFIED",
+    zanchor: true,
+    shielded: null,
+  });
+  assert.equal(unknown.includes(api.glossaryTerm("Shielded")), false);
+  assert.equal(unknown.includes(api.glossaryTerm("Transparent")), false);
+});
+
+test("a stamp with nothing to explain gets no empty tooltip", () => {
+  assert.equal(api.stampHint(null), null);
+  assert.equal(api.stampHint({}), null);
+  assert.equal(api.stampHint({ status: "SOMETHING_ELSE" }), null);
+});
+
+test("every glossary entry is a unique, complete definition", () => {
+  assert.ok(api.glossary.length >= 10);
+  const seen = new Set();
+  for (const entry of api.glossary) {
+    assert.ok(entry.term.trim().length > 0, "term must not be empty");
+    assert.ok(
+      entry.definition.trim().length > 20,
+      `definition too short: ${entry.term}`,
+    );
+    assert.ok(
+      entry.definition.trimEnd().endsWith("."),
+      `definition must read as a sentence: ${entry.term}`,
+    );
+    assert.equal(seen.has(entry.term), false, `duplicate term: ${entry.term}`);
+    seen.add(entry.term);
+  }
+});

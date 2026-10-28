@@ -45,9 +45,12 @@ not something the scheme guarantees.
 
 ## Taglines
 
-- **A sealed bid on what you saw.**
-- **Sealed at capture. Countersigned by the network.**
-- **Truthful by design.**
+**Canonical — one product name, one slogan. Every surface uses exactly this:**
+
+- **Vickrey — A sealed bid on what you saw.** (`<title>`, hero, masthead,
+  README). The other lines below are supporting copy, never a substitute title.
+- **Sealed at capture. Countersigned by the network.** (supporting copy)
+- **Truthful by design.** (supporting copy)
 - Closing line: _"Vickrey proved that a sealed bid makes people honest. We just
   asked the same of a memory."_
 

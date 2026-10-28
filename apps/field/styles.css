@@ -1278,3 +1278,45 @@ button.primary.seal-btn:hover {
   outline: 2px solid var(--copper);
   outline-offset: 2px;
 }
+
+/* Shared app nav — the same three links on the site, the field client and the
+ * explorer. Tokens come from docs/BRAND.md, which every stylesheet shares. */
+.appnav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 1.1rem;
+  padding: 0.6rem 1.25rem;
+  background: var(--paper-2);
+  border-bottom: 1px solid var(--line);
+  font-family: var(--sans);
+  font-size: 0.85rem;
+}
+
+.appnav-id {
+  color: var(--pencil);
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.appnav a {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.appnav a:hover {
+  color: var(--wax);
+  text-decoration: underline;
+}
+
+.appnav a[aria-current="page"] {
+  color: var(--wax);
+  font-weight: 600;
+}
+
+.appnav a:focus-visible {
+  outline: 3px solid var(--notary);
+  outline-offset: 3px;
+}

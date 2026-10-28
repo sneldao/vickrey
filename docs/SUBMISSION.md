@@ -17,12 +17,15 @@ constant-amount note burn whose nullifier makes replay a
 double-spend that the node itself rejects — with batched, jittered
 timing (30-minute floor, 20-minute uniform draw) so the block the
 transaction lands in leaks as little as the chain can bear. The verifier
-holds the commitment-to-transaction binding and can selectively disclose
-one anchor at a time; the receipt database has no list endpoint, so a
-disclosed recipient cannot enumerate the rest. Anyone can still run the
-one check that is meaningful: "this transaction id exists at this
-height." The public chain now proves _when_ a seal was made, without ever
-revealing _what_ was seen, _where_, or _by whom_.
+holds the commitment-to-transaction binding and serves it only to the
+holder of a receipt id, one anchor at a time; there is no list endpoint,
+so a recipient cannot enumerate the rest. (A disclosure _package_ endpoint,
+which would hand a recipient the device's signature alongside the receipt,
+and export of the viewing key are designed rather than built —
+`docs/DISCLOSURE_DESIGN.md`.) Anyone can still run the one check that is
+meaningful: "this transaction id exists at this height." The public chain
+now proves _when_ a seal was made, without ever revealing _what_ was seen,
+_where_, or _by whom_.
 
 ## What the chain shows, and what it can't show
 
@@ -77,15 +80,16 @@ blocks are ours.
 
 ## What is real, what is a stretch, what is a mock
 
-| Thing                              | State                                                                                                                             |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| Shielded anchor (mode A)           | Built, verified end to end on a live node                                                                                         |
-| Replay protection                  | Node-enforced (nullifier); service 409 as defense in depth                                                                        |
-| Jittered anchor scheduling         | Built, 10 tests; 30 min floor / 20 min uniform                                                                                    |
-| Verifier receipts, no enumeration  | Built; no list endpoint by contract                                                                                               |
-| Memo mode (commitment in the memo) | Wired (`ZANCHOR_MODE=B`), verified on a live node: raw chain data shows ciphertext only, verifier decrypts the commitment         |
-| Field rewards (shielded payout)    | Design only — stretch, not claimed in the demo                                                                                    |
-| Mainnet node                       | Not running: testnet sync is stuck on zcashd 6.x (see above); the service is node-agnostic and the one-line change is in the docs |
+| Thing                              | State                                                                                                                                               |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shielded anchor (mode A)           | Built, verified end to end on a live node                                                                                                           |
+| Replay protection                  | Node-enforced (nullifier); service 409 as defense in depth                                                                                          |
+| Jittered anchor scheduling         | Built, 10 tests; 30 min floor / 20 min uniform                                                                                                      |
+| Verifier receipts, no enumeration  | Built and pinned: `GET /receipts/{id}`, 404 for an unknown id, and `GET /receipts` is 404 — two contract tests plus the live `demo_zcash.sh` checks |
+| Selective disclosure, viewing key  | Design only — `GET /receipts/{id}/disclosure` and `z_exportviewingkey` are not built (`docs/DISCLOSURE_DESIGN.md`)                                  |
+| Memo mode (commitment in the memo) | Wired (`ZANCHOR_MODE=B`), verified on a live node: raw chain data shows ciphertext only, verifier decrypts the commitment                           |
+| Field rewards (shielded payout)    | Design only — stretch, not claimed in the demo                                                                                                      |
+| Mainnet node                       | Not running: testnet sync is stuck on zcashd 6.x (see above); the service is node-agnostic and the one-line change is in the docs                   |
 
 ## Originality (the rule and the receipt)
 

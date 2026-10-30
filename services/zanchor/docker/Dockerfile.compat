@@ -1,0 +1,21 @@
+FROM rust:1.95-slim-bookworm AS wallet-tool
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY wallet-tool/Cargo.toml wallet-tool/Cargo.lock ./
+RUN mkdir -p src && curl -fsSL https://raw.githubusercontent.com/ZcashFoundation/zcashd/5c11db4f4fbc0fbd74da77d5e7b2cdb40703390c/src/rust/bin/wallet_tool.rs -o src/main.rs \
+    && echo '7a07032a435c5a05ae352a8fd25e406299f3eb5d2053970655cf09ee057b6719  src/main.rs' | sha256sum -c - \
+    && cargo build --release --locked --bin zcashd-wallet-tool
+
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libssl3t64 libevent-core-2.1-7t64 libgomp1 && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://github.com/ZcashFoundation/zcashd/releases/download/zebra-compat-v1.3.0/zcashd-zebra-compat-v1.3.0-linux-x86_64.tar.gz -o /tmp/compat.tar.gz \
+    && echo 'a419147c49b08a15be2f1f1f5fea2801b5228491f62835bfa8caae8b06350c13  /tmp/compat.tar.gz' | sha256sum -c - \
+    && mkdir -p /opt/zcash \
+    && tar -xzf /tmp/compat.tar.gz -C /opt/zcash \
+    && rm /tmp/compat.tar.gz
+COPY --from=wallet-tool /build/target/release/zcashd-wallet-tool /opt/zcash/bin/zcashd-wallet-tool
+ENV PATH="/opt/zcash/bin:${PATH}"
+VOLUME /data
+ENTRYPOINT ["/opt/zcash/bin/zcashd"]
+CMD ["-datadir=/data"]

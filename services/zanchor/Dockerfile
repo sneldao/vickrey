@@ -10,4 +10,4 @@ USER svc
 
 ENV ZANCHOR_DB=/svc/data/zanchor.db
 EXPOSE 8092
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8092"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8092", "--no-access-log"]

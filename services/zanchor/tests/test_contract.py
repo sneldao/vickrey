@@ -591,3 +591,196 @@ def test_miner_refuses_non_regtest_and_generates_bare():
     require_regtest(reg)
     reg.call("generate", [1])
     assert reg.calls == [("generate", [1])]
+
+
+def _sentinel_scan(text: str) -> list[str]:
+    sentinels = ["SECRET_SENTINEL", "rpcuser:s3cret", "memo-xyzzy", "rec_sentinel9"]
+    return [w for w in sentinels if w in text]
+
+
+def test_worker_error_logs_no_bearer_or_credential(client_b, caplog):
+    c, svc = client_b
+    c.post("/anchor", json={"commitment": _commitment(50)})
+
+    def poison(opid):
+        raise RpcError(
+            -1, "SECRET_SENTINEL rpcuser:s3cret@host memo-xyzzy rec_sentinel9"
+        )
+
+    svc.rpc.operation_status = poison
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="zanchor"):
+        svc.poll_pending()
+    blob = "\n".join(r.getMessage() for r in caplog.records)
+    assert "anchor_poll_failed" in blob
+    assert _sentinel_scan(blob) == [], blob
+
+
+def test_failed_operation_stores_generic_and_logs_nothing(client_b, caplog):
+    c, svc = client_b
+    rid = c.post("/anchor", json={"commitment": _commitment(51)}).json()["receipt_id"]
+    svc.rpc.operation_status = lambda opid: {
+        "status": "failed",
+        "error": "SECRET_SENTINEL memo-xyzzy rpcuser:s3cret",
+    }
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="zanchor"):
+        svc.poll_pending()
+    blob = "\n".join(r.getMessage() for r in caplog.records)
+    assert _sentinel_scan(blob) == [], blob
+    body = c.get(f"/receipts/{rid}").json()
+    assert body["status"] == "failed"
+    assert body["error"] == "node operation failed"
+    assert _sentinel_scan(str(body)) == []
+
+
+def test_unexpected_error_returns_generic_500_no_store(client_b, caplog, monkeypatch):
+    c, svc = client_b
+
+    def boom(receipt_id):
+        raise RuntimeError("SECRET_SENTINEL rpcuser:s3cret")
+
+    monkeypatch.setattr(svc.store, "get", boom)
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="zanchor"):
+        r = c.get("/receipts/anything")
+    assert r.status_code == 500
+    assert r.json() == {"detail": "internal service error"}
+    assert r.headers.get("cache-control") == "no-store"
+    blob = "\n".join(rec.getMessage() for rec in caplog.records)
+    assert "request_failed error_type=RuntimeError" in blob
+    assert _sentinel_scan(blob) == [], blob
+
+
+def test_http_errors_keep_status_and_get_no_store(client_b):
+    c, _ = client_b
+    r = c.get("/receipts/nope")
+    assert r.status_code == 404
+    assert r.headers.get("cache-control") == "no-store"
+
+
+def test_restart_recovers_pending_receipt(tmp_path, monkeypatch):
+    app, svc = make_app(tmp_path, monkeypatch, mode="B")
+    db_path = str(tmp_path / "zanchor.db")
+    with TestClient(app) as c:
+        rid = c.post("/anchor", json={"commitment": _commitment(52)}).json()[
+            "receipt_id"
+        ]
+        assert svc.store.get(rid)["status"] == "queued"
+    svc.store.close()
+
+    from app.db import Receipts
+    from app.main import AnchorService
+
+    store2 = Receipts(db_path)
+    svc2 = AnchorService(svc.rpc, store2)  # same fake node = same real node
+    svc2.poll_pending()
+    row = store2.get(rid)
+    assert row["status"] == "broadcast"
+    assert row["txid"] == svc.rpc.anchors[0]["txid"]
+    svc2.poll_pending()
+    assert store2.get(rid)["status"] == "confirmed"
+    assert len(svc.rpc.anchors) == 1
+    store2.close()
+
+
+def test_restart_recovers_broadcast_and_keeps_audit(tmp_path, monkeypatch):
+    app, svc = make_app(tmp_path, monkeypatch, mode="B")
+    db_path = str(tmp_path / "zanchor.db")
+    with TestClient(app) as c:
+        rid = c.post("/anchor", json={"commitment": _commitment(53)}).json()[
+            "receipt_id"
+        ]
+        svc.poll_pending()  # -> broadcast
+        assert svc.store.get(rid)["status"] == "broadcast"
+        svc.store.audit_disclosure(rid, "pre-restart audit")
+        svc.store.kv_set("marker", "kept")
+    svc.store.close()
+
+    from app.db import Receipts
+    from app.main import AnchorService
+
+    store2 = Receipts(db_path)
+    svc2 = AnchorService(svc.rpc, store2)
+    svc2.poll_pending()
+    row = store2.get(rid)
+    assert row["status"] == "confirmed"
+    assert row["txid"] == svc.rpc.anchors[0]["txid"]
+    assert store2.disclosure_count(rid) == 1
+    assert store2.kv_get("marker") == "kept"
+    store2.close()
+
+
+def test_backup_to_snapshot_isolated_and_refuses_existing(tmp_path, monkeypatch):
+    app, svc = make_app(tmp_path, monkeypatch, mode="B")
+    with TestClient(app) as c:
+        rid = c.post("/anchor", json={"commitment": _commitment(54)}).json()[
+            "receipt_id"
+        ]
+        confirm(c, svc, rid)
+        svc.store.audit_disclosure(rid, "snapshot audit")
+
+    import os
+    import sqlite3
+    from app.db import Receipts
+
+    snap = str(tmp_path / "snap.db")
+    svc.store.backup_to(snap)
+    assert oct(os.stat(snap).st_mode & 0o777) == "0o600"
+
+    # Snapshot is frozen: later source writes do not appear in it.
+    svc.store.audit_disclosure(rid, "after snapshot")
+    svc2rpc_commit = _commitment(55)
+    with TestClient(app) as c:
+        c.post("/anchor", json={"commitment": svc2rpc_commit})
+
+    check = sqlite3.connect(snap)
+    try:
+        rows = check.execute("PRAGMA quick_check").fetchall()
+        assert rows == [("ok",)]
+        receipts = check.execute(
+            "SELECT receipt_id, commitment, txid FROM receipts"
+        ).fetchall()
+        assert len(receipts) == 1
+        assert receipts[0][0] == rid
+        audits = check.execute("SELECT purpose FROM disclosure_audit").fetchall()
+        assert audits == [("snapshot audit",)]
+    finally:
+        check.close()
+
+    with pytest.raises(FileExistsError):
+        svc.store.backup_to(snap)
+    # existing destination untouched
+    assert os.path.getsize(snap) > 0
+
+    # Snapshot opens standalone like a fresh store.
+    store2 = Receipts(snap)
+    row = store2.get(rid)
+    assert row["status"] == "confirmed"
+    store2.close()
+
+
+def test_lost_operation_does_not_resubmit(client_b, caplog):
+    c, svc = client_b
+    rid = c.post("/anchor", json={"commitment": _commitment(56)}).json()["receipt_id"]
+
+    # A lost operation: the node answers z_getoperationstatus with an empty
+    # array — IndexError, not a queued status. Worker must survive it, keep
+    # the pending row and never fabricate a resend.
+    def lost(opid):
+        raise IndexError("SECRET_SENTINEL")
+
+    svc.rpc.operation_status = lost
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="zanchor"):
+        for _ in range(3):
+            svc.poll_pending()
+    assert len(svc.rpc.anchors) == 1  # never re-sent
+    assert c.get(f"/receipts/{rid}").json()["status"] == "queued"
+    blob = "\n".join(r.getMessage() for r in caplog.records)
+    assert "anchor_poll_failed" in blob
+    assert "SECRET_SENTINEL" not in blob

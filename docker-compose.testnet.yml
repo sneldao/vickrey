@@ -1,0 +1,74 @@
+name: vickrey-testnet
+services:
+  zebra:
+    image: zfnd/zebra:7.0.0
+    container_name: vickrey-zebra-testnet
+    restart: unless-stopped
+    stop_grace_period: 60s
+    cpus: 1.5
+    mem_limit: 3g
+    memswap_limit: 3g
+    environment:
+      ZEBRA_NETWORK__NETWORK: Testnet
+      ZEBRA_RPC__LISTEN_ADDR: 0.0.0.0:18232
+      ZEBRA_RPC__ENABLE_COOKIE_AUTH: "true"
+      ZEBRA_RPC__COOKIE_DIR: /var/run/auth
+      ZEBRA_TRACING__FILTER: info
+      ZEBRA_STATE__CACHE_DIR: /home/zebra/.cache/zebra
+      ZEBRA_HEALTH__LISTEN_ADDR: 0.0.0.0:8080
+      ZEBRA_HEALTH__ENFORCE_ON_TEST_NETWORKS: "true"
+      ZEBRA_SYNC__DOWNLOAD_CONCURRENCY_LIMIT: "8"
+      ZEBRA_NETWORK__LISTEN_ADDR: 0.0.0.0:18233
+      ZEBRA_SYNC__CHECKPOINT_VERIFY_CONCURRENCY_LIMIT: "500"
+    volumes:
+      - chain:/home/zebra/.cache/zebra
+      - auth:/var/run/auth
+    ports:
+      - "127.0.0.1:28632:18232"
+      - "127.0.0.1:28680:8080"
+    networks: [testnet]
+    logging:
+      driver: local
+      options:
+        max-size: "10m"
+        max-file: "3"
+  wallet:
+    profiles: [wallet]
+    platform: linux/amd64
+    build:
+      context: services/zanchor/docker
+      dockerfile: Dockerfile.compat
+    container_name: vickrey-wallet-testnet
+    restart: unless-stopped
+    stop_grace_period: 60s
+    cpus: 0.75
+    mem_limit: 1g
+    memswap_limit: 2g
+    command:
+      [
+        "-datadir=/data",
+        "-testnet",
+        "-connect=zebra:18233",
+        "-listen=0",
+        "-dnsseed=0",
+        "-listenonion=0",
+        "-discover=0",
+        "-printtoconsole",
+        "-dbcache=128",
+        "-par=1",
+      ]
+    volumes:
+      - wallet:/data
+      - ${VICKREY_TESTNET_WALLET_CONF:-/home/linuxuser/.config/vickrey/testnet-wallet.conf}:/data/zcash.conf:ro
+    ports: ["127.0.0.1:28633:18232"]
+    networks: [testnet]
+    logging:
+      driver: local
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  chain:
+  auth:
+  wallet:
+networks:
+  testnet:

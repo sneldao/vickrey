@@ -1,14 +1,17 @@
 """SQLite store for the verifier-held receipts.
 
-One row per anchored commitment. The commitment -> txid -> height
-binding lives ONLY here; it is served exclusively to the holder of the
-receipt id. There is deliberately no list-of-receipts query in this
-module: the service must not offer an enumeration of what has been
-anchored (docs/ZANCHOR_API.md).
+One row per anchored commitment. In mode B the commitment rides the
+transaction's encrypted memo and the receipt is the service's book of
+which commitment landed where (receipt id, txid, height); in mode A the
+binding exists only in this store. It is served exclusively to the
+holder of the receipt id. There is deliberately no list-of-receipts
+query in this module: the service must not offer an enumeration of what
+has been anchored (docs/ZANCHOR_API.md).
 """
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import threading
 import uuid
@@ -59,6 +62,39 @@ class Receipts:
             except sqlite3.OperationalError:
                 pass
             self._conn.commit()
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def backup_to(self, target: str) -> None:
+        """Consistent online snapshot of the whole store via the SQLite
+        backup API (docs/DEPLOY_DEMO.md). The target must not already exist:
+        it is created mode 600 and a partial file is removed on failure.
+        The snapshot is plaintext sensitive data — receipt ids are bearer
+        capabilities — so it must be encrypted before leaving the host."""
+        if os.path.exists(target):
+            raise FileExistsError("backup target already exists")
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        os.close(fd)
+        ok = False
+        try:
+            dest = sqlite3.connect(target)
+            try:
+                with self._lock:
+                    self._conn.backup(dest)
+                rows = dest.execute("PRAGMA quick_check").fetchall()
+                ok = rows == [("ok",)]
+            finally:
+                dest.close()
+            if not ok:
+                raise RuntimeError("snapshot failed integrity check")
+        except Exception:
+            try:
+                os.remove(target)
+            except OSError:
+                pass
+            raise
 
     # -- receipts ----------------------------------------------------------
 

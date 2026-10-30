@@ -161,6 +161,7 @@ explicitly, pass `anchor=public`:
   design, competitors, risks, interop.
 - [docs/ECATHON.md](docs/ECATHON.md) — historical Zcash hackathon plan.
 - [docs/ZANCHOR_API.md](docs/ZANCHOR_API.md) — the pinned wire contract between the field client / explorer and the shielded anchor service.
+- [docs/TESTNET.md](docs/TESTNET.md) — the public-testnet path: Zebra + compat wallet syncing
 - [docs/PRIVACY.md](docs/PRIVACY.md) — the threat model: the timing mitigation with its numbers, the residual leaks named, and the questions still open.
 - [docs/DISCLOSURE_DESIGN.md](docs/DISCLOSURE_DESIGN.md) — implemented sharing flow and its trust limits.
 - [docs/DEPLOY_DEMO.md](docs/DEPLOY_DEMO.md) — combined site, private regtest service, and recovery runbook.

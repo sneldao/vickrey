@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import Body, FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db import Receipts
@@ -352,10 +353,10 @@ class AnchorService:
                     if row is not None and row["status"] in ("queued", "broadcast"):
                         self._advance(row)
                 except Exception as exc:
+                    # Only the error type: the exception body can carry RPC
+                    # credentials; the receipt id is a bearer capability.
                     logger.warning(
-                        "receipt %s: %s",
-                        pending["receipt_id"],
-                        type(exc).__name__,
+                        "anchor_poll_failed error_type=%s", type(exc).__name__
                     )
 
     def _advance(self, receipt: dict[str, Any]) -> None:
@@ -372,8 +373,10 @@ class AnchorService:
                 self.store.set_broadcast(rid, str(txid))
                 receipt = self.store.get(rid)
             elif state in ("failed", "error"):
-                logger.error("receipt %s op failed: %s", rid, status)
-                self.store.set_failed(rid, str(status.get("error", "operation failed")))
+                # The node's error string can carry internals; never log it
+                # and never serve it back inside a receipt.
+                logger.warning("anchor_operation_failed")
+                self.store.set_failed(rid, "node operation failed")
                 return
             return
         if receipt["status"] == "broadcast" and receipt["txid"]:
@@ -487,6 +490,20 @@ def build_app() -> FastAPI:
     app.add_middleware(
         CORSMiddleware, allow_origins=origins, allow_methods=["*"], allow_headers=["*"]
     )
+
+    @app.middleware("http")
+    async def private_errors(request, call_next):
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            # Unexpected failure: log the type only, answer generically. No
+            # traceback, no request detail — both can carry bearer ids.
+            logger.error("request_failed error_type=%s", type(exc).__name__)
+            response = JSONResponse(
+                status_code=500, content={"detail": "internal service error"}
+            )
+        response.headers["Cache-Control"] = "no-store"
+        return response
 
     def _worker_loop(svc: AnchorService, stop: threading.Event) -> None:
         while not stop.is_set():

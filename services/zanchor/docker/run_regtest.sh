@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Local/dev regtest zcashd from the v6.20.0 image. No funding needed:
-# regtest mints. Prints the RPC URL for spike.py / run_local.sh.
+# regtest mints. Reports the RPC endpoint without printing its credentials.
 #
 #   ./run_regtest.sh          # uses vickrey-zcashd:v6.20.0
 #
@@ -10,8 +10,24 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 IMAGE="${IMAGE:-vickrey-zcashd:v6.20.0}"
+
+# Never delete existing state: a running container or an orphaned volume
+# holds the wallet the anchors were funded from. Preserve, do not recreate.
+# These guards run before any credential or config file is created.
+if docker ps -a --format '{{.Names}}' | grep -qx vickrey-zcashd-regtest; then
+  echo "Existing regtest container preserved"
+  exit 0
+fi
+if docker volume inspect vickrey-regtest-data >/dev/null 2>&1; then
+  echo "Existing regtest volume found; use the recovery runbook to attach it. Nothing was deleted." >&2
+  exit 1
+fi
+docker volume create vickrey-regtest-data >/dev/null
+
+umask 077
 PASS="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
 WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 cat > "$WORK/regtest.conf" <<EOF
 regtest=1
 rpcbind=0.0.0.0
@@ -21,10 +37,6 @@ rpcpassword=$PASS
 rpcport=28432
 i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
 EOF
-
-docker rm -f vickrey-zcashd-regtest 2>/dev/null || true
-docker volume rm vickrey-regtest-data 2>/dev/null || true
-docker volume create vickrey-regtest-data >/dev/null
 # zcashd 6.x refuses to start without a conf file present (it may be
 # empty); the real options ride on the command line below.
 docker run --rm -v vickrey-regtest-data:/mnt -v "$WORK":/w ubuntu:24.04 \
@@ -43,8 +55,7 @@ for i in $(seq 1 60); do
   if curl -s -u "zanchor:$PASS" -X POST -H 'Content-Type: application/json' \
       --data '{"jsonrpc":"1.0","id":1,"method":"getblockcount","params":[]}' \
       http://127.0.0.1:28432/ | grep -q result; then
-    echo "RPC_URL=http://zanchor:$PASS@127.0.0.1:28432"
-    echo "conf kept at: $WORK/regtest.conf"
+    echo "regtest rpc is up at 127.0.0.1:28432 (credentials stay in the node configuration)"
     exit 0
   fi
   sleep 2

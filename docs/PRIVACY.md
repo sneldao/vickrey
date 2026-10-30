@@ -138,9 +138,14 @@ trade: the chain no longer knows what the transaction is, and the verifier
 does. What it must never do — publish receipts, enumerate anchors, answer
 "what was anchored this week" — is limited by the API shape (no list
 endpoint, receipts served only by id) but not prevented: the operator can
-always read its own receipt database, and receipt ids in Uvicorn or proxy
-logs are bearer capabilities in plain text. Trust in the operator's logging
-and DB hygiene is part of the model, stated rather than assumed.
+always read its own receipt database. The demo image disables Uvicorn access
+logs, application failures log only event names and exception types, and
+nginx suppresses logs for both API requests and static pages (including
+receipt query strings). The inspected Traefik configuration does not enable
+access logging. This does not erase historical logs or control future
+proxy/CDN configuration: a receipt id captured in a log remains a bearer
+capability. Trust in the operator's logging and database hygiene remains
+part of the model.
 
 - **Who operates it:** the project (sneldao) operates the verifier for the
   hackathon demo and the initial commons. It is one FastAPI process in front

@@ -26,10 +26,12 @@ if [ "${1:-}" = "status" ]; then
   exit 0
 fi
 
-[ -n "$PASS" ] && { echo "already running: $NAME (RPC 127.0.0.1:$RPC_PORT)"; echo "rpcpassword: $PASS"; exit 0; }
+[ -n "$PASS" ] && { echo "already running: $NAME (RPC 127.0.0.1:$RPC_PORT)"; exit 0; }
 PASS="$(openssl rand -hex 24)"
 
+umask 077
 WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
 cat > "$WORK/testnet.conf" <<'EOF'
 # zcashd 6.x requires a conf file to exist; options ride on the command line.
 EOF
@@ -46,4 +48,4 @@ docker run -d --name "$NAME" \
   -i-am-aware-zcashd-will-be-replaced-by-zebrad-and-zallet-in-2025=1
 
 echo "testnet node running as $NAME; RPC 127.0.0.1:$RPC_PORT user=zanchor"
-echo "rpcpassword: $PASS"
+echo "credentials stay in the node configuration"

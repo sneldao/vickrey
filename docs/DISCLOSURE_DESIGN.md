@@ -1,77 +1,59 @@
-# Verifier receipts and selective disclosure (design)
+# Disclosure — implemented contract (2026-10-30)
 
-Status: design only. No code. Policy lives in `docs/PRIVACY.md` (Selective
-disclosure, Verifier trust); this doc turns it into a concrete shape and lists
-the decisions that still need an owner.
+_Historical note: this file began as a pre-implementation design. It now
+describes the implemented shape — built and browser-tested, but not yet
+deployed. Options not built are marked at the end._
 
-## What is being disclosed
+A disclosure is a file the record's owner chooses to share. The owner clicks
+"Share this record", sees the exact entry including its recorded coordinates
+in a preview, enters a purpose, clicks "Download disclosure", and moves the
+file by hand — it is never uploaded. The only request that leaves the device
+carries the receipt id and that purpose.
 
-An anchor puts only `commitment` on the wire (`docs/ZANCHOR_API.md`). The
-commitment is computed in `apps/field/trust.js`:
+## The two halves
 
-    commitment = SHA-256( canonical(entry) )
+1. **Local verification (the file).** `apps/field/disclosure.js` builds a
+   `vickrey.disclosure/1` bundle: one sealed entry (including the exact
+   recorded coordinates — disclosures deliberately reveal what the anchor
+   hides), the device public key (SPKI), the service's public receipt, and
+   its verification response. A recipient re-checks, entirely locally, that
+   the entry recomputes to its commitment and that the signature verifies
+   under the bundled key. One verified entry proves its own seal — it does
+   not establish the sender's whole journal chain, the observer's identity,
+   or the capture time.
+2. **Service check (the memo).** `POST /receipts/{id}/disclosure` validates a
+   caller-supplied purpose (1–200 chars), runs a fresh verification, refuses
+   unless the memo proof verifies, and writes one append-only row to the
+   `disclosure_audit` SQLite table (receipt id, UTC time, purpose — no read
+   endpoint). The recipient can also re-run `GET /receipts/{id}/verify`
+   against a configured anchor service and compare every binding field.
 
-where `canonical` is a sorted-key JSON serialisation. The full sealed entry
-(species, location, timestamp, model id, signature, prev link) is held
-off-chain, on the device and in the ledger, and is never sent to the verifier.
+## Trust limits, stated plainly
 
-So a disclosure has exactly two possible payloads, and they differ in what a
-recipient can check:
+- The memo is read by the **service wallet** (`z_viewtransaction`) — a
+  service-held check, not independent verification.
+- The **receipt id is a bearer capability**: whoever holds it can ask for
+  verification and disclosure. The audit names a stated purpose, not a
+  verified recipient, and a downloaded file cannot be cryptographically
+  revoked.
+- **No private keys are disclosed**: no Zcash viewing or spending keys, no
+  account keys — no endpoint exports them. The file does include the device's
+  **public** key, needed for the recipient's local signature check.
+- The service sees only the receipt id and the purpose; the record's
+  contents stay in the bundle the user moves by hand.
+- The signature verifies the signed bytes under the included device key; it
+  is not an identity assertion.
 
-| Option          | Payload                              | Recipient can verify                                                               | Recipient learns                      |
-| --------------- | ------------------------------------ | ---------------------------------------------------------------------------------- | ------------------------------------- |
-| A. Receipt only | receipt id, txid, height, commitment | the commitment is on chain at that height                                          | that one anchor exists at that height |
-| B. Sealed entry | A + full canonical entry             | the entry hashes to the commitment, and so the anchor binds this exact observation | the observation itself                |
+## Deferred from the original design
 
-Option A is what PRIVACY.md already promises ("exactly one fact per
-disclosure"). Option B is needed only when a recipient must check the content,
-not just the existence of the anchor. Recommendation: **A by default**, and B
-only when the operator explicitly releases a specific entry for a stated
-purpose.
+- Option A-vs-B payloads: the file always carries the sealed entry (option B)
+  plus the receipt — a receipt-only file would prove existence but disclose
+  nothing checkable about content. In mode A, a receipt alone also cannot
+  establish chronology against the entry: its binding is verifier-held with
+  no memo proof.
+- Recipient identity policy remains the operator's, not the protocol's.
 
-## Flow
-
-1. Verifier holds `commitment <-> txid <-> height` in the receipt table. It
-   never holds the entry.
-2. Operator asks for a disclosure by receipt id, with a purpose string.
-3. Verifier appends an audit line (receipt id, UTC time, purpose) to a local
-   file that no endpoint exposes.
-4. Verifier returns the payload for the chosen option.
-5. Recipient checks: for A, the txid is in the chain at the stated height; for
-   B, `SHA-256(canonical(entry)) == commitment`, and the commitment matches the
-   on-chain anchor.
-
-The viewing key is needed only in mode B, where the memo bytes must be decrypted
-to read the commitment back from the transaction. It is held in the verifier
-process environment only, decrypted in memory, used, and dropped. It is never
-written to the receipt database.
-
-## Constraints from existing policy
-
-- No list endpoint. Receipts are served only by id.
-- The receipt table never stores species, area, timestamp, signature or public key.
-- Recipient identity is not stored by the service. The operator's records are the operator's policy.
-
-## Open decisions (need an owner)
-
-1. **Which option is the default?** This doc recommends A. Confirm before
-   building the endpoint.
-2. **Does option B ship at all in the hackathon scope?** It requires the sealed
-   entry to leave the device through the operator, which conflicts with
-   "the verifier never receives an entry" unless the operator holds it. Likely
-   defer to after submission.
-3. **Audit log location and retention.** PRIVACY.md says local and append-only.
-   Confirm the path and who can read it.
-
-## Not yet verified
-
-- That the node returns enough to check option A without the viewing key. The
-  disclosure path for mode A depends on the probe in `services/zanchor/spike/probe7.py`,
-  which must run first. Mode B depends on `z_exportviewingkey` / memo decryption,
-  which is not exercised anywhere yet.
-
-## Next step
-
-Once the decisions above are answered, implement option A as one endpoint
-(`GET /receipts/{id}/disclosure`) with the audit line, and test it against the
-mock node. Option B waits for decision 2.
+Tests: `apps/field/disclosure.test.mjs` (local verification, tamper, embedded
+verification never trusted as fresh proof) and
+`services/zanchor/tests/test_contract.py` (disclosure 409/404, audit write
+only on success). 2026-10-30.

@@ -130,3 +130,9 @@ class ZcashRpc:
 
     def transaction(self, txid: str) -> dict[str, Any]:
         return self.call("gettransaction", [txid])
+
+    def view_transaction(self, txid: str) -> dict[str, Any]:
+        return self.call("z_viewtransaction", [txid])
+
+    def network(self) -> str:
+        return str(self.call("getblockchaininfo").get("chain", "unknown"))

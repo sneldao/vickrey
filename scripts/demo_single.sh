@@ -90,7 +90,7 @@ cat <<EOF
 
 Vickrey single-process field loop is up (embedded anchoring).
 
-  field client   http://127.0.0.1:${FIELD_PORT}/index.html?ledger=${LEDGER}&commons=${LEDGER}
+  field client   http://127.0.0.1:${FIELD_PORT}/index.html?ledger=${LEDGER}&commons=${LEDGER}&anchor=public
   ledger         ${LEDGER}/docs    (CORS: * )
 
 The client posts straight to the ledger: no relay, no separate Hornet. The

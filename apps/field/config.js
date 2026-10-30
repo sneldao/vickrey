@@ -25,17 +25,21 @@ window.VICKREY_CONFIG = {
   place: "Hackney, London",
 
   // Shielded anchoring — docs/PRIVACY.md, wire contract in
-  // docs/ZANCHOR_API.md. "public" is today's behaviour (anchor message to the
-  // commons). "shielded" sends ONLY the commitment to zanchorUrl and never
-  // touches the public commons; the receipt (commitment <-> txid <-> height)
-  // stays with the device and the verifier.
-  anchorMode: "public",
-  zanchorUrl: "http://127.0.0.1:8092",
+  // docs/ZANCHOR_API.md. "shielded" is the default: it sends ONLY the
+  // commitment to zanchorUrl and never touches the public commons. "public"
+  // is the legacy behaviour (anchor message to the commons); the receipt
+  // (commitment <-> txid <-> height) stays with the device and the verifier.
+  anchorMode: "shielded",
+  // Same-origin route to the anchor service; the deployment proxies /api.
+  zanchorUrl: "/api",
 
   // Where the receipt goes next: the sealed entry's receipt links here with
   // ?receipt=<id>&zanchor=<anchor service>, one click for the demo. Leave it
-  // empty to hide the link.
-  explorerUrl: "http://127.0.0.1:8080",
+  // empty to hide the link. Default: the sibling explorer under the same host.
+  explorerUrl:
+    typeof window !== "undefined" && window.location
+      ? new URL("../explorer/", window.location.href).href
+      : "",
 
   // The anchor schedule (timing-leak mitigation). No anchor may sit closer
   // than 30 minutes to its capture, and a batch is spread over a 20-minute

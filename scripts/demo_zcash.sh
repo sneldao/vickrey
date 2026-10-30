@@ -122,9 +122,10 @@ fi
 
 if [[ -z "${EXPLORER}" ]]; then
   PORT=$(free_port)
-  EXPLORER="http://127.0.0.1:${PORT}"
+  EXPLORER="http://127.0.0.1:${PORT}/explorer"
+  # Serve the apps root so the explorer's ../field/*.js imports resolve.
   python3 -m http.server "${PORT}" --bind 127.0.0.1 \
-    --directory "${ROOT}/apps/explorer" >"${TMP}/explorer.log" 2>&1 &
+    --directory "${ROOT}/apps" >"${TMP}/explorer.log" 2>&1 &
   PIDS+=("$!")
   wait_for "${EXPLORER}/index.html" "explorer"
 fi

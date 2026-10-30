@@ -8,5 +8,5 @@ window.VICKREY_CONFIG = {
   // The shielded anchor service (docs/ZANCHOR_API.md). The explorer reads
   // only the receipts handed to it (?receipt=…), and answers the one check
   // anyone can run (proof of existence). It never lists what was anchored.
-  zanchorUrl: "http://localhost:8092",
+  zanchorUrl: "/api",
 };

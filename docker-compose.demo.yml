@@ -1,0 +1,62 @@
+# Vickrey demo — private regtest showcase. NOT for production.
+# Env comes from ${VICKREY_DEMO_ENV} (an untracked file): ZANCHOR_RPC (with
+# credentials), ZANCHOR_ANCHOR_ZADDR, ZANCHOR_RECIPIENT_ZADDR, CORS origins.
+# Old containers (vickrey-zanchor-test, vickrey-zcashd-regtest) are untouched.
+
+services:
+  api:
+    build:
+      context: services/zanchor
+    container_name: vickrey-demo-api
+    env_file: ${VICKREY_DEMO_ENV:?demo env file required}
+    environment:
+      ZANCHOR_MODE: "B"
+      ZANCHOR_DB: /svc/data/zanchor.db
+      ZANCHOR_EXPECTED_NETWORK: regtest
+    volumes:
+      - vickrey_demo_receipts:/svc/data
+    networks:
+      - vickrey-net
+    ports:
+      - "127.0.0.1:18093:8092"
+    restart: unless-stopped
+
+  miner:
+    build:
+      context: services/zanchor
+    container_name: vickrey-demo-miner
+    env_file: ${VICKREY_DEMO_ENV:?demo env file required}
+    command: ["python", "-m", "app.mine_regtest"]
+    networks:
+      - vickrey-net
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: services/demo/Dockerfile
+    container_name: vickrey-demo-web
+    networks:
+      - vickrey-net
+      - coolify
+    ports:
+      - "127.0.0.1:18094:80"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.vickrey-demo.rule=Host(`${VICKREY_DEMO_HOST:-vickrey.144.202.117.160.sslip.io}`)"
+      - "traefik.http.routers.vickrey-demo.entrypoints=https"
+      - "traefik.http.routers.vickrey-demo.tls=true"
+      - "traefik.http.routers.vickrey-demo.tls.certresolver=letsencrypt"
+      - "traefik.http.services.vickrey-demo.loadbalancer.server.port=80"
+      - "traefik.docker.network=coolify"
+    restart: unless-stopped
+
+volumes:
+  vickrey_demo_receipts:
+
+networks:
+  vickrey-net:
+    external: true
+  coolify:
+    external: true
+    name: coolify

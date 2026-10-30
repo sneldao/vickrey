@@ -100,6 +100,13 @@
         state: "anchored",
         status: typeof row.status === "string" ? row.status : "UNKNOWN",
         mode: row.mode === "shielded" ? "shielded" : "public",
+        /* The mechanism the anchor service actually ran (docs/ZANCHOR_API.md):
+         * "A" note-burn or "B" encrypted memo — kept beside `mode`, which
+         * records the routing (shielded vs public). */
+        anchor_mode:
+          row.anchor_mode === "A" || row.anchor_mode === "B"
+            ? row.anchor_mode
+            : null,
         /* What the service said the transaction is (docs/ZANCHOR_API.md).
          * null when it did not say: the page must not assume shielding. */
         shielded:
@@ -126,6 +133,38 @@
       records[i].sync = {
         state: "refused",
         reason: String(reason || "sync refused"),
+        at: at || new Date().toISOString(),
+      };
+      persist();
+      return records[i];
+    }
+
+    /* An accepted anchor can still fail later (the node's operation errors
+     * after broadcast). The sealed entry is untouched; the record is marked
+     * failed so the page can offer an explicit retry of the same entry. */
+    function markFailed(hash, reason, at) {
+      var i = indexOf(hash);
+      if (i === -1) {
+        return null;
+      }
+      var prev = records[i].sync || {};
+      if (prev.state === "anchored" && prev.status === "confirmed") {
+        return null;
+      }
+      records[i].sync = {
+        state: "failed",
+        reason: String(reason || "anchor failed"),
+        mode: prev.mode === "shielded" ? "shielded" : prev.mode || null,
+        anchor_mode: prev.anchor_mode || null,
+        shielded:
+          prev.shielded === true
+            ? true
+            : prev.shielded === false
+              ? false
+              : null,
+        receipt_id: prev.receipt_id || null,
+        txid: prev.txid || null,
+        height: prev.height === undefined ? null : prev.height,
         at: at || new Date().toISOString(),
       };
       persist();
@@ -162,6 +201,7 @@
       head: head,
       list: list,
       markAnchored: markAnchored,
+      markFailed: markFailed,
       markPending: markPending,
       markRefused: markRefused,
       record: record,

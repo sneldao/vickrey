@@ -11,7 +11,7 @@
     <meta property="og:title" content="Vickrey — A sealed bid on what you saw" />
     <meta
       property="og:description"
-      content="Open-weight identification, sealed with a device signature and a hash chain. Model inference can run locally or on a reachable server; editing a record cracks the seal."
+      content="Private field records, device signatures and encrypted Zcash memo anchors. Share one record and verify its seal. On-phone offline model inference is planned."
     />
     <title>Vickrey — A sealed bid on what you saw</title>
     <link
@@ -66,14 +66,16 @@
     <main id="app"></main>
     <footer class="colophon">
       The model only suggests; the observer decides, and that decision is
-      sealed with the record. A seal proves the record was not edited since —
-      not that the identification is right. Apache-2.0.
+      sealed with the record. Verification detects changes against that seal;
+      it does not establish the capture time or identification's accuracy. Apache-2.0.
     </footer>
     <noscript>This field client needs JavaScript to seal an observation.</noscript>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="config.js" defer></script>
     <script src="trust.js" defer></script>
     <script src="queue.js" defer></script>
+    <script src="disclosure.js" defer></script>
+    <script src="backup.js" defer></script>
     <script src="infer.js" defer></script>
     <script src="logbook.js" defer></script>
     <script src="journal.js" defer></script>

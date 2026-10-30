@@ -11,7 +11,7 @@
     <meta property="og:title" content="Vickrey — A sealed bid on what you saw" />
     <meta
       property="og:description"
-      content="Offline, open-source AI field identification with a tamper-evident logbook. Sealed at capture; countersigned by the network; the seal cracks when someone rewrites the record."
+      content="Verify a shared field record's contents and device signature locally, then check its encrypted Zcash memo through the anchor service."
     />
     <meta property="og:image" content="http://45.76.242.245/og-cover.png" />
     <meta name="twitter:card" content="summary_large_image" />
@@ -49,7 +49,7 @@
           </svg>
         </div>
         <div class="mast-copy">
-          <p class="eyebrow">Explorer · Independent evidence &amp; shielded-anchor verification</p>
+          <p class="eyebrow">Explorer · Local signature checks &amp; service-backed memo verification</p>
           <div class="title-row">
             <h1>Vickrey</h1>
             <p class="motto">A sealed bid on what you saw</p>
@@ -77,6 +77,8 @@
       >This explorer needs JavaScript to read the evidence ledger.</noscript
     >
     <script src="config.js" defer></script>
+    <script src="../field/trust.js" defer></script>
+    <script src="../field/disclosure.js" defer></script>
     <script src="app.js" defer></script>
   </body>
 </html>

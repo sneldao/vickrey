@@ -329,22 +329,116 @@ test("shieldedMessage maps a receipt into a row and carries nothing else", () =>
   }
 });
 
-test("shieldedState needs the receipt and the chain check to say VERIFIED", () => {
-  const confirmed = { status: "confirmed", txid: "t1", height: 5 };
+test("shieldedState needs receipt, chain and service verification for VERIFIED", () => {
+  const confirmed = {
+    status: "confirmed",
+    txid: "t1",
+    height: 5,
+    receipt_id: "rec_1",
+    commitment: "a".repeat(64),
+    mode: "B",
+    shielded: true,
+  };
+  const chain = { exists: true, txid: "t1", height: 5, confirmations: 3 };
+  const verification = {
+    receipt_id: "rec_1",
+    txid: "t1",
+    commitment: "a".repeat(64),
+    height: 5,
+    confirmations: 3,
+    network: "regtest",
+    transaction_verified: true,
+    commitment_verified: true,
+    binding: "encrypted_memo",
+    verification_source: "service_wallet",
+    reason: "commitment_in_encrypted_memo",
+  };
+  assert.equal(api.shieldedState(confirmed, chain, verification), "VERIFIED");
+  // Receipt + chain without a verification is PENDING, never VERIFIED.
+  assert.equal(api.shieldedState(confirmed, chain, null), "PENDING");
+  // A transaction that verified but carries no memo proof is CONFIRMED.
   assert.equal(
-    api.shieldedState(confirmed, { exists: true, height: 5 }),
-    "VERIFIED",
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      commitment_verified: false,
+      binding: "verifier_record",
+      reason: "verifier_record_only",
+    }),
+    "CONFIRMED",
   );
-  assert.equal(api.shieldedState(confirmed, null), "PENDING");
+  // Negative checks: mismatches and missing pieces must never pass.
   assert.equal(
-    api.shieldedState(confirmed, { exists: false }),
+    api.shieldedState(confirmed, { exists: false }, verification),
     "PAYLOAD_MISMATCH",
   );
   assert.equal(
-    api.shieldedState({ status: "queued" }, { exists: true }),
+    api.shieldedState(confirmed, { ...chain, txid: "t2" }, verification),
+    "PAYLOAD_MISMATCH",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, { ...chain, height: 9 }, verification),
+    "PAYLOAD_MISMATCH",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      commitment: "b".repeat(64),
+    }),
+    "PAYLOAD_MISMATCH",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      receipt_id: "rec_other",
+    }),
+    "PAYLOAD_MISMATCH",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      reason: "memo_mismatch",
+      commitment_verified: false,
+    }),
+    "PAYLOAD_MISMATCH",
+  );
+  // Mode A never reaches VERIFIED even with a clean answer.
+  assert.equal(
+    api.shieldedState({ ...confirmed, mode: "A" }, chain, verification),
+    "CONFIRMED",
+  );
+  // Soft failures leave the row PENDING, not VERIFIED or CONFIRMED.
+  assert.equal(
+    api.shieldedState(confirmed, { ...chain, confirmations: 0 }, verification),
     "PENDING",
   );
-  assert.equal(api.shieldedState(null, null), "PENDING");
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      commitment_verified: false,
+      transaction_verified: false,
+      reason: "insufficient_confirmations",
+    }),
+    "PENDING",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      network: "unknown",
+    }),
+    "PENDING",
+  );
+  assert.equal(
+    api.shieldedState(confirmed, chain, {
+      ...verification,
+      verification_source: "third_party",
+    }),
+    "PENDING",
+  );
+  assert.equal(
+    api.shieldedState({ status: "queued" }, chain, verification),
+    "PENDING",
+  );
+  assert.equal(api.shieldedState(null, null, null), "PENDING");
 });
 
 test("the stamp is the service's answer, not the row's routing", () => {
@@ -366,15 +460,34 @@ test("the stamp is the service's answer, not the row's routing", () => {
 });
 
 test("a transparent receipt keeps the row honest end to end", () => {
-  const row = api.shieldedMessage(transparentReceipt, {
+  const chain = {
     exists: true,
+    txid: "deadbeef",
     height: 2712345,
+    confirmations: 4,
+  };
+  // Without a service verification the row is pending; a transaction-verified
+  // answer lifts it to CONFIRMED — the honest ceiling for a mode-A binding.
+  const pendingRow = api.shieldedMessage(transparentReceipt, chain, null);
+  assert.equal(pendingRow.status, "PENDING");
+  const row = api.shieldedMessage(transparentReceipt, chain, {
+    receipt_id: "rec_01J",
+    txid: "deadbeef",
+    commitment: "a".repeat(64),
+    height: 2712345,
+    confirmations: 4,
+    network: "regtest",
+    transaction_verified: true,
+    commitment_verified: false,
+    binding: "verifier_record",
+    verification_source: "service_wallet",
+    reason: "verifier_record_only",
   });
   assert.equal(row.zanchor, true);
   assert.equal(row.shielded, false);
-  assert.equal(row.status, "VERIFIED");
+  assert.equal(row.status, "CONFIRMED");
   assert.equal(api.incidentTitle(row), "Anchor (transparent)");
-  assert.equal(api.stampText(row), "TRANSPARENT · VERIFIED");
+  assert.equal(api.stampText(row), "TRANSPARENT · CONFIRMED");
 });
 
 test("a receipt with no shielded flag claims nothing", () => {

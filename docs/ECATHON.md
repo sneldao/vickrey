@@ -1,5 +1,7 @@
 # ECATHON — shield the anchor
 
+_Historical ECATHON material. Improvements made on 2026-10-30 are post-submission work and must not be represented as written before the 2026-10-28 deadline._
+
 **Zcash privacy hackathon. Submission due 2026-10-28 23:59 UTC.**
 Track: **Wildcard** — "anything that makes a shielded transaction worth making."
 One account registers and submits; we build with a small team.
@@ -83,14 +85,16 @@ viewing key). Put `C` in the memo instead of the verifier's local binding:
 
 ### Replay protection — nullifiers, used correctly
 
-- **Mode A:** each anchor burns **one dedicated shielded note**, so its
-  nullifier is unique per commitment. Replaying an anchor means spending the
-  same note twice — a double-spend the node rejects. Non-replay is
-  inherited from the protocol, not from our database.
-- **Mode B (memo):** memos don't consume nullifiers, so replay protection
-  additionally comes from the verifier rejecting a commitment already
-  anchored. State exactly which guarantee comes from where — judges probe
-  mechanism claims.
+- **Mode A:** each anchor burns **one dedicated shielded note**. Its
+  nullifier makes replaying that note a double-spend the node rejects —
+  consensus prevents the note being spent twice, nothing more.
+- **Mode B (memo):** the commitment rides the encrypted memo; the
+  mechanism is the default (`ZANCHOR_MODE=B`).
+- **Per-commitment dedup is ours, not the chain's.** There is no
+  consensus-level uniqueness for commitments: "this commitment already
+  has a receipt" is the service's receipt database answering `409` —
+  checked under one lock in both modes. State exactly which guarantee
+  comes from where — judges probe mechanism claims.
 
 ### Timing-leak mitigation (a leak is disqualifying — plan for it)
 
@@ -305,8 +309,8 @@ ledger route rather than a field-client change if time slips.
 > still told the world _who_ sealed _what_, roughly _where_, and _when_.
 > This submission moves the anchor into Zcash's shielded pool: each
 > observation is anchored by an unremarkable shielded transaction — a
-> constant-amount note burn whose unique nullifier makes replay a
-> double-spend — with batched, jittered timing so the block itself leaks
+> constant-amount shielded anchor (encrypted memo by default; note burn in
+> legacy mode A) — with batched, jittered timing so the block itself leaks
 > nothing. The verifier holds the commitment-to-transaction binding and can
 > selectively disclose an anchor to a researcher via the viewing key, while
 > anyone can still check that a transaction exists at a given height. The

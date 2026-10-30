@@ -1,5 +1,7 @@
 # Submission — ECATHON (Wildcard track)
 
+_Historical ECATHON material. Improvements made on 2026-10-30 are post-submission work and must not be represented as written before the 2026-10-28 deadline._
+
 _Draft, 2026-10-28. This is the text the judges read. Every claim in it
 points at something in the repo that runs; `docs/STATUS.md` is the honest
 table, and this document is not allowed to outrun it._
@@ -13,8 +15,9 @@ the anchor was a message in a public tangle, readable by anyone.
 
 This submission moves the anchor into Zcash's shielded pool. Each
 observation is anchored by an unremarkable shielded transaction — a
-constant-amount note burn whose nullifier makes replay a
-double-spend that the node itself rejects — with batched, jittered
+constant-amount shielded transaction carrying the
+commitment in its encrypted memo (mode B; note-burn mode A is the
+legacy path) — with batched, jittered
 timing (30-minute floor, 20-minute uniform draw) so the block the
 transaction lands in leaks as little as the chain can bear. The verifier
 holds the commitment-to-transaction binding and serves it only to the
@@ -80,16 +83,16 @@ blocks are ours.
 
 ## What is real, what is a stretch, what is a mock
 
-| Thing                              | State                                                                                                                                               |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Shielded anchor (mode A)           | Built, verified end to end on a live node                                                                                                           |
-| Replay protection                  | Node-enforced (nullifier); service 409 as defense in depth                                                                                          |
-| Jittered anchor scheduling         | Built, 10 tests; 30 min floor / 20 min uniform                                                                                                      |
-| Verifier receipts, no enumeration  | Built and pinned: `GET /receipts/{id}`, 404 for an unknown id, and `GET /receipts` is 404 — two contract tests plus the live `demo_zcash.sh` checks |
-| Selective disclosure, viewing key  | Design only — `GET /receipts/{id}/disclosure` and `z_exportviewingkey` are not built (`docs/DISCLOSURE_DESIGN.md`)                                  |
-| Memo mode (commitment in the memo) | Wired (`ZANCHOR_MODE=B`), verified on a live node: raw chain data shows ciphertext only, verifier decrypts the commitment                           |
-| Field rewards (shielded payout)    | Design only — stretch, not claimed in the demo                                                                                                      |
-| Mainnet node                       | Not running: testnet sync is stuck on zcashd 6.x (see above); the service is node-agnostic and the one-line change is in the docs                   |
+| Thing                              | State                                                                                                                                                           |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Shielded anchor (mode A)           | Built, verified end to end on a live node                                                                                                                       |
+| Replay protection                  | Note-level: nullifiers stop a double-spend of the burned note. Per-commitment: the service's receipt DB 409 — there is no consensus-level commitment uniqueness |
+| Jittered anchor scheduling         | Built, 10 tests; 30 min floor / 20 min uniform                                                                                                                  |
+| Verifier receipts, no enumeration  | Built and pinned: `GET /receipts/{id}`, 404 for an unknown id, and `GET /receipts` is 404 — two contract tests plus the live `demo_zcash.sh` checks             |
+| Selective disclosure, viewing key  | Design only — `GET /receipts/{id}/disclosure` and `z_exportviewingkey` are not built (`docs/DISCLOSURE_DESIGN.md`)                                              |
+| Memo mode (commitment in the memo) | Wired (`ZANCHOR_MODE=B`), verified on a live node: raw chain data shows ciphertext only, verifier decrypts the commitment                                       |
+| Field rewards (shielded payout)    | Design only — stretch, not claimed in the demo                                                                                                                  |
+| Mainnet node                       | Not running: testnet sync is stuck on zcashd 6.x (see above); the service is node-agnostic and the one-line change is in the docs                               |
 
 ## Originality (the rule and the receipt)
 

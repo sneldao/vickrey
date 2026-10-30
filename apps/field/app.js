@@ -499,7 +499,11 @@
           thumb: record.thumb || null,
           sync: record.sync || { state: "pending" },
           state: state,
-          refused: !!(record.sync && record.sync.state === "refused"),
+          refused: !!(
+            record.sync &&
+            (record.sync.state === "refused" || record.sync.state === "failed")
+          ),
+          failed: !!(record.sync && record.sync.state === "failed"),
           queuedCopy: edited ? queued.entry : null,
         };
       })
@@ -593,7 +597,10 @@
           String(resolved.anchorMode || "").toLowerCase() === "shielded"
             ? "shielded"
             : "public",
-        zanchorUrl: resolved.zanchorUrl || "",
+        /* Same-origin default: the anchor service is reached through the
+         * site's /api route, never guessed at a foreign host. Query and
+         * config.js overrides still apply for demos. */
+        zanchorUrl: resolved.zanchorUrl || "/api",
         explorerUrl: resolved.explorerUrl || "",
         schedule: root.VickreySchedule
           ? root.VickreySchedule.normalizeOptions({
@@ -631,6 +638,23 @@
       contextReady: false,
       context: {},
       seeding: false,
+      /* Anchor-service health at startup: an explicit setup/offline signal,
+       * never a silent switch to public mode. */
+      zanchorHealth: null,
+      zanchorError: null,
+      /* Shielded receipts are re-fetched while queued/broadcast until they
+       * settle or the bounded retries run out. */
+      receiptErrors: {},
+      anchorNotice: "",
+      transientRetries: 0,
+      shareHash: null,
+      sharePurpose: "",
+      shareBusy: false,
+      shareError: null,
+      backupBusy: false,
+      backupError: null,
+      backupNotice: "",
+      restoring: false,
       publicKey: null,
       privateKey: null,
       publicKeyText: "",
@@ -1019,6 +1043,28 @@
             escapeHtml(state.syncError) +
             "</p>"
           : "") +
+        (state.anchorNotice
+          ? '<p class="hint" role="status">' +
+            escapeHtml(state.anchorNotice) +
+            ' <button type="button" class="linklike" data-act="retry-receipts">Check again</button>' +
+            "</p>"
+          : "") +
+        serviceLine() +
+        (customTiming()
+          ? '<p class="hint demo-override"><b>Custom timing:</b> anchors wait ' +
+            escapeHtml(
+              String(Math.round((settings.schedule.minDelayMs || 0) / 1000)),
+            ) +
+            "s minimum plus up to " +
+            escapeHtml(
+              String(Math.round((settings.schedule.jitterMs || 0) / 1000)),
+            ) +
+            "s jitter — the configured defaults are 30 min plus 20 min." +
+            (shorterTiming()
+              ? " These values are shortened for the demo."
+              : "") +
+            "</p>"
+          : "") +
         '<details class="fine demo-tools" data-open-key="demo"' +
         (state.open.demo ? " open" : "") +
         "><summary>Demo: tamper with a queued copy</summary>" +
@@ -1029,6 +1075,61 @@
         "</details>" +
         "</section>"
       );
+    }
+
+    /* Is the drawn schedule different from the module's own defaults?
+     * The banner must not appear just because config.js lists the same
+     * production numbers. */
+    function scheduleDefaults() {
+      if (root.VickreySchedule && root.VickreySchedule.DEFAULTS) {
+        return root.VickreySchedule.DEFAULTS;
+      }
+      return { minDelayMs: 30 * 60 * 1000, jitterMs: 20 * 60 * 1000 };
+    }
+    function customTiming() {
+      var d = scheduleDefaults();
+      return (
+        settings.schedule.minDelayMs !== d.minDelayMs ||
+        settings.schedule.jitterMs !== d.jitterMs
+      );
+    }
+    function shorterTiming() {
+      var d = scheduleDefaults();
+      return (
+        settings.schedule.minDelayMs < d.minDelayMs ||
+        settings.schedule.jitterMs < d.jitterMs
+      );
+    }
+
+    /* The anchor service's own status line: explicit about being unreachable
+     * and about what chain this is. A failed probe changes nothing — it
+     * never flips the client into public mode. */
+    function serviceLine() {
+      if (settings.anchorMode !== "shielded") {
+        return "";
+      }
+      var text;
+      if (state.zanchorHealth) {
+        var health = state.zanchorHealth;
+        text =
+          "Anchor service online · mode " +
+          (health.mode || "?") +
+          " · " +
+          (health.network || "unknown network") +
+          (health.network === "regtest"
+            ? " — private demo chain; no real ZEC"
+            : "");
+      } else if (state.zanchorError) {
+        return (
+          '<p class="action-error" role="alert">' +
+          escapeHtml(state.zanchorError) +
+          ' <button type="button" class="linklike" data-act="retry-health">Retry</button>' +
+          "</p>"
+        );
+      } else {
+        text = "Checking the anchor service…";
+      }
+      return '<p class="hint service-line">' + escapeHtml(text) + "</p>";
     }
 
     function proofList(row) {
@@ -1169,6 +1270,9 @@
           row.sync.mode === "shielded"
             ? anchorWord(row.sync) + " · " + row.sync.status
             : "Anchored · " + row.sync.status;
+      }
+      if (row.failed) {
+        text = "Anchor failed — retryable";
       }
       if (row.state === "cracked" && row.refused) {
         text = "Seal cracked · sync refused";
@@ -1343,6 +1447,24 @@
             row.hash +
             '">Put the sealed copy back</button></div>'
           : "") +
+        (row.failed
+          ? '<p class="crack-note">The anchor service reported failure' +
+            (row.sync && row.sync.reason
+              ? ": " + escapeHtml(row.sync.reason)
+              : "") +
+            ". The sealed record is untouched in your journal.</p>" +
+            '<div class="row"><button type="button" data-act="retry-anchor" data-hash="' +
+            row.hash +
+            '">Retry this anchor</button></div>'
+          : "") +
+        (row.state === "anchored" &&
+        row.sync.mode === "shielded" &&
+        row.sync.status === "confirmed"
+          ? '<div class="row"><button type="button" class="linklike" data-act="share" data-hash="' +
+            row.hash +
+            '">Share this record</button></div>'
+          : "") +
+        (state.shareHash === row.hash ? shareCard(row) : "") +
         '<details class="proof-wrap" data-open-key="p-' +
         row.hash +
         '"' +
@@ -1353,6 +1475,89 @@
         "</details>" +
         contextBlock(row) +
         "</li>"
+      );
+    }
+
+    /* The disclosure preview: exactly what will leave the device, stated
+     * before the button that sends anything. The service sees only the
+     * receipt id and the purpose; the record itself stays here until the
+     * user hands the file to someone. */
+    function shareCard(row) {
+      var entry = row.entry;
+      var summary = summaryOf(entry);
+      return (
+        '<div class="share-card" role="group" aria-label="Share this record">' +
+        "<p><b>What this discloses:</b> the species (" +
+        escapeHtml(summary.species || "unidentified") +
+        "), the recorded coordinates (" +
+        (entry.location
+          ? escapeHtml(entry.location.lat + ", " + entry.location.lon)
+          : "none") +
+        "), the recorded time (" +
+        escapeHtml(entry.observed_at || "—") +
+        "), this entry's signature, and your device public key.</p>" +
+        '<p class="hint">The device key and the chain link can correlate records you share. The file contains no photos, no private keys, and no other records. Anyone holding the receipt id can query it — it is a bearer capability. The purpose you write is logged by the anchor service.</p>' +
+        '<details class="fine"><summary>Preview the exact record that will be shared</summary><pre class="mono wrap">' +
+        escapeHtml(JSON.stringify(entry, null, 2)) +
+        "</pre></details>" +
+        '<label>Purpose of this disclosure<input id="share-purpose" maxlength="200" value="' +
+        escapeHtml(state.sharePurpose) +
+        '" placeholder="e.g. grant review, court order" /></label>' +
+        (state.shareError
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.shareError) +
+            "</p>"
+          : "") +
+        '<div class="row">' +
+        '<button type="button" class="primary" data-act="download-disclosure" data-hash="' +
+        row.hash +
+        '"' +
+        (state.shareBusy ? " disabled" : "") +
+        ">" +
+        (state.shareBusy ? "Preparing…" : "Download disclosure") +
+        "</button>" +
+        '<button type="button" class="ghost" data-act="share-cancel">Cancel</button>' +
+        "</div>" +
+        '<p class="hint">The recipient can verify the file in the ' +
+        '<a href="' +
+        escapeHtml(trimUrl(settings.explorerUrl) || "../explorer/") +
+        '" target="_blank" rel="noopener noreferrer">Evidence Explorer</a> — "Verify a shared record".</p>' +
+        "</div>"
+      );
+    }
+
+    function backupPanel() {
+      return (
+        '<section class="card backup" aria-labelledby="backup-h">' +
+        '<div class="card-head"><h2 id="backup-h">Backup &amp; recovery</h2></div>' +
+        '<p class="hint">Everything this device holds — keys, journal, outbox — encrypted with a passphrase only you know. The file is never uploaded. A forgotten passphrase cannot be recovered; there is no other copy.</p>' +
+        '<details class="fine" data-open-key="backup-export"' +
+        (state.open["backup-export"] ? " open" : "") +
+        "><summary>Download an encrypted backup</summary>" +
+        '<label>Passphrase<input type="password" id="backup-pass" autocomplete="new-password" /></label>' +
+        '<label>Repeat passphrase<input type="password" id="backup-pass2" autocomplete="new-password" /></label>' +
+        '<div class="row"><button type="button" data-act="backup-export"' +
+        (state.backupBusy ? " disabled" : "") +
+        ">Download encrypted backup</button></div></details>" +
+        '<details class="fine" data-open-key="backup-restore"' +
+        (state.open["backup-restore"] ? " open" : "") +
+        "><summary>Restore a backup</summary>" +
+        '<p class="hint">Restore works only on an empty device — it refuses to overwrite an existing journal or outbox. This device\'s freshly generated key is replaced.</p>' +
+        '<label class="file"><span>Choose a backup file</span><input type="file" id="backup-file" accept=".json,application/json" /></label>' +
+        '<label>Passphrase<input type="password" id="restore-pass" autocomplete="off" /></label>' +
+        '<label class="consent"><input type="checkbox" id="restore-consent" /> I understand this replaces this device&rsquo;s freshly generated key and only works on an empty device.</label>' +
+        '<div class="row"><button type="button" data-act="backup-restore"' +
+        (state.backupBusy ? " disabled" : "") +
+        ">Restore onto this device</button></div></details>" +
+        (state.backupError
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.backupError) +
+            "</p>"
+          : "") +
+        (state.backupNotice
+          ? '<p class="hint">' + escapeHtml(state.backupNotice) + "</p>"
+          : "") +
+        "</section>"
       );
     }
 
@@ -1582,6 +1787,9 @@
         (isShielded ? " active" : "") +
         '" data-act="mode-shielded">Shielded (Zcash)</button>' +
         "</div>" +
+        (!isShielded
+          ? '<p class="hint mode-warning"><b>Public mode:</b> the species summary, coarse area and time become public metadata on the commons.</p>'
+          : "") +
         nextBtn +
         '<button type="button" class="walk-dismiss" data-act="dismiss-walk">Hide</button>' +
         "</div>" +
@@ -1590,8 +1798,31 @@
       );
     }
 
-    function render(focusId) {
+    function render(focusId, background) {
       var active = document.activeElement && document.activeElement.id;
+      /* Background refreshes (receipt polling, health, commons) must not
+       * rebuild the DOM while the user is inside the backup or share form —
+       * file picks and typed passphrases would be erased. Defer instead;
+       * user-triggered renders always go through. */
+      if (background) {
+        var focused = document.activeElement;
+        var filePicked = el.querySelector(
+          "#backup-file, #shared-record, input[type=file]",
+        );
+        var fileChosen =
+          filePicked && filePicked.files && filePicked.files.length;
+        if (
+          (focused &&
+            focused.closest &&
+            focused.closest(".backup, .share-card")) ||
+          fileChosen
+        ) {
+          root.setTimeout(function () {
+            render(null, true);
+          }, 1500);
+          return;
+        }
+      }
       el.innerHTML =
         loopBanner() +
         '<div class="field-grid">' +
@@ -1600,6 +1831,7 @@
         "</div>" +
         '<div class="col-side">' +
         outboxPanel() +
+        backupPanel() +
         commonsPanel() +
         journalPanel() +
         "</div>" +
@@ -1684,6 +1916,12 @@
           settings.model = form.model.value.trim() || settings.model;
         });
       }
+      var sharePurpose = el.querySelector("#share-purpose");
+      if (sharePurpose) {
+        sharePurpose.addEventListener("input", function () {
+          state.sharePurpose = sharePurpose.value;
+        });
+      }
       var correct = el.querySelector("#correct-form");
       if (correct) {
         correct.addEventListener("submit", function (event) {
@@ -1747,6 +1985,42 @@
               loadContext(hash);
             },
             clear: clearDevice,
+            share: function () {
+              state.shareHash = state.shareHash === hash ? null : hash;
+              state.shareError = null;
+              state.sharePurpose = "";
+              render("share-purpose");
+            },
+            "share-cancel": function () {
+              state.shareHash = null;
+              state.shareError = null;
+              render();
+            },
+            "download-disclosure": function () {
+              downloadDisclosure(hash);
+            },
+            "retry-anchor": function () {
+              retryAnchor(hash);
+            },
+            "retry-health": function () {
+              state.anchorNotice = "";
+              probeZanchor();
+            },
+            "retry-receipts": function () {
+              state.receiptErrors = {};
+              state.anchorNotice = "";
+              refreshReceipts();
+            },
+            "backup-export": function () {
+              if (!state.backupBusy && !state.restoring) {
+                exportBackup();
+              }
+            },
+            "backup-restore": function () {
+              if (!state.backupBusy && !state.restoring) {
+                importBackup();
+              }
+            },
             commons: function () {
               loadCommons();
             },
@@ -1829,6 +2103,12 @@
     }
 
     async function sealDecision(decision) {
+      if (state.backupBusy || state.restoring) {
+        state.error =
+          "A backup or restore is in progress — wait for it to finish.";
+        render();
+        return;
+      }
       if (!state.privateKey) {
         state.error =
           "The device key is not ready yet — sealing needs it. Wait a moment, or reload the page.";
@@ -1937,7 +2217,7 @@
       }
       autoTimer = root.setTimeout(async function () {
         autoTimer = null;
-        if (state.busy) {
+        if (state.busy || state.backupBusy || state.restoring) {
           scheduleAutoSync(1000);
           return;
         }
@@ -1951,8 +2231,17 @@
      * follow-up. Nothing is anchored at the moment of capture or at "back in
      * range". */
     async function sync() {
+      if (state.backupBusy || state.restoring) {
+        state.syncError =
+          "A backup or restore is in progress — wait for it to finish.";
+        render();
+        return;
+      }
       state.busy = true;
       state.syncError = null;
+      /* An explicit user Sync re-arms the bounded transient retry count. */
+      state.transientRetries = 0;
+      state.anchorNotice = "";
       render();
       var shielded = settings.anchorMode === "shielded";
       var plan = null;
@@ -2007,12 +2296,27 @@
         state.walk.anchored = true;
       }
       if (drained.error) {
-        state.walk.refused = true;
-        state.syncError =
-          (sent ? "Sync stopped after " + sent + ": " : "Sync refused: ") +
-          drained.error.message +
-          ". Nothing unsent left the device.";
-      } else if (plan && plan.hold.length) {
+        if (shielded && drained.error.transient && state.transientRetries < 8) {
+          /* The service settles one anchor at a time; an in-flight refusal
+           * is a wait, not a refusal. The entry stays in the outbox and is
+           * retried in a few seconds — never dropped, never tight-looped. */
+          state.transientRetries += 1;
+          state.syncError =
+            "The anchor service is still settling a previous anchor (" +
+            drained.error.message +
+            "). Nothing unsent left the device — retrying shortly.";
+          scheduleAutoSync(5000);
+        } else {
+          state.walk.refused = true;
+          state.syncError =
+            (sent ? "Sync stopped after " + sent + ": " : "Sync refused: ") +
+            drained.error.message +
+            ". Nothing unsent left the device.";
+        }
+      } else {
+        state.transientRetries = 0;
+      }
+      if (!drained.error && plan && plan.hold.length) {
         var held = plan.hold.length;
         if (plan.nextCheckAt !== null) {
           scheduleAutoSync(Math.max(0, plan.nextCheckAt - Date.now()));
@@ -2071,14 +2375,21 @@
         row = null;
       }
       if (!response.ok) {
-        throw new Error(
-          (row && row.detail) || "zanchor returned " + response.status,
-        );
+        var detail =
+          (row && row.detail) || "zanchor returned " + response.status;
+        var failed = new Error(detail);
+        /* Only the "another anchor is in flight" refusal is worth a delayed
+         * automatic retry; every other failure surfaces immediately. */
+        failed.transient = response.status === 503 && /in flight/i.test(detail);
+        throw failed;
       }
       /* Routing and truth are separate: `mode` records that this anchor went to
        * zanchor and never to the commons; `shielded` records what the service
-       * says the transaction actually is. A missing flag stays null — the page
-       * then claims no shielding rather than assuming it. */
+       * says the transaction actually is. The service's own mode ("A" note-burn,
+       * "B" encrypted memo) is preserved as `anchor_mode` before the routing
+       * word overwrites it. A missing flag stays null — the page then claims
+       * no shielding rather than assuming it. */
+      row.anchor_mode = row.mode;
       row.mode = "shielded";
       row.shielded =
         row.shielded === true ? true : row.shielded === false ? false : null;
@@ -2116,6 +2427,211 @@
         };
       }
       render();
+    }
+
+    function downloadJson(name, value) {
+      var blob = new Blob([JSON.stringify(value, null, 2)], {
+        type: "application/json",
+      });
+      var url = URL.createObjectURL(blob);
+      var link = document.createElement("a");
+      link.href = url;
+      link.download = name;
+      document.body.append(link);
+      link.click();
+      link.remove();
+      root.setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    }
+
+    /* The disclosure flow, device-side. The service is asked twice — a fresh
+     * receipt read, then the disclosure itself — and sees only the receipt id
+     * and the purpose. The record is assembled into the file locally. */
+    async function downloadDisclosure(hash) {
+      var purpose = String(state.sharePurpose || "").trim();
+      if (purpose.length < 1 || purpose.length > 200) {
+        state.shareError =
+          "Give a purpose for this disclosure (1–200 characters).";
+        render();
+        return;
+      }
+      var record = journal.get(hash);
+      var receiptId = record && record.sync && record.sync.receipt_id;
+      if (!receiptId) {
+        state.shareError = "This record has no receipt to disclose.";
+        render();
+        return;
+      }
+      if (!root.VickreyDisclosure) {
+        state.shareError = "The disclosure module failed to load.";
+        render();
+        return;
+      }
+      state.shareBusy = true;
+      state.shareError = null;
+      render();
+      try {
+        var fresh = await root.fetch(
+          trimUrl(settings.zanchorUrl) +
+            "/receipts/" +
+            encodeURIComponent(receiptId),
+          { cache: "no-store" },
+        );
+        var receipt = await fresh.json();
+        if (!fresh.ok) {
+          throw new Error(
+            (receipt && receipt.detail) || "the receipt could not be read",
+          );
+        }
+        var response = await root.fetch(
+          trimUrl(settings.zanchorUrl) +
+            "/receipts/" +
+            encodeURIComponent(receiptId) +
+            "/disclosure",
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ purpose: purpose }),
+          },
+        );
+        var body = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            (body && body.detail) ||
+              "the anchor service refused the disclosure",
+          );
+        }
+        var bundle = await root.VickreyDisclosure.buildDisclosure(
+          record.entry,
+          state.publicKeyText,
+          body,
+        );
+        downloadJson(
+          "vickrey-disclosure-" + hash.slice(0, 12) + ".json",
+          bundle,
+        );
+        state.shareHash = null;
+        state.sharePurpose = "";
+        toast("Disclosure downloaded — the record stays on this device");
+      } catch (err) {
+        state.shareError = err instanceof Error ? err.message : String(err);
+      } finally {
+        state.shareBusy = false;
+        render();
+      }
+    }
+
+    /* Retry a failed anchor: the sealed entry goes back into the outbox and
+     * the record returns to pending. Nothing about the journal is lost. */
+    function retryAnchor(hash) {
+      var record = journal.get(hash);
+      if (!record || !record.entry) {
+        return;
+      }
+      var sync = record.sync || {};
+      if (sync.state !== "failed" && sync.state !== "refused") {
+        return;
+      }
+      queue.enqueue(record.entry);
+      journal.markPending(hash);
+      state.anchorNotice = "Re-queued the sealed entry for a fresh anchor.";
+      render();
+    }
+
+    async function exportBackup() {
+      if (state.backupBusy) {
+        return;
+      }
+      var pass = document.getElementById("backup-pass");
+      var pass2 = document.getElementById("backup-pass2");
+      state.backupError = null;
+      state.backupNotice = "";
+      if (!root.VickreyBackup) {
+        state.backupError = "The backup module failed to load.";
+        render();
+        return;
+      }
+      if (!pass.value || pass.value !== pass2.value) {
+        state.backupError = "The passphrases do not match.";
+        render();
+        return;
+      }
+      state.backupBusy = true;
+      render();
+      try {
+        var envelope = await root.VickreyBackup.encryptBackup(
+          root.localStorage,
+          pass.value,
+        );
+        downloadJson(
+          "vickrey-backup-" + new Date().toISOString().slice(0, 10) + ".json",
+          envelope,
+        );
+        state.backupNotice =
+          "Encrypted backup downloaded. The passphrase is the only key to it.";
+      } catch (err) {
+        state.backupError = err instanceof Error ? err.message : String(err);
+      } finally {
+        state.backupBusy = false;
+        render();
+      }
+    }
+
+    async function importBackup() {
+      if (state.backupBusy) {
+        return;
+      }
+      var fileInput = document.getElementById("backup-file");
+      var pass = document.getElementById("restore-pass");
+      var file = fileInput && fileInput.files && fileInput.files[0];
+      state.backupError = null;
+      state.backupNotice = "";
+      if (!root.VickreyBackup) {
+        state.backupError = "The backup module failed to load.";
+        render();
+        return;
+      }
+      var consent = document.getElementById("restore-consent");
+      if (!file) {
+        state.backupError = "Choose a backup file first.";
+        render();
+        return;
+      }
+      if (!consent || !consent.checked) {
+        state.backupError =
+          "Confirm you understand the restore replaces this device's key.";
+        render();
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        state.backupError = "That file is larger than 10 MB — not a backup.";
+        render();
+        return;
+      }
+      state.backupBusy = true;
+      state.restoring = true;
+      render();
+      try {
+        var text = await file.text();
+        var envelope = JSON.parse(text);
+        await root.VickreyBackup.restoreBackup(
+          root.localStorage,
+          envelope,
+          pass.value,
+        );
+        /* The in-memory keys and journal no longer match storage — reload
+         * so the page mounts exactly what was restored. */
+        toast("Backup restored — reloading");
+        root.setTimeout(function () {
+          root.location.reload();
+        }, 400);
+      } catch (err) {
+        state.backupBusy = false;
+        state.restoring = false;
+        state.backupError = err instanceof Error ? err.message : String(err);
+        render();
+      }
     }
 
     /* ---------------------------------------------------------------- seed */
@@ -2183,6 +2699,139 @@
       root.location.reload();
     }
 
+    /* ------------------------------------------------------- anchor service */
+
+    /* Startup capability probe: names the service, its mode and its chain,
+     * or says plainly that nothing answered. A failed probe is shown; the
+     * client never quietly reroutes to the public commons. */
+    async function probeZanchor() {
+      try {
+        var response = await root.fetch(
+          trimUrl(settings.zanchorUrl) + "/health",
+          { cache: "no-store" },
+        );
+        var body = await response.json();
+        if (!response.ok) {
+          throw new Error(
+            (body && body.detail) ||
+              "anchor service returned " + response.status,
+          );
+        }
+        /* "online" means the service AND its node, on a named chain — a
+         * service that answers with a dead node is not a working anchor. */
+        if (
+          !body ||
+          body.node !== "ok" ||
+          ["main", "testnet", "regtest"].indexOf(body.network) === -1
+        ) {
+          throw new Error(
+            "anchor service reports node " +
+              ((body && body.node) || "unknown") +
+              " on " +
+              ((body && body.network) || "unknown network"),
+          );
+        }
+        state.zanchorHealth = body;
+        state.zanchorError = null;
+      } catch (err) {
+        state.zanchorHealth = null;
+        state.zanchorError =
+          "Anchor service did not answer at " +
+          settings.zanchorUrl +
+          " (" +
+          (err instanceof Error ? err.message : String(err)) +
+          "). Shielded anchoring is offline — nothing was switched to public mode.";
+      }
+      render(null, true);
+    }
+
+    /* Refresh pending shielded receipts by id (~3s) so a record moves
+     * queued -> broadcast -> confirmed on its own, and a delayed node-side
+     * failure surfaces as a retryable failure instead of hanging forever.
+     * Network errors get a bounded number of retries, then the receipt is
+     * left at its last reported state. */
+    var refreshInFlight = false;
+    async function refreshReceipts() {
+      if (refreshInFlight || state.restoring) {
+        return;
+      }
+      refreshInFlight = true;
+      try {
+        if (!state.restoring) {
+          await refreshReceiptsOnce();
+        }
+      } finally {
+        refreshInFlight = false;
+      }
+    }
+    async function refreshReceiptsOnce() {
+      var records = journal.list();
+      var changed = false;
+      for (var i = 0; i < records.length; i++) {
+        var sync = records[i].sync || {};
+        if (sync.state !== "anchored" || sync.mode !== "shielded") {
+          continue;
+        }
+        if (sync.status !== "queued" && sync.status !== "broadcast") {
+          continue;
+        }
+        var rid = sync.receipt_id;
+        if (!rid || (state.receiptErrors[rid] || 0) >= 8) {
+          continue;
+        }
+        try {
+          var response = await root.fetch(
+            trimUrl(settings.zanchorUrl) +
+              "/receipts/" +
+              encodeURIComponent(rid),
+            { cache: "no-store" },
+          );
+          var row = await response.json();
+          /* A restore may have started while this request was in flight —
+             applying its result now would overwrite freshly restored state. */
+          if (state.restoring) {
+            return;
+          }
+          if (!response.ok) {
+            throw new Error(
+              (row && row.detail) || "zanchor returned " + response.status,
+            );
+          }
+          delete state.receiptErrors[rid];
+          if (row.status === "failed") {
+            journal.markFailed(
+              records[i].entry.hash,
+              row.error || "the anchor operation failed at the node",
+            );
+            changed = true;
+          } else if (
+            row.status !== sync.status ||
+            row.txid !== sync.txid ||
+            row.height !== sync.height
+          ) {
+            /* Same preservation as postShieldedAnchor: the service's mode
+             * ("A"/"B") is kept as anchor_mode; `mode` stays the routing. */
+            row.anchor_mode = row.mode;
+            row.mode = "shielded";
+            journal.markAnchored(records[i].entry.hash, row);
+            changed = true;
+          }
+        } catch (err) {
+          state.receiptErrors[rid] = (state.receiptErrors[rid] || 0) + 1;
+          if (state.receiptErrors[rid] >= 8) {
+            state.anchorNotice =
+              "A receipt could not be refreshed (" +
+              (err instanceof Error ? err.message : String(err)) +
+              "); it stays at its last reported state.";
+            changed = true;
+          }
+        }
+      }
+      if (changed) {
+        render(null, true);
+      }
+    }
+
     /* -------------------------------------------------------------- commons */
 
     /* Ask the commons whether it has a searchable store. If it does not, the
@@ -2201,7 +2850,7 @@
       } catch (err) {
         state.commonsReady = false;
       }
-      render();
+      render(null, true);
     }
 
     /* Recent anchors, not a vector search: the panel asks "who else has
@@ -2251,7 +2900,7 @@
       } catch (err) {
         state.contextReady = false;
       }
-      render();
+      render(null, true);
     }
 
     async function loadContext(hash) {
@@ -2303,7 +2952,17 @@
         render();
         probeCommons();
         probeContext();
+        probeZanchor();
       });
+    root.setInterval(function () {
+      if (
+        (typeof document !== "undefined" && document.hidden) ||
+        state.restoring
+      ) {
+        return;
+      }
+      refreshReceipts();
+    }, 3000);
     render();
   }
 

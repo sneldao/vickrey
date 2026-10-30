@@ -1,5 +1,7 @@
 # Ops — running and hosting Vickrey
 
+> _Current as of 2026-10-30: [STATUS.md](STATUS.md) is the live status table, [DEPLOY_DEMO.md](DEPLOY_DEMO.md) the prepared private deployment, and [DISCLOSURE_DESIGN.md](DISCLOSURE_DESIGN.md) the implemented disclosure contract. Public-ledger sections below are the legacy path._
+
 Everything a builder needs: the three hosting shapes, deploying the ledger,
 the failure modes we already hit so you don't hit them blind, seeding, and
 tests. Product story and honest status live elsewhere —

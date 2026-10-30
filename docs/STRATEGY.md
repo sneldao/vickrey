@@ -1,5 +1,7 @@
 # Strategy — Vickrey: A sealed bid on what you saw
 
+> _Current as of 2026-10-30: [STATUS.md](STATUS.md) is the live status table, [DEPLOY_DEMO.md](DEPLOY_DEMO.md) the prepared private deployment, and [DISCLOSURE_DESIGN.md](DISCLOSURE_DESIGN.md) the implemented disclosure contract. Public-ledger sections below are the legacy path._
+
 **One line:** Identify it offline. Prove it later.
 
 **Milestone 1 (done): Hacktoberfest 2026 — Week 1: Touch Grass.** An

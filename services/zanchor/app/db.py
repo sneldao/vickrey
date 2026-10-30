@@ -32,6 +32,12 @@ CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS disclosure_audit (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_id  TEXT NOT NULL,
+    created_at  TEXT NOT NULL,
+    purpose     TEXT NOT NULL
+);
 """
 
 STATUS_VALUES = ("queued", "broadcast", "confirmed", "failed")
@@ -150,6 +156,25 @@ class Receipts:
                 "SELECT * FROM receipts WHERE status IN ('queued', 'broadcast')"
             ).fetchall()
         return [_row(r) for r in rows]
+
+    # -- disclosure audit (append-only) --------------------------------------
+
+    def audit_disclosure(self, receipt_id: str, purpose: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO disclosure_audit (receipt_id, created_at, purpose)"
+                " VALUES (?,?,?)",
+                (receipt_id, _now(), purpose),
+            )
+            self._conn.commit()
+
+    def disclosure_count(self, receipt_id: str) -> int:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT COUNT(*) AS n FROM disclosure_audit WHERE receipt_id = ?",
+                (receipt_id,),
+            ).fetchone()
+        return int(row["n"])
 
     # -- kv (capability cache) ----------------------------------------------
 

@@ -425,3 +425,35 @@ test("resolveConfig ignores empty overrides and unknown keys", () => {
   assert.deepEqual(field.resolveConfig(base, "?ledger=   "), base);
   assert.deepEqual(field.resolveConfig(undefined, ""), {});
 });
+
+test("the service's anchor mode is preserved beside the routing word", () => {
+  const journal = require("./journal.js");
+  const j = journal.createJournal();
+  const e = entry();
+  j.record(e);
+  // What postShieldedAnchor produces: routing mode "shielded", service mode
+  // kept as anchor_mode.
+  j.markAnchored(e.hash, {
+    receipt_id: "rec_x",
+    status: "broadcast",
+    mode: "shielded",
+    anchor_mode: "B",
+    shielded: true,
+    txid: "t1",
+    height: 7,
+  });
+  const sync = j.get(e.hash).sync;
+  assert.equal(sync.mode, "shielded");
+  assert.equal(sync.anchor_mode, "B");
+  assert.equal(sync.status, "broadcast");
+
+  // A delayed node-side failure is marked failed with the binding kept,
+  // and the sealed entry survives for an explicit retry.
+  j.markFailed(e.hash, "operation failed at the node");
+  const failed = j.get(e.hash).sync;
+  assert.equal(failed.state, "failed");
+  assert.equal(failed.receipt_id, "rec_x");
+  assert.equal(failed.anchor_mode, "B");
+  j.markPending(e.hash);
+  assert.equal(j.get(e.hash).sync.state, "pending");
+});

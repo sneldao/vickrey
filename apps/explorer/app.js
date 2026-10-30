@@ -26,10 +26,13 @@
   var FILTERS = [
     { id: "ALL", label: "All" },
     { id: "VERIFIED", label: "Verified" },
+    { id: "CONFIRMED", label: "Confirmed" },
     { id: "PENDING", label: "Pending" },
     { id: "PAYLOAD_MISMATCH", label: "Mismatch" },
     { id: "NOT_SOLID", label: "Not solid" },
   ];
+
+  var KNOWN_NETWORKS = ["main", "testnet", "regtest"];
 
   /* The board speaks ledger jargon, so the board carries its own glossary.
    * One entry per term a first-time reader meets, in plain language and with
@@ -43,7 +46,12 @@
     {
       term: "Verified",
       definition:
-        "The application copy still matches the anchored block, byte for byte.",
+        "The application copy still matches the anchored block, byte for byte. For a shielded anchor, the anchor service additionally read the commitment back from the transaction's encrypted memo.",
+    },
+    {
+      term: "Confirmed",
+      definition:
+        "The transaction exists at the receipt's height, but no encrypted-memo check tied it to this commitment — the binding rests on the service's own records.",
     },
     {
       term: "Mismatch",
@@ -371,6 +379,8 @@
     switch (status) {
       case "VERIFIED":
         return "VERIFIED";
+      case "CONFIRMED":
+        return "CONFIRMED";
       case "PENDING":
         return "PENDING";
       case "PAYLOAD_MISMATCH":
@@ -399,7 +409,7 @@
     if (text === "NOT_SOLID" || text === "NOTSOLID") {
       return "NOT_SOLID";
     }
-    if (text === "VERIFIED" || text === "PENDING") {
+    if (text === "VERIFIED" || text === "PENDING" || text === "CONFIRMED") {
       return text;
     }
     return "ALL";
@@ -518,19 +528,122 @@
 
   /* ------------------------------------------------------------- shielded */
 
-  /* A shielded anchor's verdict. The receipt says what the verifier holds;
-   * the chain check says what anyone can confirm. VERIFIED needs both — a
-   * receipt nobody has checked against the chain is only PENDING, and a
-   * receipt the chain contradicts is a MISMATCH. */
-  function shieldedState(receipt, chain) {
+  /* A shielded anchor's verdict, in three honest tiers. VERIFIED is the
+   * strong claim and needs all of it: the receipt confirmed, the chain
+   * check agreeing on txid, height and confirmations, AND a fresh service
+   * verification (read from the service wallet) whose fields match this
+   * receipt and whose two booleans are true. CONFIRMED is what remains
+   * when the transaction checks out but no memo proof ties it to the
+   * commitment — the service's own binding, honestly labelled. A service
+   * answer that contradicts the receipt is a MISMATCH; no answer yet is
+   * PENDING. */
+  function safePositiveInt(value) {
+    return (
+      typeof value === "number" && Number.isSafeInteger(value) && value >= 1
+    );
+  }
+
+  /* The coherent final check for a service verification: every binding
+   * field, the source, the binding kind, a known network, and both
+   * booleans. Anything less is not a memo proof. */
+  function disclosureVerificationMatches(receipt, verification) {
+    if (!receipt || !verification) {
+      return false;
+    }
+    return (
+      verification.receipt_id === receipt.receipt_id &&
+      verification.txid === receipt.txid &&
+      verification.commitment === receipt.commitment &&
+      safePositiveInt(verification.height) &&
+      verification.height === receipt.height &&
+      safePositiveInt(verification.confirmations) &&
+      verification.transaction_verified === true &&
+      verification.commitment_verified === true &&
+      verification.verification_source === "service_wallet" &&
+      verification.binding === "encrypted_memo" &&
+      KNOWN_NETWORKS.indexOf(verification.network) !== -1
+    );
+  }
+
+  /* A shielded anchor's verdict, in three honest tiers. VERIFIED is the
+   * strong claim and needs all of it: the receipt confirmed, the chain
+   * check agreeing on txid, height and confirmations, AND a fresh service
+   * verification (read from the service wallet) whose fields match this
+   * receipt — for a mode-B shielded transaction — and whose two booleans
+   * are true. CONFIRMED is what remains when the transaction checks out
+   * but no memo proof ties it to the commitment — the service's own
+   * binding, honestly labelled. A service answer that contradicts the
+   * receipt is a MISMATCH; no answer yet is PENDING. */
+  function shieldedState(receipt, chain, verification) {
     if (!receipt || !receipt.txid) {
       return "PENDING";
     }
     if (chain && chain.exists === false) {
       return "PAYLOAD_MISMATCH";
     }
-    if (receipt.status === "confirmed" && chain && chain.exists === true) {
+    if (chain && chain.exists === true) {
+      if (chain.txid !== receipt.txid) {
+        return "PAYLOAD_MISMATCH";
+      }
+      if (
+        safePositiveInt(chain.height) &&
+        receipt.height != null &&
+        chain.height !== receipt.height
+      ) {
+        return "PAYLOAD_MISMATCH";
+      }
+    }
+    if (verification) {
+      if (
+        (verification.receipt_id &&
+          verification.receipt_id !== receipt.receipt_id) ||
+        (verification.txid && verification.txid !== receipt.txid) ||
+        (verification.commitment &&
+          verification.commitment !== receipt.commitment) ||
+        (safePositiveInt(verification.height) &&
+          receipt.height != null &&
+          verification.height !== receipt.height) ||
+        verification.reason === "memo_mismatch"
+      ) {
+        return "PAYLOAD_MISMATCH";
+      }
+    }
+    var confirmed =
+      receipt.status === "confirmed" &&
+      chain &&
+      chain.exists === true &&
+      chain.txid === receipt.txid &&
+      receipt.height != null &&
+      chain.height === receipt.height &&
+      safePositiveInt(chain.confirmations);
+    if (!confirmed) {
+      return "PENDING";
+    }
+    if (!verification) {
+      return "PENDING";
+    }
+    if (
+      disclosureVerificationMatches(receipt, verification) &&
+      receipt.mode === "B" &&
+      receipt.shielded === true
+    ) {
       return "VERIFIED";
+    }
+    /* An unchecked, unsourced or unknown-network answer is not a fact at
+     * all — the row stays pending. Only a coherent transaction-verified
+     * answer lifts it to CONFIRMED. */
+    if (
+      verification.transaction_verified === true &&
+      verification.receipt_id === receipt.receipt_id &&
+      verification.txid === receipt.txid &&
+      verification.commitment === receipt.commitment &&
+      safePositiveInt(verification.height) &&
+      verification.height === receipt.height &&
+      safePositiveInt(verification.confirmations) &&
+      verification.verification_source === "service_wallet" &&
+      KNOWN_NETWORKS.indexOf(verification.network) !== -1
+    ) {
+      return "CONFIRMED";
     }
     return "PENDING";
   }
@@ -538,7 +651,7 @@
   /* A shielded receipt shaped like a timeline row (docs/ZANCHOR_API.md). It
    * carries the receipt and nothing else — there is no payload to leak,
    * because the anchor never had one. */
-  function shieldedMessage(receipt, chain) {
+  function shieldedMessage(receipt, chain, verification) {
     receipt = receipt || {};
     return {
       /* `zanchor` says where this row came from; `shielded` is the service's
@@ -553,8 +666,9 @@
             : null,
       receipt: receipt,
       chain: chain || null,
+      verification: verification || null,
       block_id: receipt.txid || receipt.receipt_id || "",
-      status: shieldedState(receipt, chain),
+      status: shieldedState(receipt, chain, verification),
       inserted_at: receipt.anchored_at || "",
       flow_id: "shielded",
       tag: null,
@@ -675,6 +789,7 @@
    * filters. The glossary stays the accessible path: a title is hover-only. */
   var STATUS_TERM = {
     VERIFIED: "Verified",
+    CONFIRMED: "Confirmed",
     PENDING: "Pending",
     PAYLOAD_MISMATCH: "Mismatch",
     NOT_SOLID: "Solid / not solid",
@@ -1008,6 +1123,7 @@
       receiptIds: config.receipts,
       shielded: [],
       shieldedChain: {},
+      shieldedVerification: {},
       shieldedErrors: {},
       filter: normalizeFilter(params.get("status")),
       blockQuery: "",
@@ -1037,6 +1153,7 @@
           return shieldedMessage(
             receipt,
             state.shieldedChain[receipt.txid] || null,
+            state.shieldedVerification[receipt.receipt_id] || null,
           );
         }),
       );
@@ -1240,10 +1357,290 @@
       el("summary", { text: "What do these words mean?" }),
       el("dl", {}, glossaryItems),
     ]);
+
+    /* --------------------------------------------------- shared records */
+    /* Verify a disclosure file someone shared: local JSON, read entirely in
+     * the browser, checked cryptographically here. The file pick alone sends
+     * nothing anywhere — the anchor service is asked only when the user
+     * presses the memo-check button, and always at the configured endpoint,
+     * never at an address found inside the file. */
+    var shared = {
+      status: "idle",
+      error: "",
+      bundle: null,
+      result: null,
+      memo: null,
+      memoError: "",
+      busy: false,
+      gen: 0,
+    };
+    var sharedOut = el("div", { class: "shared-out" });
+    var sharedFile = el("input", {
+      type: "file",
+      id: "shared-record",
+      accept: ".json,application/json",
+      "aria-label": "Choose a shared record file to verify",
+    });
+
+    function fieldRow(label, ok, detail) {
+      return el("li", { class: "check " + (ok ? "pass" : "fail") }, [
+        el("b", { text: ok ? CHECK_WORD.pass : CHECK_WORD.fail }),
+        el("span", {}, [
+          document.createTextNode(label),
+          detail ? el("small", { text: detail }) : null,
+        ]),
+      ]);
+    }
+
+    function renderShared() {
+      var nodes = [];
+      if (shared.error) {
+        nodes.push(
+          el("p", {
+            class: "action-error",
+            role: "alert",
+            text: shared.error,
+          }),
+        );
+      }
+      if (shared.result) {
+        var entry = shared.bundle.entry || {};
+        var payload = entry.payload || {};
+        var rows = [
+          el("li", {}, [
+            el("b", { text: "Species / kind" }),
+            el("span", {
+              text:
+                (payload.species || "unidentified") +
+                " · " +
+                (payload.kind || "other"),
+            }),
+          ]),
+          el("li", {}, [
+            el("b", { text: "Recorded" }),
+            el("span", { text: entry.observed_at || "—" }),
+          ]),
+          el("li", {}, [
+            el("b", { text: "Location" }),
+            el("span", {
+              text: entry.location
+                ? entry.location.lat + ", " + entry.location.lon
+                : "not recorded",
+            }),
+          ]),
+          el("li", {}, [
+            el("b", { text: "Commitment" }),
+            el("span", { class: "mono wrap", text: entry.hash || "—" }),
+          ]),
+        ];
+        nodes.push(el("ul", { class: "receipt" }, rows));
+        nodes.push(
+          el("ul", { class: "checklist" }, [
+            fieldRow(
+              "Content — entry hashes to its commitment",
+              true,
+              "Recomputed locally from the shared file.",
+            ),
+            fieldRow(
+              "Signature — verifies under the bundled device key",
+              true,
+              "One entry proves its own seal; it does not establish that the sender's whole chain is intact.",
+            ),
+            fieldRow(
+              "Receipt — names this commitment",
+              true,
+              "The embedded verification is a historical service assertion, not a fresh fact.",
+            ),
+          ]),
+        );
+        if (shared.memoError) {
+          nodes.push(
+            el("p", {
+              class: "action-error",
+              role: "alert",
+              text: shared.memoError,
+            }),
+          );
+        }
+        if (shared.memo) {
+          var receipt = shared.bundle.receipt || {};
+          var whole = disclosureVerificationMatches(receipt, shared.memo);
+          var checks = [
+            fieldRow(
+              "Receipt id matches the file",
+              shared.memo.receipt_id === receipt.receipt_id,
+            ),
+            fieldRow(
+              "Transaction id matches the file",
+              shared.memo.txid === receipt.txid,
+            ),
+            fieldRow(
+              "Commitment matches the file",
+              shared.memo.commitment === receipt.commitment,
+            ),
+            fieldRow(
+              "Height matches the file",
+              shared.memo.height === receipt.height &&
+                shared.memo.height != null,
+            ),
+            fieldRow(
+              "Binding and source",
+              shared.memo.binding === "encrypted_memo" &&
+                shared.memo.verification_source === "service_wallet",
+            ),
+            fieldRow(
+              "Network known",
+              KNOWN_NETWORKS.indexOf(shared.memo.network) !== -1,
+              shared.memo.network || "",
+            ),
+            fieldRow(
+              "Commitment verified by anchor service",
+              whole,
+              whole
+                ? "Memo read using the service wallet; not independent verification."
+                : "The service did not return a coherent memo proof for this receipt.",
+            ),
+          ];
+          nodes.push(el("ul", { class: "checklist" }, checks));
+          nodes.push(
+            el("p", {
+              class: "hint",
+              text:
+                "Checked against the configured anchor service (" +
+                (shared.memo.network || "unknown network") +
+                "). A shared file is not a trustless proof: the memo check ran on the anchor service's own wallet.",
+            }),
+          );
+        }
+        nodes.push(
+          el("button", {
+            type: "button",
+            class: "link-btn",
+            text: shared.busy
+              ? "Checking…"
+              : shared.memo
+                ? "Check again with the anchor service"
+                : "Check memo with configured anchor service",
+            disabled: shared.busy,
+            onClick: checkSharedMemo,
+          }),
+        );
+      }
+      sharedOut.replaceChildren.apply(sharedOut, nodes);
+    }
+
+    sharedFile.addEventListener("change", function () {
+      var file = sharedFile.files && sharedFile.files[0];
+      /* A new selection invalidates every outstanding async result — a
+       * slow verify from an older file must never land on this one. */
+      var gen = ++shared.gen;
+      shared.busy = false;
+      shared.error = "";
+      shared.bundle = null;
+      shared.result = null;
+      shared.memo = null;
+      shared.memoError = "";
+      if (!file) {
+        renderShared();
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        shared.error = "That file is larger than 10 MB — not a disclosure.";
+        renderShared();
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = async function () {
+        var bundle;
+        try {
+          bundle = JSON.parse(String(reader.result || ""));
+        } catch (error) {
+          if (gen !== shared.gen) {
+            return;
+          }
+          shared.error = "The file is not valid JSON.";
+          renderShared();
+          return;
+        }
+        try {
+          if (!window.VickreyDisclosure) {
+            throw new Error("the disclosure module failed to load");
+          }
+          var result = await window.VickreyDisclosure.verifyDisclosure(bundle);
+          if (gen !== shared.gen) {
+            return;
+          }
+          shared.result = result;
+          shared.bundle = bundle;
+        } catch (error) {
+          if (gen !== shared.gen) {
+            return;
+          }
+          shared.error = error instanceof Error ? error.message : String(error);
+        }
+        renderShared();
+      };
+      reader.onerror = function () {
+        shared.error = "The file could not be read.";
+        renderShared();
+      };
+      reader.readAsText(file);
+    });
+
+    async function checkSharedMemo() {
+      if (!shared.bundle || !shared.result) {
+        return;
+      }
+      var gen = shared.gen;
+      shared.busy = true;
+      shared.memo = null;
+      shared.memoError = "";
+      renderShared();
+      try {
+        var body = await requestJson(
+          apiUrl(
+            state.zanchorUrl,
+            "/receipts/" +
+              encodeURIComponent(shared.bundle.receipt.receipt_id) +
+              "/verify",
+          ),
+          { cache: "no-store" },
+        );
+        if (gen !== shared.gen) {
+          return;
+        }
+        shared.memo = body;
+      } catch (error) {
+        if (gen !== shared.gen) {
+          return;
+        }
+        shared.memo = null;
+        shared.memoError =
+          "The configured anchor service did not answer: " +
+          (error instanceof Error ? error.message : String(error));
+      } finally {
+        if (gen === shared.gen) {
+          shared.busy = false;
+          renderShared();
+        }
+      }
+    }
+
+    var disclosurePanel = el("details", { class: "disclosure" }, [
+      el("summary", { text: "Verify a shared record" }),
+      el("p", {
+        class: "hint",
+        text: "Pick a disclosure file someone sent you. It is verified entirely on this device first — nothing is sent when you choose the file.",
+      }),
+      sharedFile,
+      sharedOut,
+    ]);
+
     root.append(
       toolbar,
       filterRow,
       glossary,
+      disclosurePanel,
       el("div", { class: "workspace" }, [timeline, detail]),
       hint,
       toast,
@@ -1366,6 +1763,23 @@
         dot.classList.add("bad");
         healthText.textContent =
           "Ledger read failed (" + state.error + "). Showing the last docket.";
+      } else if (state.health && state.health.zanchor) {
+        if (state.health.body) {
+          dot.classList.add("ok");
+          healthText.textContent =
+            "Anchor service answering at " +
+            state.zanchorUrl +
+            " · " +
+            (state.health.body.network || "unknown network") +
+            ".";
+        } else {
+          dot.classList.add("bad");
+          healthText.textContent =
+            "Anchor service did not answer at " +
+            state.zanchorUrl +
+            ". " +
+            (state.error || "");
+        }
       } else {
         dot.classList.add("ok");
         var hornet =
@@ -1421,6 +1835,7 @@
         selected: state.selectedId,
         shielded: state.shielded,
         shieldedChain: state.shieldedChain,
+        shieldedVerification: state.shieldedVerification,
         shieldedErrors: state.shieldedErrors,
         error: state.error,
         notice: state.notice,
@@ -1465,7 +1880,12 @@
         timeline.append(skeleton);
         return;
       }
-      if (state.error && !state.messages.length && !state.shielded.length) {
+      if (
+        state.error &&
+        !state.messages.length &&
+        !state.shielded.length &&
+        !state.receiptIds.length
+      ) {
         timeline.append(
           el("p", {
             class: "empty",
@@ -1784,7 +2204,7 @@
       var shielded = message.shielded;
       var pitch =
         shielded === true
-          ? "The public chain proves that a transaction exists at a height — and reveals nothing else. No species, no area, no observer, no purpose. This checklist is not short of checks; there is nothing on the chain to check against."
+          ? "The public chain proves that a transaction exists at a height — and reveals nothing else. No species, no area, no observer, no purpose. It does not hide that the transaction exists or when it landed; the record's capture time stays off the chain and is not proven by it."
           : shielded === false
             ? "This anchor is not shielded. The transaction is public — its amount, its addresses, its block time — and none of that names a species, an area, or an observer. What links this transaction to an observation is the receipt, which the verifier holds."
             : "The service did not report whether this transaction is shielded, so this page claims nothing about it. The receipt is still the only link to the observation.";
@@ -1832,7 +2252,7 @@
           el("h3", { text: "What anyone can check" }),
           el("p", {
             class: "hint",
-            text: "Proof of existence: the transaction id sits at a block height. Anyone can run this check, and it answers nothing about the observation.",
+            text: "Proof of existence: the transaction id sits at a block height. Anyone can run this check, and it answers nothing about the observation. The chain does not hide that the transaction exists, when it landed, or its fee.",
           }),
           el("div", { class: "links" }, [
             el("button", {
@@ -1852,7 +2272,7 @@
                 })
               : null,
           ]),
-          chain ? renderChainCheck(chain, shielded) : null,
+          chain ? renderChainCheck(chain, shielded, message) : null,
         ]),
         el("section", { class: "shield-block" }, [
           el("h3", { text: "What the verifier holds" }),
@@ -1871,37 +2291,102 @@
           ),
           el("p", {
             class: "hint",
-            text: "The verifier holds this binding and can disclose one anchor at a time through the viewing key — to a researcher or a court, and to nobody else.",
+            text: "The verifier holds this binding and can disclose one anchor at a time — to a researcher or a court, and to nobody else. Viewing and spending keys are never exported.",
           }),
         ]),
       ]);
     }
 
-    function renderChainCheck(chain, shielded) {
+    /* Three separate claims, three separate rows: the transaction's own
+     * existence, whether the commitment was verified against the memo, and
+     * who did that verification. Collapsing them into one VERIFIED is how
+     * "receipt exists" used to pretend to be "commitment proven". */
+    function renderChainCheck(chain, shielded, message) {
+      var verification = (message && message.verification) || null;
+      var rows = [];
       if (chain && chain.exists) {
-        return el("ul", { class: "checklist" }, [
+        rows.push(
           el("li", { class: "check pass" }, [
             el("b", { text: CHECK_WORD.pass }),
+            el("span", {}, [
+              document.createTextNode(
+                "Transaction — exists at height " +
+                  chain.height +
+                  (chain.confirmations == null
+                    ? ""
+                    : " · " + chain.confirmations + " confirmations"),
+              ),
+              el("small", {
+                text:
+                  shielded === false
+                    ? "It is transparent — what it anchors is not on the chain."
+                    : "The chain shows a transaction, its time and its fee — nothing about what it anchors.",
+              }),
+            ]),
+          ]),
+        );
+      } else {
+        rows.push(
+          el("li", { class: "check fail" }, [
+            el("b", { text: CHECK_WORD.fail }),
             el("span", {
-              text:
-                "The transaction exists at height " +
-                chain.height +
-                (chain.confirmations == null
-                  ? ""
-                  : " · " + chain.confirmations + " confirmations") +
-                (shielded === false
-                  ? ". It is transparent — what it anchors is not on the chain."
-                  : ". Nothing else is on the chain."),
+              text: "Transaction — the node does not know this transaction.",
             }),
           ]),
-        ]);
+        );
       }
-      return el("ul", { class: "checklist" }, [
-        el("li", { class: "check fail" }, [
-          el("b", { text: CHECK_WORD.fail }),
-          el("span", { text: "The node does not know this transaction." }),
-        ]),
-      ]);
+      if (verification) {
+        var memoState = "wait";
+        var memoLabel = "Not checked";
+        var memoDetail = "";
+        if (verification.commitment_verified === true) {
+          memoState = "pass";
+          memoLabel = "Commitment verified by anchor service";
+          memoDetail =
+            "Mode B: the encrypted memo in this transaction decodes to this receipt's commitment.";
+        } else if (verification.reason === "memo_mismatch") {
+          memoState = "fail";
+          memoLabel = "Memo does not match this commitment";
+          memoDetail =
+            "The transaction exists but its memo does not decode to this commitment.";
+        } else if (verification.transaction_verified === true) {
+          memoState = "unknown";
+          memoLabel =
+            verification.binding === "verifier_record" ||
+            verification.reason === "verifier_record_only"
+              ? "Transaction confirmed · service-held binding"
+              : "Transaction confirmed · no memo proof";
+          memoDetail =
+            "Mode A anchors carry no memo: the commitment-to-transaction binding rests on the service's own records.";
+        }
+        rows.push(
+          el("li", { class: "check " + memoState }, [
+            el("b", { text: CHECK_WORD[memoState] || memoState }),
+            el("span", {}, [
+              document.createTextNode("Commitment — " + memoLabel),
+              memoDetail ? el("small", { text: memoDetail }) : null,
+            ]),
+          ]),
+        );
+        rows.push(
+          el("li", { class: "check unknown" }, [
+            el("b", { text: CHECK_WORD.unknown }),
+            el("span", {}, [
+              document.createTextNode(
+                "Verification source — " +
+                  (verification.verification_source === "service_wallet"
+                    ? "the anchor service's own wallet"
+                    : "unstated") +
+                  (verification.network ? " · " + verification.network : ""),
+              ),
+              el("small", {
+                text: "Memo read using the service wallet; not independent verification.",
+              }),
+            ]),
+          ]),
+        );
+      }
+      return el("ul", { class: "checklist" }, rows);
     }
 
     function highlightedFlag(message) {
@@ -2142,6 +2627,41 @@
       if (gen !== loadGen) {
         return;
       }
+      /* Receipt-only visit (?receipt=…): the page needs the anchor
+       * service, not the public ledger — don't call it at all. */
+      if (state.receiptIds.length) {
+        try {
+          var zhealth = await requestJson(apiUrl(state.zanchorUrl, "/health"), {
+            cache: "no-store",
+          });
+          if (gen !== loadGen) {
+            return;
+          }
+          state.health = { zanchor: true, body: zhealth };
+          state.lastChecked = Date.now();
+          state.error = null;
+        } catch (error) {
+          if (gen !== loadGen) {
+            return;
+          }
+          state.health = { zanchor: true, body: null };
+          state.error = error instanceof Error ? error.message : String(error);
+        } finally {
+          if (gen === loadGen) {
+            state.loaded = true;
+            var allReceipts = rows();
+            if (
+              !allReceipts.some(function (message) {
+                return message.block_id === state.selectedId;
+              })
+            ) {
+              state.selectedId = chooseInitial(allReceipts);
+            }
+            renderBoard();
+          }
+        }
+        return;
+      }
       try {
         var healthUrl = apiUrl(state.ledgerUrl, "/health");
         var listUrl = apiUrl(state.ledgerUrl, "/messages?limit=500");
@@ -2285,21 +2805,51 @@
       state.notice = "";
       state.actionError = "";
       renderBoard();
+      /* A recheck starts clean: the previous answer is dropped first so a
+       * failed fetch can never leave a stale VERIFIED on screen. */
+      delete state.shieldedChain[receipt.txid];
+      delete state.shieldedVerification[receipt.receipt_id];
       try {
-        var body = await requestJson(
-          apiUrl(
-            state.zanchorUrl,
-            "/chain/tx/" + encodeURIComponent(receipt.txid),
+        var pair = await Promise.all([
+          requestJson(
+            apiUrl(
+              state.zanchorUrl,
+              "/chain/tx/" + encodeURIComponent(receipt.txid),
+            ),
+            { cache: "no-store" },
           ),
-        );
-        state.shieldedChain[receipt.txid] = body;
+          // A service without the verify endpoint still answers the public
+          // existence check; the missing answer leaves the row pending.
+          requestJson(
+            apiUrl(
+              state.zanchorUrl,
+              "/receipts/" + encodeURIComponent(receipt.receipt_id) + "/verify",
+            ),
+            { cache: "no-store" },
+          ).then(
+            function (body) {
+              return body;
+            },
+            function () {
+              return null;
+            },
+          ),
+        ]);
+        state.shieldedChain[receipt.txid] = pair[0];
+        if (pair[1]) {
+          state.shieldedVerification[receipt.receipt_id] = pair[1];
+        }
         state.notice =
-          body && body.exists
-            ? "Public check: the transaction exists at height " +
-              body.height +
-              ". Nothing else is on the chain."
+          pair[0] && pair[0].exists
+            ? "The transaction exists at height " +
+              pair[0].height +
+              ". " +
+              (pair[1] && pair[1].commitment_verified
+                ? "The anchor service also read the commitment back from the encrypted memo."
+                : "No memo proof ties it to this commitment — the binding rests on the service's records.")
             : "Public check: the node does not know this transaction.";
       } catch (error) {
+        // The recheck failed: both answers are cleared above, nothing stale.
         state.actionError =
           error instanceof Error ? error.message : String(error);
       } finally {
@@ -2371,6 +2921,7 @@
     blockExplorerUrl: blockExplorerUrl,
     changedKeys: changedKeys,
     checklist: checklist,
+    disclosureVerificationMatches: disclosureVerificationMatches,
     chooseInitial: chooseInitial,
     dashboardBlockUrl: dashboardBlockUrl,
     groupByFlow: groupByFlow,

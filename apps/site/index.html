@@ -45,14 +45,13 @@
     <span>A</span> <span>field</span> <span>record</span> <span>can</span> <span>change.</span><br>
     <em><span>The</span> <span>seal</span> <span>shouldn't.</span></em>
   </h1>
-  <p class="lede">
-    Across emissions audits, clinical cold-chains, and biodiversity surveys, offline field records face the same trap: <strong>keep them private and anyone can rewrite them; publish them and you leak what is inside.</strong> Vickrey seals observations at capture on the device and anchors only a cryptographic commitment — in public or inside Zcash’s shielded pool.
-  </p>
+  <p>Sensitive field observations need evidence without a public map of who saw what. Vickrey signs records on your device and anchors their commitments in encrypted Zcash memos. Share one record when you choose; check its signature locally and its memo through the anchor service.</p>
   <div class="cta-row">
     <a class="btn btn-wax" href="field/">Launch the Field Client →</a>
     <a class="btn btn-notary" href="explorer/">Inspect the Evidence Board</a>
     <a class="btn btn-ghost" href="#playground">Try the interactive seal below</a>
   </div>
+  <p class="section-lede">Shielded demo: private regtest chain, no real ZEC. The project operates the chain and checks memos with its wallet. On-phone offline identification is planned.</p>
   <div class="loop-strip" aria-label="90-second interactive loop">
     <div class="loop-step">
       <span class="mono loop-kicker">STEP 01 · CAPTURE</span>
@@ -67,7 +66,7 @@
     <div class="loop-step">
       <span class="mono loop-kicker">STEP 03 · ANCHOR &amp; VERIFY</span>
       <strong>Public commons or Shielded Zcash</strong>
-      <span>Prove when it was sealed without leaking what</span>
+      <span>Bind a private commitment to a block height</span>
     </div>
   </div>
 </header>
@@ -79,6 +78,7 @@
       <div class="wb-title-group">
         <span class="mono wb-eyebrow">INTERACTIVE MECHANISM PLAYGROUND</span>
         <h2 id="wb-title">Test the seal &amp; inspect what leaves the device</h2>
+        <p class="section-lede">Illustration — no transaction is sent from this panel. Open the Field Client for the regtest flow.</p>
       </div>
       <div class="wb-controls">
         <div class="control-group" role="group" aria-label="Field domain">
@@ -125,7 +125,7 @@
         <div class="wb-actions" role="group" aria-label="Simulate record lifecycle">
           <button type="button" class="act-btn danger" id="wb-btn-tamper">1. Tamper with queued copy</button>
           <button type="button" class="act-btn" id="wb-btn-restore" disabled>2. Restore sealed copy</button>
-          <a class="act-btn primary" id="wb-open-field" href="field/?anchor=shielded">Run this live in Field Client →</a>
+          <a class="act-btn primary" id="wb-open-field" href="field/?anchor=shielded&minDelay=0&jitter=0">Try the shielded demo →</a>
         </div>
         <p class="wb-feedback mono" id="wb-feedback">
           The device signature and hash chain hold. In Shielded Mode, only the 32-byte commitment leaves the device.
@@ -166,7 +166,7 @@
     <p class="kicker mono">THE MECHANISM &amp; THE WEDGE</p>
     <h2>One primitive across edge industries. Starting with the largest open commons on Earth.</h2>
     <p class="section-lede">
-      William Vickrey’s <strong>sealed-bid auction</strong> (Nobel Prize, 1996) proved that committing to a value in secret makes honesty the dominant strategy. We point the same cryptographic commitment scheme at field data captured offline.
+      The name borrows the idea of a sealed bid. Here, a signature and a cryptographic commitment make changes detectable against the sealed record; they do not prove that an observation is true.
     </p>
   </div>
 
@@ -174,7 +174,7 @@
     <article class="phase-card spotlight-card">
       <span class="phase-no mono">01 · IDENTIFY</span>
       <h3>Open-weight suggestion</h3>
-      <p>An open-weight model suggests what you captured. Open weights are load-bearing: inspectable, zero per-call cost, and built for off-grid use. The model only suggests; <strong>the human decides</strong>.</p>
+      <p>An open-weight model can suggest an identification through a reachable server. The observer confirms or corrects it. Offline, on-phone model execution is planned.</p>
     </article>
     <article class="phase-card spotlight-card">
       <span class="phase-no mono">02 · PROVE</span>
@@ -184,7 +184,7 @@
     <article class="phase-card spotlight-card">
       <span class="phase-no mono">03 · SHIELD</span>
       <h3>Anchor commitments, not raw data</h3>
-      <p>Photos, notes, and exact coordinates stay on the device. In shielded mode, the anchor is a constant-amount Zcash transaction — proving <em>when</em> a seal was made without revealing <em>what</em>, <em>where</em>, or <em>by whom</em>.</p>
+      <p>The default anchor carries a commitment in an encrypted Zcash memo. Photos and coordinates stay off the public chain. A recipient can check a shared record's signature locally and ask the service to check its memo; this does not prove capture time.</p>
     </article>
     <article class="phase-card spotlight-card">
       <span class="phase-no mono">04 · CONTEXT</span>
@@ -274,10 +274,10 @@
   <div class="tab-panel" id="panel-status" role="tabpanel" aria-labelledby="tab-status" hidden>
     <div class="truth" id="status">
       <div class="col truth-card">
-        <h3 class="ok">Live &amp; verified end-to-end</h3>
+        <h3 class="ok">Implemented field workflow</h3>
         <ul>
           <li><strong>The full field loop in your browser:</strong> seal, tamper, <strong>sync refused</strong>, restore, and three <span class="mono">Anchored · VERIFIED</span> records.</li>
-          <li><strong>Shielded Zcash anchor pipeline:</strong> constant-amount note burn (<code class="mono">z_sendmany</code>), encrypted memo mode B, verifier-held receipts with no enumeration endpoint, and duplicate-nullifier replay rejection — verified 33/33 on a live <code class="mono">zcashd v6.20.0</code> regtest node.</li>
+          <li><strong>Shielded memo anchors:</strong> mode B is the default; refused sends do not downgrade. Verification checks transaction id, height, confirmations and the memo. The service database prevents duplicate commitments.</li>
           <li><strong>Human-in-the-loop provenance:</strong> corrections are sealed beside the model’s suggestion so neither can overwrite the other.</li>
           <li><strong>Server-hosted Gemma 3 4B inference:</strong> verified end-to-end over an OpenAI-compatible endpoint.</li>
         </ul>
@@ -294,12 +294,12 @@
         <ul>
           <li><strong>On-phone local model execution:</strong> inference currently uses a reachable server endpoint; on-device WebGPU/GGUF execution is unmeasured.</li>
           <li><strong>Shielded field rewards:</strong> TAZ payout mechanism is designed (<code class="mono">docs/SHIELDED_REWARDS_DESIGN.md</code>), not claimed in the demo.</li>
-          <li><strong>Darwin Core export &amp; viewing-key package export:</strong> specified for research interoperability, not yet wired.</li>
+          <li><strong>Darwin Core export is planned.</strong> Single-record JSON disclosure is implemented; account viewing keys are not exported.</li>
         </ul>
       </div>
     </div>
     <p class="ceiling">
-      <strong>Integrity is not accuracy.</strong> A seal proves a record was not edited after capture. It does not prove the identification was right — that is the model and observer’s job, and the two are kept visibly separate.
+      <strong>Integrity is not accuracy.</strong> Verification detects changes against a sealed commitment; it does not establish capture time or observer identity.
     </p>
   </div>
 
@@ -309,7 +309,7 @@
       <div class="cmd-card">
         <span class="mono cmd-kicker">SHIELDED ZCASH CONTRACT WALK (33 CHECKS)</span>
         <pre class="mono"><code>./scripts/demo_zcash.sh</code></pre>
-        <p>Starts the conformance anchor service and local Explorer, seals a commitment, verifies replay rejection (409) and non-enumeration (404), and prints a live receipt link.</p>
+        <p>Starts a mock service: no transaction or shielded pool is involved. Exercises the API contract and opens the explorer.</p>
       </div>
       <div class="cmd-card">
         <span class="mono cmd-kicker">FULL FIELD CLIENT + TAMPER DEMO</span>
@@ -464,7 +464,7 @@
     elTamperLine.innerHTML = d.tampered;
     elTamperLine.hidden = !wbState.tampered;
     elHash.textContent = "sha256: " + d.hash.slice(0, 8) + "…" + d.hash.slice(-4);
-    elOpenField.href = isShielded ? "field/?anchor=shielded" : "field/";
+    elOpenField.href = isShielded ? "field/?anchor=shielded&minDelay=0&jitter=0" : "field/?anchor=public";
 
     if (wbState.tampered) {
       elNote.setAttribute("data-state", "cracked");

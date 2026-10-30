@@ -147,6 +147,9 @@ class Handler(BaseHTTPRequestHandler):
                     "mode": Settings.mode,
                     "shielded": Settings.shielded,
                     "notes_available": Settings.notes,
+                    # A mock never claims a real chain — clients must not
+                    # treat this network as a real proof.
+                    "network": "mock",
                 },
             )
             return
@@ -155,12 +158,39 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"detail": "not found"})
             return
         if path.startswith("/receipts/"):
-            receipt_id = unquote(path[len("/receipts/") :])
+            rest = unquote(path[len("/receipts/") :])
+            verify = rest.endswith("/verify")
+            receipt_id = rest[: -len("/verify")] if verify else rest
             with LOCK:
                 for anchor in STATE.values():
-                    if anchor["receipt_id"] == receipt_id:
+                    if anchor["receipt_id"] != receipt_id:
+                        continue
+                    if not verify:
                         self._send(200, public_receipt(anchor))
                         return
+                    advance(anchor)
+                    confirmed = anchor["status"] == "confirmed"
+                    # The mock exercises the UI but can never produce a
+                    # real memo proof: network "mock" fails every VERIFIED.
+                    self._send(
+                        200,
+                        {
+                            "receipt_id": receipt_id,
+                            "commitment": anchor["commitment"],
+                            "txid": anchor["txid"],
+                            "height": anchor["height"] if confirmed else None,
+                            "confirmations": 1 if confirmed else None,
+                            "network": "mock",
+                            "transaction_verified": confirmed,
+                            "commitment_verified": False,
+                            "binding": "encrypted_memo"
+                            if anchor["mode"] == "B"
+                            else "verifier_record",
+                            "verification_source": "service_wallet",
+                            "reason": "mock_service_no_memo_proof",
+                        },
+                    )
+                    return
             self._send(404, {"detail": "unknown receipt"})
             return
         if path.startswith("/chain/tx/"):
@@ -192,6 +222,13 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"detail": "not found"})
 
     def do_POST(self) -> None:  # noqa: N802 - http.server naming
+        path = urlparse(self.path).path.rstrip("/")
+        if path.startswith("/receipts/") and path.endswith("/disclosure"):
+            # A mock never has a memo proof — disclosures always refuse.
+            self._send(
+                409, {"detail": "commitment is not verified; nothing to disclose"}
+            )
+            return
         if urlparse(self.path).path.rstrip("/") != "/anchor":
             self._send(404, {"detail": "not found"})
             return

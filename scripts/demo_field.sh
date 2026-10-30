@@ -104,7 +104,7 @@ cat <<EOF
 
 Vickrey field loop is up.
 
-  field client   http://127.0.0.1:${FIELD_PORT}/index.html?ledger=${RELAY}&commons=${LEDGER}
+  field client   http://127.0.0.1:${FIELD_PORT}/index.html?ledger=${RELAY}&commons=${LEDGER}&anchor=public
   anchor relay   ${RELAY}          (stand-in for the Messages API)
   ledger         ${LEDGER}/docs    (CORS: * )
   mock Hornet    ${HORNET}

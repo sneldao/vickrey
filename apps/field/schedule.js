@@ -98,6 +98,10 @@
 
   return {
     DEFAULT_JITTER_MS: DEFAULT_JITTER_MS,
+    DEFAULTS: {
+      minDelayMs: DEFAULT_MIN_DELAY_MS,
+      jitterMs: DEFAULT_JITTER_MS,
+    },
     DEFAULT_MIN_DELAY_MS: DEFAULT_MIN_DELAY_MS,
     anchorTime: anchorTime,
     normalizeOptions: normalizeOptions,

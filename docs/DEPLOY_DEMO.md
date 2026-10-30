@@ -1,10 +1,12 @@
 # Demo deployment runbook — private regtest
 
-Planned host: `https://vickrey.144.202.117.160.sslip.io` (the
-`VICKREY_DEMO_HOST` default in compose). The demo adds three NEW containers
-beside the existing ones — `vickrey-zanchor-test` and
-`vickrey-zcashd-regtest` stay untouched throughout, and pushing `main` only
-republishes the static GitHub Pages site; it changes nothing on the node.
+**Live since 2026-10-30** at `https://vickrey.144.202.117.160.sslip.io` —
+`vickrey-demo-api`, `vickrey-demo-miner` and `vickrey-demo-web` all running;
+the old `vickrey-zanchor-test` / `vickrey-zcashd-regtest` containers are
+unchanged. The runbook below is the record of how it was brought up and how
+to rebuild it. Pushing `main` republishes only the static GitHub Pages site
+(the workflow patches the generated `config.js` to point at this live API);
+it does not deploy or touch the node.
 
 - `vickrey-demo-api` — zanchor mode B, `ZANCHOR_EXPECTED_NETWORK=regtest`
   (the service checks the configured node's reported network before each

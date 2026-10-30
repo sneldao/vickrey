@@ -45,7 +45,10 @@ jobs:
           # The committed explorer/config.js keeps localhost defaults, because
           # the Docker entrypoint rewrites it from EXPLORER_LEDGER_URL for the
           # demo box. The published copy has to talk to the deployed ledger, so
-          # it is patched here and nowhere else.
+          # it is patched here and nowhere else. Committed zanchorUrl stays
+          # "/api" for the combined-host demo; Pages is static-only so the
+          # generated configs point at the live HTTPS endpoint instead. The
+          # public ledger stays a separate legacy target.
           python3 - <<'PY'
           from pathlib import Path
 
@@ -57,6 +60,16 @@ jobs:
           )
           assert patched != text, "explorer config.js: ledgerUrl default not found"
           path.write_text(patched)
+
+          for app in ("field", "explorer"):
+              path = Path(f"_site/{app}/config.js")
+              text = path.read_text()
+              patched = text.replace(
+                  'zanchorUrl: "/api"',
+                  'zanchorUrl: "https://vickrey.144.202.117.160.sslip.io/api"',
+              )
+              assert patched != text, f"{app} config.js: zanchorUrl default not found"
+              path.write_text(patched)
           PY
           echo "published:"; find _site -maxdepth 2 -type f | sort
       - name: Upload artifact

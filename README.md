@@ -8,10 +8,17 @@ check the memo. The shielded demo uses a private regtest chain; it is not a
 mainnet or public-testnet deployment. On-phone, offline identification is
 planned; the current model integration uses a reachable server.
 
-> **Try the field loop locally:** load the sample walk, tamper with a queued
-> copy, watch sync refuse it, restore it. [Deployment instructions](docs/DEPLOY_DEMO.md)
-> describe the combined site + shielded service — prepared but not yet
-> launched. The older GitHub Pages demo below uses the public ledger.
+> **Try the live shielded demo:** [open the field client](https://vickrey.144.202.117.160.sslip.io/field/?anchor=shielded&minDelay=0&jitter=0)
+> (demo timing overrides active — production holds the 30-minute delay),
+> load the sample walk, sync, watch the receipts confirm, then share one
+> record and check its signature locally plus its memo via the anchor
+> service in the explorer.
+> A **sample** anchored receipt is live for inspection:
+> [explorer deep link](https://vickrey.144.202.117.160.sslip.io/explorer/?receipt=rec_f57fb47d49f8420ca5a4e8232cdbed3a)
+> — verified with the service's own wallet on a private regtest chain; not a
+> trustless proof, not real ZEC.
+> [Deployment instructions](docs/DEPLOY_DEMO.md) describe the stack.
+> The GitHub Pages frontend below can use the same live service; public-ledger mode remains an explicit option.
 
 The name borrows the metaphor: **Vickrey** is named for William Vickrey's
 **sealed-bid auction** — committing to a value in secret. Here the commit is
@@ -111,16 +118,17 @@ Want the real model in the loop: run `gemma3:4b` in Ollama and append
 `&endpoint=…&model=gemma3:4b` to the printed URL — [docs/OPS.md](docs/OPS.md)
 covers it, including what that does _not_ prove.
 
-## Earlier public demo (GitHub Pages — static only)
+## GitHub Pages frontend and legacy public demo
 
-Pushes to `main` publish these static files via GitHub Pages. There is **no
-anchor service behind that host**: the new `/api` default does not resolve
-there until the demo deployment is separately live, and nothing silently
-falls back to public — the client shows shielded anchoring as offline. To
-see the legacy public-ledger flow explicitly, pass `anchor=public`:
+Pushes to `main` publish these static files via GitHub Pages. The Pages build
+patches the generated `config.js` so the published clients point at the live
+`https://vickrey.144.202.117.160.sslip.io/api` anchor service (a private
+regtest chain, no real ZEC); nothing silently falls back to public — if the
+service is down the client says so. To see the legacy public-ledger flow
+explicitly, pass `anchor=public`:
 
 - **Field client (public anchor):** <https://sneldao.github.io/vickrey/field/?anchor=public>
-- **Field client (default; shielded offline on Pages):** <https://sneldao.github.io/vickrey/field/>
+- **Field client (shielded):** <https://sneldao.github.io/vickrey/field/>
 - **Explorer:** <https://sneldao.github.io/vickrey/explorer/> — the evidence board,
   with a plain-language glossary and the same definition on every status stamp
 - **Showcase:** <https://sneldao.github.io/vickrey/> — its "What is actually

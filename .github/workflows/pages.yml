@@ -42,6 +42,8 @@ jobs:
               cp "$f" _site/$app/
             done
           done
+          # The explorer's og:image points at the published copy.
+          cp apps/explorer/og-cover.png _site/explorer/
           # The committed explorer/config.js keeps localhost defaults, because
           # the Docker entrypoint rewrites it from EXPLORER_LEDGER_URL for the
           # demo box. The published copy has to talk to the deployed ledger, so

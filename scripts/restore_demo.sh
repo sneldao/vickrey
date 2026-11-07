@@ -15,11 +15,18 @@
 # ingesting the Hornet copy and then re-applying the same tamper.
 #
 # Usage: ./scripts/restore_demo.sh [LEDGER_URL]
-#   LEDGER_URL defaults to http://45.76.242.245:8088
+#   LEDGER_URL is required. The legacy Vultr ledger this script was written
+#   for (the IOTA/Hornet-era demo) has been decommissioned, so there is no
+#   default host.
 
 set -euo pipefail
 
-LEDGER="${1:-http://45.76.242.245:8088}"
+if [ $# -lt 1 ] || [ -z "${1:-}" ]; then
+  echo "usage: $0 LEDGER_URL" >&2
+  exit 2
+fi
+
+LEDGER="$1"
 
 post() {
   curl -sS --fail -m 10 -X POST "$1" \

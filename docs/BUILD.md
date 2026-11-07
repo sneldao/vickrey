@@ -54,8 +54,8 @@ production architecture, with status per item.
 ## Build plan → status
 
 1. **Model-backed ID.** `apps/field/infer.js` calls an OpenAI-compatible
-   endpoint. Real Gemma 3 4B vision inference ran on `snapflip-vultr` over a
-   private SSH tunnel using a credited Wikimedia robin image; the model
+   endpoint. Real Gemma 3 4B vision inference ran on `snapflip-vultr` (since
+   decommissioned) over a private SSH tunnel using a credited Wikimedia robin image; the model
    returned "Robin" with `model_id: gemma3:4b`. The browser sealed that result
    and reached `VERIFIED` against a mock Hornet. The remote model received the
    photo; no phone/offline or outdoors model run is verified. A labelled sample

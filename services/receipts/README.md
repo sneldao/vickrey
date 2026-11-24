@@ -4,7 +4,7 @@ Standalone FastAPI + SQLite demonstration of:
 
 `claim/brief -> remote evidence -> field task -> sealed commitment -> signed verdict -> simulated settlement -> public JSON receipt`
 
-It is not a marketplace. Remote evidence is contextual, never cryptographic proof. The service stores no raw observation or precise location. Settlement is a deterministic testnet **simulator**: no wallet, RPC, real funds, QIE, or mainnet integration.
+It is not a marketplace. Remote evidence is contextual, never cryptographic proof. The service stores no raw observation or structured precise location; coarse public labels are screened for coordinate-like values. Settlement is a deterministic testnet **simulator**: no wallet, RPC, real funds, QIE, or mainnet integration.
 
 ## Run
 
@@ -73,13 +73,13 @@ All paths below are under `/v1`; mutating calls use `Authorization: Bearer <toke
 | POST   | `/verdicts/{verdict_id}/settlement`          | settlement                                                   |
 | GET    | `/receipts/{challenge_id}`                   | public; redacted JSON receipt                                |
 
-`GET /healthz` reports mode and honest adapter labels. Public receipts omit submission metadata and raw observations. They identify the coarse public task location, commitment, policy verdict, simulator transaction ID (if any), source labels, limitations, and timestamps.
+`GET /healthz` reports mode and honest adapter labels. Submission metadata is limited to `captured_at`, a coarse `public_location`, and the controlled `observation_status` (`observed`, `not_observed`, or `cannot_determine`); free-form summaries and coordinate-like labels are rejected. Public receipts omit submission metadata and raw observations. They identify the coarse public task location, commitment, policy verdict, simulator transaction ID (if any), source labels, limitations, and timestamps.
 
-The demo remote provider deterministically maps its input hash to `likely`, `unlikely`, `insufficient`, or `unavailable`. Only `insufficient` permits a field task. `accepted` pays the observer; `rejected` refunds the sponsor; `needs_witness` and `cannot_determine` record `no_payout`.
+The demo remote provider deterministically maps its input hash to `likely`, `unlikely`, `insufficient`, or `unavailable`. Only `insufficient` permits a field task. Remote evaluation and its durable idempotency record commit under one write transaction, so concurrent identical requests invoke the adapter once; this also serializes other SQLite writers while the adapter runs. `accepted` pays the observer; `rejected` refunds the sponsor; `needs_witness` and `cannot_determine` record `no_payout`.
 
 ## Verdict signing
 
-Sign canonical JSON for schema `reality-receipts.verifier-verdict.v1` containing `verdict_id`, `challenge_id`, `submission_id`, `submission_version`, `commitment`, `criteria_hash`, `verdict`, `policy_id`, `policy_version`, `reason`, and `issued_at`. Use sorted keys, compact separators, UTF-8, lowercase hex bindings, and UTC timestamps formatted `YYYY-MM-DDTHH:MM:SS.ffffffZ`. Submit that body plus a 128-hex Ed25519 signature. `app/signing.py` is the normative implementation.
+Sign the canonical JSON object for schema `reality-receipts.verifier-verdict.v1`. The object contains `schema`, `verdict_id`, `challenge_id`, `submission_id`, `submission_version`, `commitment`, `criteria_hash`, `verdict`, `policy_id`, `policy_version`, `reason`, and `issued_at`. Use sorted keys, compact separators, UTF-8, lowercase hex bindings, surrounding-whitespace-trimmed reasons, and UTC timestamps formatted `YYYY-MM-DDTHH:MM:SS.ffffffZ`. The strict HTTP request body omits `schema` and contains the other canonical fields plus `signature` (a 128-hex Ed25519 signature). `app/signing.py` is the normative implementation.
 
 The explicit demo-only private key matching the default demo public key is
 stored as PKCS#8 Base64 so secret scanners do not mistake the documented local
@@ -95,6 +95,6 @@ PEM. Never use the demo key or demo tokens in production.
 
 ## Storage and limits
 
-Schema changes are versioned with `PRAGMA user_version` and additive `CREATE IF NOT EXISTS` migrations. Challenges, remote evidence, tasks, submissions, verdicts, settlements, attempts, and idempotency records have update/delete blockers. Submission state is a separate CAS projection enforcing one active submission per observer/challenge and one verdict per submission.
+Schema changes are versioned with `PRAGMA user_version` and additive `CREATE IF NOT EXISTS` migrations. Challenges, remote evidence, tasks, submissions, verdicts, settlements, attempts, and idempotency records have update/delete blockers. Submission state is a separate CAS projection enforcing one active submission per observer/challenge and one verdict per submission. Schema v2 preserves each principal's latest legacy quota-window total and adds a database guard for settlement operation/status consistency.
 
-Defaults: 64 KiB request bodies, 120 authenticated mutations per principal/operation/hour in this checkpoint, a 30-day challenge horizon, and bounded task radius/bounty. Tune with `RECEIPTS_MAX_REQUEST_BYTES`, `RECEIPTS_QUOTA_PER_HOUR`, `RECEIPTS_MAX_CHALLENGE_WINDOW_SECONDS`, and `RECEIPTS_MAX_BOUNTY_AMOUNT`. A submission must be submitted before task expiry; an already sealed submission may be reviewed after expiry. Principal-wide quota aggregation and rejection of captures predating field-task authorization are pending review remediation.
+Defaults: 64 KiB request bodies, 120 successful authenticated mutations per principal/hour, a 30-day challenge horizon, and bounded task radius/bounty. Tune with `RECEIPTS_MAX_REQUEST_BYTES`, `RECEIPTS_QUOTA_PER_HOUR`, `RECEIPTS_MAX_CHALLENGE_WINDOW_SECONDS`, and `RECEIPTS_MAX_BOUNTY_AMOUNT`. Exact idempotent replays are returned before quota checks; quota consumption and workflow mutation commit atomically, so failed mutations roll back quota usage. A submission capture must not predate field-task authorization and must be submitted before task expiry. An already sealed submission may be reviewed after expiry, while challenge state reports `expired` after challenge expiry unless a terminal verdict already exists.

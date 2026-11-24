@@ -40,6 +40,7 @@ button, input, select, textarea { font: inherit; }
 button, a, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
 a { color: var(--notary); text-underline-offset: 0.18em; }
 a:hover { color: var(--wax); }
+#main:focus { outline: none; }
 code, pre, .mono { font-family: var(--mono); overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 
@@ -77,6 +78,7 @@ code, pre, .mono { font-family: var(--mono); overflow-wrap: anywhere; }
 .header-inner {
   min-height: 72px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
@@ -113,6 +115,21 @@ code, pre, .mono { font-family: var(--mono); overflow-wrap: anywhere; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.surface-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.9rem;
+  font-family: var(--sans);
+  font-size: 0.82rem;
+}
+.surface-nav a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+.surface-nav a:hover { color: var(--wax); }
 
 .hero { padding: clamp(2.4rem, 7vw, 5.2rem) 0 2rem; max-width: 840px; }
 .eyebrow {
@@ -408,7 +425,8 @@ input:disabled, select:disabled, textarea:disabled { background: #eee8db; color:
 
 @media (max-width: 600px) {
   .header-inner { align-items: flex-start; flex-direction: column; justify-content: center; gap: 0.1rem; padding-block: 0.65rem; }
-  .edition { padding-left: 3.05rem; font-size: 0.66rem; }
+  .surface-nav { width: 100%; }
+  .edition { padding-left: 0; font-size: 0.66rem; }
   .brand-sub { display: block; font-size: 0.78rem; line-height: 1.2; }
   .hero { padding-top: 2rem; }
   .hero-copy { font-size: 1rem; }

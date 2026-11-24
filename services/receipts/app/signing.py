@@ -42,7 +42,7 @@ def canonical_verdict_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "verdict": payload["verdict"],
         "policy_id": payload["policy_id"],
         "policy_version": int(payload["policy_version"]),
-        "reason": payload["reason"],
+        "reason": str(payload["reason"]).strip(),
         "issued_at": iso_utc(payload["issued_at"]),
     }
 

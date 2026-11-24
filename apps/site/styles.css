@@ -153,6 +153,7 @@ a:focus-visible, button:focus-visible, summary:focus-visible, .btn:focus-visible
 
 .nav-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 1rem;
   font-size: 0.86rem;
   align-items: center;
@@ -1156,6 +1157,7 @@ h2 {
 
 .footer-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 1.25rem;
   font-size: 0.84rem;
 }

@@ -77,10 +77,10 @@ class ReceiptService:
             raise RuntimeError("service clock must be timezone-aware")
         return value.astimezone(timezone.utc)
 
-    def _quota(self, principal: Principal, operation: str) -> None:
+    def _quota(self, conn: sqlite3.Connection, principal: Principal) -> None:
         self.db.consume_quota(
+            conn=conn,
             subject=principal.subject,
-            operation=operation,
             limit=self.settings.quota_per_hour,
             now=self._now(),
         )
@@ -237,9 +237,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "create_challenge")
-        now = self._now()
-        now_text = iso_utc(now)
         with self.db.transaction() as conn:
             replay = self.db.replay(
                 conn,
@@ -250,6 +247,9 @@ class ReceiptService:
             )
             if replay is not None:
                 return replay
+            self._quota(conn, principal)
+            now = self._now()
+            now_text = iso_utc(now)
             expires_at = iso_utc(payload.expires_at)
             if payload.expires_at <= now:
                 raise ServiceError("expires_at must be in the future", status_code=422)
@@ -333,16 +333,17 @@ class ReceiptService:
             None if remote is None else self._remote_base(remote)
         )
         result["field_task"] = None if task is None else self._task_base(task)
-        if remote is None:
+        now = self._now()
+        if terminal is not None:
+            state = "resolved"
+        elif now >= self._parse_time(row["expires_at"]):
+            state = "expired"
+        elif remote is None:
             state = "awaiting_remote_evidence"
         elif remote["status"] != "insufficient":
             state = f"remote_{remote['status']}"
         elif task is None:
             state = "awaiting_field_task"
-        elif terminal is not None:
-            state = "resolved"
-        elif self._now() >= self._parse_time(task["expires_at"]):
-            state = "expired"
         else:
             state = "field_task_open"
         result["state"] = state
@@ -356,51 +357,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "remote_evidence")
-        # Avoid paying an adapter again for a sequential replay.
-        with self.db.connect() as conn:
-            replay = self.db.replay(
-                conn,
-                operation="remote_evidence",
-                subject=principal.subject,
-                idempotency_key=idempotency_key,
-                request_hash=request_hash,
-            )
-            if replay is not None:
-                return replay
-        with self.db.connect() as conn:
-            challenge = conn.execute(
-                "SELECT * FROM challenges WHERE id = ?", (challenge_id,)
-            ).fetchone()
-        if challenge is None:
-            raise NotFound("challenge not found")
-        if principal.subject != challenge["claimant_subject"]:
-            raise Conflict("only the challenge claimant can request remote evidence")
-        now = self._now()
-        self._require_not_expired(challenge, now)
-        evidence_input = RemoteEvidenceInput(
-            challenge_id=challenge_id,
-            claim=challenge["claim_text"],
-            category=challenge["category"],
-            criteria_hash=challenge["criteria_hash"],
-            expires_at=challenge["expires_at"],
-        )
-        try:
-            remote_result = self.remote_adapter.evaluate(evidence_input)
-        except Exception as exc:  # noqa: BLE001 - adapter failures become unavailable
-            logger.error("remote_adapter_failed error_type=%s", type(exc).__name__)
-            remote_result = RemoteEvidenceResult(
-                status="unavailable",
-                summary="The configured remote-evidence adapter could not complete the check.",
-                provider=getattr(self.remote_adapter, "provider", "configured_adapter"),
-                provider_version=getattr(
-                    self.remote_adapter, "provider_version", "unknown"
-                ),
-                source_label="adapter_error",
-            )
-        input_hash = hashlib.sha256(
-            dump_json(evidence_input.__dict__).encode("utf-8")
-        ).hexdigest()
         with self.db.transaction() as conn:
             replay = self.db.replay(
                 conn,
@@ -411,6 +367,7 @@ class ReceiptService:
             )
             if replay is not None:
                 return replay
+            self._quota(conn, principal)
             challenge = conn.execute(
                 "SELECT * FROM challenges WHERE id = ?", (challenge_id,)
             ).fetchone()
@@ -421,6 +378,32 @@ class ReceiptService:
                     "only the challenge claimant can request remote evidence"
                 )
             self._require_not_expired(challenge, self._now())
+            evidence_input = RemoteEvidenceInput(
+                challenge_id=challenge_id,
+                claim=challenge["claim_text"],
+                category=challenge["category"],
+                criteria_hash=challenge["criteria_hash"],
+                expires_at=challenge["expires_at"],
+            )
+            try:
+                remote_result = self.remote_adapter.evaluate(evidence_input)
+            except Exception as exc:  # noqa: BLE001 - adapter failures become unavailable
+                logger.error("remote_adapter_failed error_type=%s", type(exc).__name__)
+                remote_result = RemoteEvidenceResult(
+                    status="unavailable",
+                    summary="The configured remote-evidence adapter could not complete the check.",
+                    provider=getattr(
+                        self.remote_adapter, "provider", "configured_adapter"
+                    ),
+                    provider_version=getattr(
+                        self.remote_adapter, "provider_version", "unknown"
+                    ),
+                    source_label="adapter_error",
+                )
+            self._require_not_expired(challenge, self._now())
+            input_hash = hashlib.sha256(
+                dump_json(evidence_input.__dict__).encode("utf-8")
+            ).hexdigest()
             existing = conn.execute(
                 "SELECT * FROM remote_evidence WHERE challenge_id = ?", (challenge_id,)
             ).fetchone()
@@ -472,8 +455,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "field_task")
-        now = self._now()
         with self.db.transaction() as conn:
             replay = self.db.replay(
                 conn,
@@ -484,6 +465,8 @@ class ReceiptService:
             )
             if replay is not None:
                 return replay
+            self._quota(conn, principal)
+            now = self._now()
             challenge = conn.execute(
                 "SELECT * FROM challenges WHERE id = ?", (challenge_id,)
             ).fetchone()
@@ -555,8 +538,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "submit_evidence")
-        now = self._now()
         with self.db.transaction() as conn:
             replay = self.db.replay(
                 conn,
@@ -567,6 +548,8 @@ class ReceiptService:
             )
             if replay is not None:
                 return replay
+            self._quota(conn, principal)
+            now = self._now()
             challenge = conn.execute(
                 "SELECT * FROM challenges WHERE id = ?", (challenge_id,)
             ).fetchone()
@@ -590,9 +573,9 @@ class ReceiptService:
                 raise Conflict("challenge is already resolved")
             metadata = payload.public_metadata.model_dump(mode="json")
             captured_at = self._parse_time(metadata["captured_at"])
-            if captured_at < self._parse_time(challenge["created_at"]):
+            if captured_at < self._parse_time(task["created_at"]):
                 raise ServiceError(
-                    "captured_at predates the challenge", status_code=422
+                    "captured_at predates field-task authorization", status_code=422
                 )
             if captured_at > now or captured_at >= self._parse_time(task["expires_at"]):
                 raise ServiceError(
@@ -704,7 +687,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "resolve")
         failure: _VerdictRejected | None = None
         try:
             with self.db.transaction() as conn:
@@ -717,6 +699,7 @@ class ReceiptService:
                 )
                 if replay is not None:
                     return replay
+                self._quota(conn, principal)
                 row = conn.execute(
                     """
                     SELECT s.*, ss.status, ss.version AS state_version
@@ -932,8 +915,6 @@ class ReceiptService:
         idempotency_key: str,
         request_hash: str,
     ) -> MutationResult:
-        self._quota(principal, "settlement")
-        now = self._now()
         with self.db.transaction() as conn:
             replay = self.db.replay(
                 conn,
@@ -944,6 +925,8 @@ class ReceiptService:
             )
             if replay is not None:
                 return replay
+            self._quota(conn, principal)
+            now = self._now()
             verdict = conn.execute(
                 "SELECT * FROM verdicts WHERE id = ?", (verdict_id,)
             ).fetchone()
@@ -995,6 +978,28 @@ class ReceiptService:
             if adapter_result.amount != amount:
                 raise ServiceError(
                     "settlement adapter returned the wrong amount", status_code=502
+                )
+            if adapter_result.currency != challenge["currency"]:
+                raise ServiceError(
+                    "settlement adapter returned the wrong currency", status_code=502
+                )
+            if operation == "no_payout":
+                if (
+                    adapter_result.status != "no_payout"
+                    or adapter_result.txid is not None
+                ):
+                    raise ServiceError(
+                        "settlement adapter returned a payout for a no-payout verdict",
+                        status_code=502,
+                    )
+            elif (
+                adapter_result.status != "settled"
+                or not isinstance(adapter_result.txid, str)
+                or not adapter_result.txid
+            ):
+                raise ServiceError(
+                    "settlement adapter did not return a settled transaction",
+                    status_code=502,
                 )
             settled_at = iso_utc(now)
             conn.execute(

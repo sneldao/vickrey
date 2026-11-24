@@ -28,13 +28,13 @@ jobs:
       - name: Assemble the site
         run: |
           # apps/site stays at the root so the existing showcase URL keeps
-          # working; the field client and the explorer are published beside it
-          # at /field/ and /explorer/, so the shared nav's relative links resolve
-          # from any of the three pages.
-          mkdir -p _site/field _site/explorer
+          # working; the field client, explorer and receipts are published beside
+          # it at /field/, /explorer/ and /receipts/, so relative nav links resolve
+          # from every surface.
+          mkdir -p _site/field _site/explorer _site/receipts
           cp -r apps/site/. _site/
-          for app in field explorer; do
-            for f in apps/$app/*.js apps/$app/*.html apps/$app/*.css; do
+          for app in field explorer receipts; do
+            for f in apps/$app/*.js apps/$app/*.mjs apps/$app/*.html apps/$app/*.css; do
               [ -e "$f" ] || continue
               case "$f" in
                 *.test.mjs) continue ;;

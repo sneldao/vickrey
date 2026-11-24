@@ -59,7 +59,7 @@ const fixedVerdict = {
   signature: "0".repeat(128),
 };
 
-function pythonVerdictFixture() {
+function pythonVerdictFixture(payload = fixedVerdict) {
   const script = String.raw`
 import json
 import sys
@@ -85,7 +85,7 @@ print(json.dumps({
     execFileSync("python3", ["-c", script], {
       cwd: serviceDirectory,
       input: JSON.stringify({
-        payload: fixedVerdict,
+        payload,
         private_key: demoPrivateKeyPem,
       }),
       encoding: "utf8",
@@ -102,6 +102,8 @@ test("canonical verdict bytes and Ed25519 signature match the Python service fix
   assert.deepEqual(signed.payload, fixture.payload);
   assert.equal(signed.signingBytesHex, fixture.bytes_hex);
   assert.equal(signed.body.signature, fixture.signature);
+  assert.equal(Object.hasOwn(signed.body, "schema"), false);
+  assert.equal(pythonVerdictFixture(signed.body).signature, fixture.signature);
   assert.equal(signed.payload.issued_at, "2026-11-24T12:00:00.123456Z");
   assert.match(signed.body.signature, /^[0-9a-f]{128}$/);
   assert.equal(
@@ -256,7 +258,8 @@ test("submission construction sends exactly commitment plus allowlisted public m
   const request = buildSubmissionRequest("C".repeat(64), {
     captured_at: "2026-11-24T12:00:00.123456Z",
     public_location: "North trail public kiosk",
-    public_summary: "Public notice details were readable.",
+    observation_status: "observed",
+    public_summary: "must-not-leave-browser",
     latitude: 51.5,
     longitude: -0.1,
     raw_observation: { private: true },
@@ -269,8 +272,8 @@ test("submission construction sends exactly commitment plus allowlisted public m
   ]);
   assert.deepEqual(Object.keys(request.public_metadata).sort(), [
     "captured_at",
+    "observation_status",
     "public_location",
-    "public_summary",
   ]);
   assert.equal(request.commitment, "c".repeat(64));
   const serialized = JSON.stringify(request);
@@ -278,6 +281,7 @@ test("submission construction sends exactly commitment plus allowlisted public m
     "latitude",
     "longitude",
     "raw_observation",
+    "public_summary",
     "signature",
     "observer_public_key",
     "must-not-leave-browser",
@@ -321,6 +325,9 @@ test("the real trust.js seal retains signature/public key locally and verifies",
     record.sealed_entry.payload.public_location,
     task.public_location,
   );
+  assert.equal(record.public_metadata.observation_status, "observed");
+  assert.equal("public_summary" in record.public_metadata, false);
+  assert.match(record.sealed_entry.payload.public_summary, /notice title/);
   assert.equal(JSON.stringify(record).includes("privateKey"), false);
   const publicKey = await trust.importPublicKey(record.observer_public_key);
   assert.deepEqual(await trust.verifyChain([record.sealed_entry], publicKey), {

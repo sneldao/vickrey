@@ -246,7 +246,7 @@ def test_capture_window_and_location_are_enforced(client, clock):
         public_metadata={
             "captured_at": "2026-11-24T11:59:59.000000Z",
             "public_location": "North trail public kiosk",
-            "public_summary": "Old capture.",
+            "observation_status": "observed",
         },
     )
     assert old.status_code == 422
@@ -258,7 +258,7 @@ def test_capture_window_and_location_are_enforced(client, clock):
         public_metadata={
             "captured_at": "2026-11-24T12:00:00.000000Z",
             "public_location": "PRIVATE-EXACT-LOCATION",
-            "public_summary": "Wrong task.",
+            "observation_status": "observed",
         },
     )
     assert wrong_location.status_code == 422

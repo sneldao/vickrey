@@ -15,4 +15,4 @@ COPY app ./app
 
 USER receipts
 EXPOSE 8099
-CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8099"]
+CMD ["uvicorn", "app.main:create_app", "--factory", "--host", "0.0.0.0", "--port", "8099", "--no-access-log"]

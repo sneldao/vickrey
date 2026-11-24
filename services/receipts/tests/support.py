@@ -119,7 +119,7 @@ def submission_payload(
         "public_metadata": {
             "captured_at": iso_utc(clock()),
             "public_location": "North trail public kiosk",
-            "public_summary": "PRIVATE-SUMMARY-MARKER notice title and date were readable.",
+            "observation_status": "observed",
         },
     }
     payload.update(overrides)

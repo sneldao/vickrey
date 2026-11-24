@@ -14,7 +14,7 @@ from typing import Any
 from app.errors import IdempotencyConflict, QuotaExceeded
 from app.signing import dump_json
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS challenges (
@@ -194,7 +194,42 @@ CREATE TRIGGER IF NOT EXISTS submission_states_no_delete
 BEFORE DELETE ON submission_states BEGIN SELECT RAISE(ABORT, 'submission state history cannot be deleted'); END;
 """
 
-MIGRATIONS: dict[int, str] = {1: SCHEMA_V1}
+SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS principal_request_usage (
+    subject TEXT PRIMARY KEY,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL CHECK (count > 0)
+);
+
+INSERT INTO principal_request_usage (subject, window_start, count)
+SELECT usage.subject, usage.window_start, SUM(usage.count)
+FROM request_usage AS usage
+JOIN (
+    SELECT subject, MAX(window_start) AS latest_window
+    FROM request_usage
+    GROUP BY subject
+) AS latest
+    ON usage.subject = latest.subject AND usage.window_start = latest.latest_window
+GROUP BY usage.subject, usage.window_start
+ON CONFLICT (subject) DO UPDATE SET
+    window_start = excluded.window_start,
+    count = excluded.count
+WHERE excluded.window_start > principal_request_usage.window_start
+    OR (
+        excluded.window_start = principal_request_usage.window_start
+        AND excluded.count > principal_request_usage.count
+    );
+
+CREATE TRIGGER IF NOT EXISTS settlements_operation_status
+BEFORE INSERT ON settlements
+WHEN (NEW.operation = 'no_payout' AND NEW.status != 'no_payout')
+    OR (NEW.operation IN ('payout', 'refund') AND NEW.status != 'settled')
+BEGIN
+    SELECT RAISE(ABORT, 'settlement operation/status mismatch');
+END;
+"""
+
+MIGRATIONS: dict[int, str] = {1: SCHEMA_V1, 2: SCHEMA_V2}
 
 
 @dataclass(frozen=True)
@@ -313,40 +348,39 @@ class Database:
         )
 
     def consume_quota(
-        self, *, subject: str, operation: str, limit: int, now: datetime
+        self, *, conn: sqlite3.Connection, subject: str, limit: int, now: datetime
     ) -> None:
         epoch = int(now.timestamp())
         window_start = epoch - (epoch % 3_600)
-        with self.transaction() as conn:
-            row = conn.execute(
+        row = conn.execute(
+            """
+            SELECT count FROM principal_request_usage
+            WHERE subject = ? AND window_start = ?
+            """,
+            (subject, window_start),
+        ).fetchone()
+        count = 0 if row is None else int(row["count"])
+        if count >= limit:
+            raise QuotaExceeded(window_start + 3_600 - epoch)
+        if row is None:
+            conn.execute(
                 """
-                SELECT count FROM request_usage
-                WHERE subject = ? AND operation = ? AND window_start = ?
+                INSERT INTO principal_request_usage (subject, window_start, count)
+                VALUES (?, ?, 1)
+                ON CONFLICT (subject) DO UPDATE SET
+                    window_start = excluded.window_start,
+                    count = 1
                 """,
-                (subject, operation, window_start),
-            ).fetchone()
-            count = 0 if row is None else int(row["count"])
-            if count >= limit:
-                raise QuotaExceeded(window_start + 3_600 - epoch)
-            if row is None:
-                conn.execute(
-                    """
-                    INSERT INTO request_usage (subject, operation, window_start, count)
-                    VALUES (?, ?, ?, 1)
-                    ON CONFLICT (subject, operation) DO UPDATE SET
-                        window_start = excluded.window_start,
-                        count = 1
-                    """,
-                    (subject, operation, window_start),
-                )
-            else:
-                conn.execute(
-                    """
-                    UPDATE request_usage SET count = count + 1
-                    WHERE subject = ? AND operation = ? AND window_start = ?
-                    """,
-                    (subject, operation, window_start),
-                )
+                (subject, window_start),
+            )
+        else:
+            conn.execute(
+                """
+                UPDATE principal_request_usage SET count = count + 1
+                WHERE subject = ? AND window_start = ?
+                """,
+                (subject, window_start),
+            )
 
 
 def utc_now() -> datetime:

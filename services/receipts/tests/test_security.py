@@ -75,7 +75,7 @@ def test_each_workflow_mutation_requires_its_configured_role(
             "public_metadata": {
                 "captured_at": "2026-11-24T12:00:00.000000Z",
                 "public_location": "North trail public kiosk",
-                "public_summary": "Attempt.",
+                "observation_status": "observed",
             },
         },
     )
@@ -112,7 +112,7 @@ def test_observer_identity_and_raw_location_fields_cannot_be_supplied(client, cl
         "public_metadata": {
             "captured_at": "2026-11-24T12:00:00.000000Z",
             "public_location": "North trail public kiosk",
-            "public_summary": "Attempt.",
+            "observation_status": "observed",
             "latitude": 51.5,
             "longitude": -0.1,
         },

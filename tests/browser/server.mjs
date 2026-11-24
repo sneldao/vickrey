@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import http from "node:http";
+import https from "node:https";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -37,13 +38,84 @@ async function readJson(request) {
   return body ? JSON.parse(body) : {};
 }
 
+function receiptsUpstream() {
+  const configured = process.env.RECEIPTS_UPSTREAM?.trim();
+  if (!configured) return null;
+  const upstream = new URL(configured);
+  if (!["http:", "https:"].includes(upstream.protocol)) {
+    throw new Error("RECEIPTS_UPSTREAM must use http or https");
+  }
+  if (upstream.pathname !== "/" || upstream.search || upstream.hash) {
+    throw new Error(
+      "RECEIPTS_UPSTREAM must be an origin without a path or query",
+    );
+  }
+  return upstream;
+}
+
+async function proxyReceipts(request, response, url, upstream, requests) {
+  const chunks = [];
+  for await (const chunk of request) {
+    chunks.push(chunk);
+    if (chunks.reduce((total, part) => total + part.length, 0) > 65_536) {
+      json(response, 413, { detail: "proxied request too large" });
+      return;
+    }
+  }
+  const body = Buffer.concat(chunks);
+  requests.push({
+    method: request.method,
+    path: url.pathname,
+    authorizationPresent: Boolean(request.headers.authorization),
+    idempotencyKeyPresent: Boolean(request.headers["idempotency-key"]),
+    body,
+  });
+  const headers = { ...request.headers, host: upstream.host, referer: "" };
+  const transport = upstream.protocol === "https:" ? https : http;
+  const proxied = transport.request(
+    upstream,
+    {
+      method: request.method,
+      path: `${url.pathname}${url.search}`,
+      headers,
+    },
+    (upstreamResponse) => {
+      response.writeHead(upstreamResponse.statusCode || 502, {
+        ...upstreamResponse.headers,
+        "cache-control": "no-store",
+        "referrer-policy": "no-referrer",
+        "x-content-type-options": "nosniff",
+      });
+      upstreamResponse.pipe(response);
+    },
+  );
+  proxied.on("error", (error) => {
+    if (!response.headersSent) {
+      json(response, 502, {
+        detail: `receipts upstream failed: ${error.message}`,
+      });
+    } else {
+      response.destroy(error);
+    }
+  });
+  proxied.end(body);
+}
+
 export async function startServer() {
   const requests = [];
   const receipts = new Map();
+  const upstream = receiptsUpstream();
   const server = http.createServer(async (request, response) => {
     try {
       const url = new URL(request.url || "/", "http://127.0.0.1");
       const method = request.method || "GET";
+      if (
+        upstream &&
+        (url.pathname === "/healthz" || url.pathname.startsWith("/v1/"))
+      ) {
+        await proxyReceipts(request, response, url, upstream, requests);
+        return;
+      }
       let postedBody;
       if (method === "POST") {
         postedBody = await readJson(request);
@@ -185,6 +257,9 @@ export async function startServer() {
     origin: `http://127.0.0.1:${address.port}`,
     posts() {
       return requests.filter((entry) => entry.method === "POST");
+    },
+    receiptsRequests() {
+      return requests.filter((entry) => entry.body instanceof Buffer);
     },
     async close() {
       await new Promise((resolve) => {

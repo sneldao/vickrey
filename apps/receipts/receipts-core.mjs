@@ -16,6 +16,11 @@ const VERDICTS = new Set([
   "needs_witness",
   "cannot_determine",
 ]);
+const OBSERVATION_STATUSES = new Set([
+  "observed",
+  "not_observed",
+  "cannot_determine",
+]);
 const ED25519_SPKI_PREFIX = Uint8Array.from([
   0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
 ]);
@@ -380,9 +385,11 @@ export async function signCanonicalVerdict(
   ) {
     throw new Error("the locally signed demo verdict did not verify");
   }
+  const body = { ...payload };
+  delete body.schema;
   return {
     payload,
-    body: { ...payload, signature },
+    body: { ...body, signature },
     signingBytesHex: bytesToHex(bytes),
   };
 }
@@ -445,16 +452,17 @@ export function fieldTaskAllowed(remoteEvidence) {
 export function buildPublicMetadata({
   capturedAt,
   publicLocation,
-  publicSummary,
+  observationStatus,
 }) {
+  if (!OBSERVATION_STATUSES.has(observationStatus)) {
+    throw new TypeError("observation status is invalid");
+  }
   return {
     captured_at: isoUtcMicros(capturedAt),
     public_location: requireString(publicLocation, "public location", {
       max: 120,
     }),
-    public_summary: requireString(publicSummary, "public summary", {
-      max: 240,
-    }),
+    observation_status: observationStatus,
   };
 }
 
@@ -473,7 +481,7 @@ export function buildSubmissionRequest(commitment, metadata) {
     public_metadata: buildPublicMetadata({
       capturedAt: metadata.captured_at,
       publicLocation: metadata.public_location,
-      publicSummary: metadata.public_summary,
+      observationStatus: metadata.observation_status,
     }),
   };
 }
@@ -504,10 +512,13 @@ export async function createLocalSealedRecord(
   const challenge_id = normalizeUuid(challengeId, "challenge id");
   const task_id = normalizeUuid(task.id, "task id");
   const captured_at = isoUtcMicros(observedAt);
+  const publicSummary = requireString(observationNote, "observation note", {
+    max: 240,
+  });
   const public_metadata = buildPublicMetadata({
     capturedAt: captured_at,
     publicLocation: task.public_location,
-    publicSummary: observationNote,
+    observationStatus: outcome,
   });
   if (public_metadata.public_location !== criteria.public_location) {
     throw new Error("task and criteria public locations do not match");
@@ -529,7 +540,7 @@ export async function createLocalSealedRecord(
       reject_if: [...criteria.reject_if],
     },
     outcome,
-    public_summary: public_metadata.public_summary,
+    public_summary: publicSummary,
   };
   const sealedEntry = await trust.sealObservation({
     privateKey: keyPair.privateKey,

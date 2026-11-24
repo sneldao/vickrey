@@ -13,15 +13,20 @@
 
   <header class="site-header no-print">
     <div class="page-shell header-inner">
-      <a class="brand" href="./" aria-label="Reality Receipts home">
+      <a class="brand" href="../" aria-label="Vickrey overview">
         <span class="wax-seal" aria-hidden="true">V</span>
         <span>Vickrey <span class="brand-sub">Reality Receipts</span></span>
       </a>
+      <nav class="surface-nav no-print" aria-label="Vickrey surfaces">
+        <a href="../">Overview</a>
+        <a href="../field/">Field Client</a>
+        <a href="../explorer/">Evidence Explorer</a>
+      </nav>
       <span class="edition">One-claim vertical slice · local demo</span>
     </div>
   </header>
 
-  <main id="main" class="page-shell">
+  <main id="main" class="page-shell" tabindex="-1">
     <section class="hero" aria-labelledby="page-title">
       <p class="eyebrow">A claim, sealed—not a marketplace</p>
       <h1 id="page-title">Reality Receipts</h1>
@@ -143,7 +148,7 @@ notice is unreadable</textarea>
 
           <div class="observation-fieldset field-wide">
             <h3>Local demo observation</h3>
-            <p class="hint">This public-safe note is sealed on this device. It is not sent as raw evidence.</p>
+            <p class="hint">This note is sealed on this device. Only its controlled result status is sent to the service.</p>
             <div class="observation-grid">
               <div class="field">
                 <label for="observation-outcome">Observation result</label>
@@ -156,7 +161,7 @@ notice is unreadable</textarea>
               <div class="field">
                 <label for="observation-note">Public-safe observation note</label>
                 <textarea id="observation-note" name="observation_note" rows="3" required maxlength="240" aria-describedby="observation-note-hint">The notice title and visible posting date were readable at the public kiosk.</textarea>
-                <p id="observation-note-hint" class="hint">Up to 240 characters; also used as allowlisted public metadata.</p>
+                <p id="observation-note-hint" class="hint">Up to 240 characters; sealed locally and never sent to the service.</p>
               </div>
             </div>
           </div>

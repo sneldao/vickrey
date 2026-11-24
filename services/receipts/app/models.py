@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
@@ -11,6 +12,20 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 HEX64_RE = r"^[0-9a-fA-F]{64}$"
 SIG128_RE = r"^[0-9a-fA-F]{128}$"
 ID_RE = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$"
+PRECISE_COORDINATE_RE = re.compile(
+    r"[-+]?\d{1,3}\.\d+\s*[,;/]\s*[-+]?\d{1,3}\.\d+"
+    r"|\b(?:lat|latitude|lon|longitude|lng)\b\s*[:=]?\s*[-+]?\d"
+    r"|\d{1,3}\s*°"
+    r"|\b\d{1,3}\.\d+\s*[NSEW]\b"
+    r"|[-+]?\d{1,3}\.\d+\s+[-+]?\d{1,3}\.\d+\b",
+    re.IGNORECASE,
+)
+
+
+def coarse_public_location(value: str) -> str:
+    if PRECISE_COORDINATE_RE.search(value):
+        raise ValueError("public_location must be a coarse label without coordinates")
+    return value
 
 
 class StrictModel(BaseModel):
@@ -27,6 +42,11 @@ class CriteriaIn(StrictModel):
     radius_m: int = Field(ge=1, le=1_000)
     required_details: list[str] = Field(min_length=1, max_length=5)
     reject_if: list[str] = Field(default_factory=list, max_length=5)
+
+    @field_validator("public_location")
+    @classmethod
+    def public_location_is_coarse(cls, value: str) -> str:
+        return coarse_public_location(value)
 
     @field_validator("required_details", "reject_if")
     @classmethod
@@ -55,7 +75,12 @@ class ChallengeIn(StrictModel):
 class PublicMetadataIn(StrictModel):
     captured_at: datetime
     public_location: str = Field(min_length=1, max_length=120)
-    public_summary: str = Field(min_length=1, max_length=240)
+    observation_status: Literal["observed", "not_observed", "cannot_determine"]
+
+    @field_validator("public_location")
+    @classmethod
+    def public_location_is_coarse(cls, value: str) -> str:
+        return coarse_public_location(value)
 
     @field_validator("captured_at")
     @classmethod

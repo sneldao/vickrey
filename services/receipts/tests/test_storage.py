@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 from fastapi.testclient import TestClient
 
-from app.db import Database
+from app.db import SCHEMA_V1, Database
 from tests.support import (
     CountingSettlementAdapter,
     StaticRemoteAdapter,
@@ -293,9 +293,36 @@ def test_restart_persistence_and_idempotent_settlement_replay(
 def test_schema_is_additive_and_future_versions_fail_closed(settings):
     database = Database(settings.database_path)
     with database.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
     Database(settings.database_path)
     with database.connect() as conn:
         conn.execute("PRAGMA user_version=99")
     with pytest.raises(RuntimeError, match="newer"):
         Database(settings.database_path)
+
+
+def test_principal_quota_migration_preserves_latest_window_totals(settings):
+    with sqlite3.connect(settings.database_path) as conn:
+        conn.executescript(SCHEMA_V1)
+        conn.executemany(
+            "INSERT INTO request_usage (subject, operation, window_start, count) "
+            "VALUES (?, ?, ?, ?)",
+            [
+                ("alice", "create_challenge", 100, 2),
+                ("alice", "remote_evidence", 100, 3),
+                ("alice", "settlement", 50, 40),
+                ("bob", "create_challenge", 200, 1),
+            ],
+        )
+        conn.execute("PRAGMA user_version=1")
+
+    Database(settings.database_path)
+    with Database(settings.database_path).connect() as conn:
+        rows = conn.execute(
+            "SELECT subject, window_start, count FROM principal_request_usage "
+            "ORDER BY subject"
+        ).fetchall()
+        assert [tuple(row) for row in rows] == [
+            ("alice", 100, 5),
+            ("bob", 200, 1),
+        ]

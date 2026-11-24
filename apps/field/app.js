@@ -16,7 +16,23 @@
   if (typeof window !== "undefined" && typeof document !== "undefined") {
     window.VickreyField = api;
     var start = function () {
-      api.mount(document.getElementById("app"));
+      api.mount(document.getElementById("app")).catch(function (err) {
+        var target = document.getElementById("app");
+        if (target) {
+          target.innerHTML =
+            '<p class="action-error" role="alert">' +
+            String(err.message || err).replace(/[&<>"']/g, function (char) {
+              return {
+                "&": "&amp;",
+                "<": "&lt;",
+                ">": "&gt;",
+                '"': "&quot;",
+                "'": "&#39;",
+              }[char];
+            }) +
+            " No records were changed.</p>";
+        }
+      });
     };
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", start);
@@ -243,6 +259,51 @@
     drained.verdict = verdict;
     drained.empty = false;
     return drained;
+  }
+
+  async function verifyJournal(journal, publicKey, trustImpl, repository) {
+    var verdict = await journal.verify(
+      publicKey,
+      trustImpl || root.VickreyTrust,
+    );
+    if (!verdict.ok || !repository) {
+      return verdict;
+    }
+    var records = journal.list();
+    var head = records.length ? records[records.length - 1].entry.hash : null;
+    if (records.length) {
+      var checkpoint = await root.VickreyIntegrity.verifyCheckpoint(
+        repository.checkpoint(),
+        head,
+        records.length,
+        publicKey,
+      );
+      if (!checkpoint.ok) {
+        return {
+          ok: false,
+          brokenAt: records.length,
+          reason: checkpoint.reason,
+          checked: records.length,
+        };
+      }
+    }
+    var corrections = await root.VickreyIntegrity.verifyCorrections(
+      repository.corrections(),
+      records.map(function (record) {
+        return record.entry;
+      }),
+      publicKey,
+    );
+    if (!corrections.ok) {
+      return {
+        ok: false,
+        brokenAt: records.length + corrections.brokenAt,
+        reason: corrections.reason,
+        checked: records.length + corrections.checked,
+      };
+    }
+    verdict.corrections = corrections.checked;
+    return verdict;
   }
 
   /* ------------------------------------------------------------- verdicts */
@@ -473,8 +534,8 @@
       outbox[entry.hash] = { entry: entry, index: index };
     });
     var brokenHash =
-      verdict && !verdict.ok && outboxEntries && outboxEntries[verdict.brokenAt]
-        ? outboxEntries[verdict.brokenAt].hash
+      verdict && !verdict.ok && records && records[verdict.brokenAt]
+        ? records[verdict.brokenAt].entry.hash
         : null;
     return (records || [])
       .map(function (record) {
@@ -554,7 +615,7 @@
     local: "On this device only",
   };
 
-  function mount(el) {
+  async function mount(el) {
     if (!el || typeof document === "undefined") {
       return;
     }
@@ -565,21 +626,52 @@
       root.VickreyInfer,
       root.VickreyLogbook,
       root.VickreyJournal,
+      root.VickreyStorage,
+      root.VickreyIntegrity,
     ];
     if (
       depend.some(function (part) {
         return !part;
       })
     ) {
-      el.innerHTML =
-        '<p class="action-error">Field modules failed to load.</p>';
+      var message = "Field modules failed to load.";
+      el.innerHTML = '<p class="action-error" role="alert">' + message + "</p>";
+      toast(message);
       return;
     }
 
-    var store = root.VickreyQueue.localStore(QUEUE_KEY);
-    var queue = root.VickreyQueue.createQueue({ store: store });
-    var journal = root.VickreyJournal.createJournal({ key: JOURNAL_KEY });
-    journal.adopt(queue.list());
+    var repository;
+    var queue;
+    var journal;
+    try {
+      var opened = await root.VickreyStorage.openStore({
+        localStorage: root.localStorage,
+      });
+      repository = root.VickreyStorage.createRepository(opened, {
+        privateKey: function () {
+          return state && state.privateKey;
+        },
+        checkpoint: root.VickreyIntegrity.sealCheckpoint,
+        sealCorrection: root.VickreyIntegrity.sealCorrection,
+        anchorTime: function (entry, plan) {
+          return root.VickreySchedule.anchorTime(
+            entry,
+            plan,
+            Date.now(),
+            settings.schedule,
+          );
+        },
+      });
+      queue = repository.queue;
+      journal = repository.journal;
+      await repository.initialize();
+    } catch (err) {
+      el.innerHTML =
+        '<p class="action-error" role="alert">' +
+        escapeHtml(err.message || String(err)) +
+        " No records were changed. Restore a backup or free device storage before continuing.</p>";
+      return;
+    }
     var resolved = config();
     var settings = (function () {
       var ledger = resolved.ledgerUrl || "http://localhost:8088";
@@ -610,9 +702,9 @@
           : { minDelayMs: 0, jitterMs: 0 },
       };
     })();
+    var persistenceWarning = "";
     var flow =
-      root.localStorage.getItem(FLOW_KEY) || "walk-" + Date.now().toString(36);
-    root.localStorage.setItem(FLOW_KEY, flow);
+      repository.getValue(FLOW_KEY) || "walk-" + Date.now().toString(36);
 
     var state = {
       image: null,
@@ -622,6 +714,9 @@
       identifyStarted: 0,
       error: null,
       verdict: null,
+      integrityReady: false,
+      integrityError: null,
+      persistenceWarning: persistenceWarning,
       syncError: null,
       busy: false,
       justSealed: null,
@@ -646,7 +741,14 @@
        * settle or the bounded retries run out. */
       receiptErrors: {},
       anchorNotice: "",
+      anchorError: null,
+      retryAnchorBusy: false,
       transientRetries: 0,
+      online:
+        typeof root.navigator === "undefined" ||
+        root.navigator.onLine !== false,
+      drafts: {},
+      focusMemory: null,
       shareHash: null,
       sharePurpose: "",
       shareBusy: false,
@@ -654,6 +756,11 @@
       backupBusy: false,
       backupError: null,
       backupNotice: "",
+      backupFile: null,
+      backupFileName: "",
+      exportBusy: false,
+      exportError: null,
+      exportNotice: "",
       restoring: false,
       publicKey: null,
       privateKey: null,
@@ -673,6 +780,15 @@
       infer: root.VickreyInfer,
       privateKey: null,
       modelId: settings.model,
+      commit: async function (entry, input) {
+        var thumb =
+          input.thumb ||
+          (state.image ? await thumbnail(state.image.preview) : null);
+        await repository.append(entry, {
+          thumb: thumb,
+          recordedAt: input.recordedAt,
+        });
+      },
       // Continue the chain from the journal, not the outbox: after a sync the
       // outbox is empty but the next sighting still links to the last one.
       head: journal.head(),
@@ -682,44 +798,68 @@
     if (badge) {
       badge.textContent = "Ledger: " + settings.ledgerLabel;
     }
-
-    function keyStorage() {
-      try {
-        return root.localStorage;
-      } catch (err) {
-        return null;
-      }
-    }
+    root.addEventListener("online", function () {
+      state.online = true;
+      render(null, true);
+    });
+    root.addEventListener("offline", function () {
+      state.online = false;
+      render(null, true);
+    });
 
     async function ensureKey() {
-      var storage = keyStorage();
-      var saved = null;
-      try {
-        saved = storage ? JSON.parse(storage.getItem(KEY_KEY) || "null") : null;
-      } catch (err) {
-        saved = null;
-      }
-      if (saved && saved.pk) {
-        state.publicKey = await trust.importPublicKey(saved.pk);
-        state.privateKey = await root.crypto.subtle.importKey(
-          "jwk",
-          saved.jwk,
-          { name: "Ed25519" },
-          true,
-          ["sign"],
-        );
+      var raw = repository.getValue(KEY_KEY);
+      if (raw) {
+        var saved;
+        try {
+          saved = JSON.parse(raw);
+        } catch (err) {
+          var corrupt = new Error("the saved device key is unreadable");
+          corrupt.code = "STORAGE_CORRUPT";
+          throw corrupt;
+        }
+        if (!saved || !saved.pk || !saved.jwk) {
+          var invalid = new Error("the saved device key is incomplete");
+          invalid.code = "STORAGE_CORRUPT";
+          throw invalid;
+        }
+        try {
+          state.publicKey = await trust.importPublicKey(saved.pk);
+          state.privateKey = await root.crypto.subtle.importKey(
+            "jwk",
+            saved.jwk,
+            { name: "Ed25519" },
+            true,
+            ["sign"],
+          );
+        } catch (err) {
+          throw new Error(
+            "the saved device key could not be loaded; restore a backup instead of replacing it",
+          );
+        }
         state.publicKeyText = saved.pk;
+        if (!repository.getValue(FLOW_KEY)) {
+          await repository.setValue(FLOW_KEY, flow);
+        }
         return;
       }
       var pair = await trust.generateKeyPair();
       var jwk = await root.crypto.subtle.exportKey("jwk", pair.privateKey);
       var pk = await trust.exportPublicKey(pair.publicKey);
+      try {
+        await repository.setValue(
+          KEY_KEY,
+          JSON.stringify({ jwk: jwk, pk: pk }),
+        );
+        await repository.setValue(FLOW_KEY, flow);
+      } catch (err) {
+        throw new Error(
+          "the new device key could not be saved; no records were sealed",
+        );
+      }
       state.privateKey = pair.privateKey;
       state.publicKey = pair.publicKey;
       state.publicKeyText = pk;
-      if (storage) {
-        storage.setItem(KEY_KEY, JSON.stringify({ jwk: jwk, pk: pk }));
-      }
     }
 
     function toast(message) {
@@ -1035,12 +1175,17 @@
         (state.busy ? "Syncing…" : "Sync to the ledger") +
         "</button>" +
         '<button type="button" data-act="verify"' +
-        (entries.length ? "" : " disabled") +
+        (journal.size() && !state.busy ? "" : " disabled") +
         ">Check the seal</button>" +
         "</div>" +
         (state.syncError
           ? '<p class="action-error" role="alert">' +
             escapeHtml(state.syncError) +
+            "</p>"
+          : "") +
+        (state.anchorError
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.anchorError) +
             "</p>"
           : "") +
         (state.anchorNotice
@@ -1137,9 +1282,9 @@
       var sync = row.sync || {};
       var items = [
         ["Model", escapeHtml(entry.model_id || "—")],
-        ["Observed", escapeHtml(entry.observed_at || "—")],
+        ["Recorded time (device)", escapeHtml(entry.observed_at || "—")],
         [
-          "Coarse area",
+          "Coarse area (device)",
           entry.location
             ? escapeHtml(entry.location.lat + ", " + entry.location.lon)
             : "not recorded",
@@ -1165,8 +1310,25 @@
             "</span>",
         ],
       ];
+      var correction = repository.corrections().find(function (item) {
+        return item.payload && item.payload.supersedes === entry.hash;
+      });
+      if (correction) {
+        items.push([
+          "Append-only correction",
+          '<span class="mono wrap">' +
+            escapeHtml(correction.hash) +
+            "</span> — " +
+            escapeHtml(correction.payload.reason || "no reason supplied") +
+            ". The sealed original is retained.",
+        ]);
+      }
       if (sync.state === "anchored") {
         if (sync.mode === "shielded") {
+          items.push([
+            "Status source",
+            "Anchor service receipt; this device has not independently verified the transaction.",
+          ]);
           var link = explorerReceiptUrl(
             settings.explorerUrl,
             sync,
@@ -1210,6 +1372,10 @@
                 : ""),
           ]);
         } else {
+          items.push([
+            "Verdict source",
+            "Evidence ledger report from its Hornet read; not independently verified by this device.",
+          ]);
           items.push([
             "Ledger status",
             escapeHtml(sync.status) +
@@ -1343,7 +1509,10 @@
       if (result && result.loading) {
         body = '<p class="hint">Looking…</p>';
       } else if (result && result.error) {
-        body = '<p class="hint">' + escapeHtml(result.error) + "</p>";
+        body =
+          '<p class="action-error" role="alert">' +
+          escapeHtml(result.error) +
+          "</p>";
       } else if (result && result.body) {
         var found = result.body;
         body =
@@ -1455,7 +1624,11 @@
             ". The sealed record is untouched in your journal.</p>" +
             '<div class="row"><button type="button" data-act="retry-anchor" data-hash="' +
             row.hash +
-            '">Retry this anchor</button></div>'
+            '"' +
+            (state.retryAnchorBusy ? " disabled" : "") +
+            ">" +
+            (state.retryAnchorBusy ? "Saving retry…" : "Retry this anchor") +
+            "</button></div>"
           : "") +
         (row.state === "anchored" &&
         row.sync.mode === "shielded" &&
@@ -1497,7 +1670,9 @@
         escapeHtml(entry.observed_at || "—") +
         "), this entry's signature, and your device public key.</p>" +
         '<p class="hint">The device key and the chain link can correlate records you share. The file contains no photos, no private keys, and no other records. Anyone holding the receipt id can query it — it is a bearer capability. The purpose you write is logged by the anchor service.</p>' +
-        '<details class="fine"><summary>Preview the exact record that will be shared</summary><pre class="mono wrap">' +
+        '<details class="fine" data-open-key="share-preview"' +
+        (state.open["share-preview"] ? " open" : "") +
+        '><summary>Preview the exact record that will be shared</summary><pre class="mono wrap">' +
         escapeHtml(JSON.stringify(entry, null, 2)) +
         "</pre></details>" +
         '<label>Purpose of this disclosure<input id="share-purpose" maxlength="200" value="' +
@@ -1544,6 +1719,11 @@
         "><summary>Restore a backup</summary>" +
         '<p class="hint">Restore works only on an empty device — it refuses to overwrite an existing journal or outbox. This device\'s freshly generated key is replaced.</p>' +
         '<label class="file"><span>Choose a backup file</span><input type="file" id="backup-file" accept=".json,application/json" /></label>' +
+        (state.backupFileName
+          ? '<p class="hint" role="status">Selected: ' +
+            escapeHtml(state.backupFileName) +
+            "</p>"
+          : "") +
         '<label>Passphrase<input type="password" id="restore-pass" autocomplete="off" /></label>' +
         '<label class="consent"><input type="checkbox" id="restore-consent" /> I understand this replaces this device&rsquo;s freshly generated key and only works on an empty device.</label>' +
         '<div class="row"><button type="button" data-act="backup-restore"' +
@@ -1556,6 +1736,38 @@
           : "") +
         (state.backupNotice
           ? '<p class="hint">' + escapeHtml(state.backupNotice) + "</p>"
+          : "") +
+        "</section>"
+      );
+    }
+
+    function researchExportPanel() {
+      return (
+        '<section class="card research-export" aria-labelledby="research-export-h">' +
+        '<div class="card-head"><h2 id="research-export-h">Research export</h2></div>' +
+        '<p class="hint">Download the verified journal as a Darwin Core CSV. Locations are withheld by default; taxonomy is included only when explicitly recorded. Provenance states what the seal proves and what it does not.</p>' +
+        '<label>Dataset name<input id="export-dataset" maxlength="160" value="Vickrey field observations" /></label>' +
+        '<label>Location policy<select id="export-location">' +
+        '<option value="withheld">Withhold coordinates</option>' +
+        '<option value="coarse">Include coarse coordinates (about 1 km)</option>' +
+        '<option value="exact">Include retained coordinates unchanged (sensitive)</option>' +
+        "</select></label>" +
+        '<p class="hint">This field client normally seals coarse areas. An exact export never reconstructs precision that was not retained.</p>' +
+        '<label class="consent"><input type="checkbox" id="export-location-consent" /> I authorize the location policy selected above.</label>' +
+        (state.exportError
+          ? '<p class="action-error" role="alert">' +
+            escapeHtml(state.exportError) +
+            "</p>"
+          : "") +
+        '<div class="row"><button type="button" data-act="research-export"' +
+        (state.exportBusy || !journal.size() ? " disabled" : "") +
+        ">" +
+        (state.exportBusy ? "Preparing CSV…" : "Download research CSV") +
+        "</button></div>" +
+        (state.exportNotice
+          ? '<p class="hint" role="status">' +
+            escapeHtml(state.exportNotice) +
+            "</p>"
           : "") +
         "</section>"
       );
@@ -1576,7 +1788,10 @@
       if (state.commonsLoading) {
         body = '<p class="hint">Searching the commons…</p>';
       } else if (state.commonsError) {
-        body = '<p class="hint">' + escapeHtml(state.commonsError) + "</p>";
+        body =
+          '<p class="action-error" role="alert">' +
+          escapeHtml(state.commonsError) +
+          "</p>";
       } else if (state.commons && state.commons.length) {
         body =
           '<ul class="commons-list">' +
@@ -1690,6 +1905,7 @@
         '<p class="mono device">device key ' +
         escapeHtml(shortHash(state.publicKeyText, 12)) +
         "</p>" +
+        '<p class="hint">The seal proves these retained bytes and links verify under this device key. It does not prove the identification, observer identity, or capture time.</p>' +
         "</section>"
       );
     }
@@ -1782,9 +1998,13 @@
         '<div class="mode-switch" role="group" aria-label="Anchor privacy mode">' +
         '<button type="button" class="mode-btn' +
         (!isShielded ? " active" : "") +
+        '" aria-pressed="' +
+        !isShielded +
         '" data-act="mode-public">Public Ledger</button>' +
         '<button type="button" class="mode-btn' +
         (isShielded ? " active" : "") +
+        '" aria-pressed="' +
+        isShielded +
         '" data-act="mode-shielded">Shielded (Zcash)</button>' +
         "</div>" +
         (!isShielded
@@ -1798,32 +2018,146 @@
       );
     }
 
-    function render(focusId, background) {
-      var active = document.activeElement && document.activeElement.id;
-      /* Background refreshes (receipt polling, health, commons) must not
-       * rebuild the DOM while the user is inside the backup or share form —
-       * file picks and typed passphrases would be erased. Defer instead;
-       * user-triggered renders always go through. */
-      if (background) {
-        var focused = document.activeElement;
-        var filePicked = el.querySelector(
-          "#backup-file, #shared-record, input[type=file]",
-        );
-        var fileChosen =
-          filePicked && filePicked.files && filePicked.files.length;
-        if (
-          (focused &&
-            focused.closest &&
-            focused.closest(".backup, .share-card")) ||
-          fileChosen
-        ) {
-          root.setTimeout(function () {
-            render(null, true);
-          }, 1500);
+    function integrityBanner() {
+      var warning = state.integrityError || state.persistenceWarning;
+      if (!warning) {
+        return "";
+      }
+      return (
+        '<div class="action-error integrity-banner" role="alert">' +
+        escapeHtml(warning) +
+        "</div>"
+      );
+    }
+
+    function networkStatus() {
+      return (
+        '<p class="hint network-status" role="status" data-online="' +
+        (state.online ? "yes" : "no") +
+        '"><b>' +
+        (state.online ? "Browser online." : "Browser offline.") +
+        "</b> " +
+        (state.online
+          ? "Service health is reported separately below."
+          : "Sealing and local journal checks still work; hosted identification and anchoring wait for a connection.") +
+        "</p>"
+      );
+    }
+
+    function draftKey(node) {
+      return node.id || node.name || "";
+    }
+
+    function rememberDrafts() {
+      var drafts = {};
+      el.querySelectorAll("input, select, textarea").forEach(function (node) {
+        if (node.type === "file") {
           return;
         }
+        var key = draftKey(node);
+        if (!key) {
+          return;
+        }
+        drafts[key] = {
+          type: node.type,
+          value: node.value,
+          checked: node.checked,
+          start:
+            typeof node.selectionStart === "number"
+              ? node.selectionStart
+              : null,
+          end: typeof node.selectionEnd === "number" ? node.selectionEnd : null,
+        };
+      });
+      state.drafts = drafts;
+      var active = document.activeElement;
+      if (active && active !== document.body && el.contains(active)) {
+        state.focusMemory = {
+          id: active.id,
+          name: active.name || "",
+          tag: active.tagName,
+          act: active.getAttribute("data-act"),
+          hash: active.getAttribute("data-hash"),
+          index: Array.prototype.indexOf.call(
+            el.querySelectorAll(active.tagName.toLowerCase()),
+            active,
+          ),
+        };
+      } else {
+        state.focusMemory = null;
       }
+    }
+
+    function restoreDrafts() {
+      el.querySelectorAll("input, select, textarea").forEach(function (node) {
+        var draft = state.drafts[draftKey(node)];
+        if (!draft) {
+          return;
+        }
+        if (draft.type === "checkbox" || draft.type === "radio") {
+          node.checked = draft.checked;
+        } else {
+          node.value = draft.value;
+          if (
+            draft.start !== null &&
+            draft.end !== null &&
+            typeof node.setSelectionRange === "function" &&
+            node.type !== "number"
+          ) {
+            try {
+              node.setSelectionRange(draft.start, draft.end);
+            } catch (err) {
+              /* Some input types expose selection properties but reject ranges. */
+            }
+          }
+        }
+      });
+    }
+
+    function restoreFocus(focusId) {
+      var memory = state.focusMemory;
+      var target = focusId ? document.getElementById(focusId) : null;
+      if (!target && memory) {
+        if (memory.id) {
+          target = document.getElementById(memory.id);
+        } else if (memory.act) {
+          target = Array.prototype.find.call(
+            el.querySelectorAll("[data-act]"),
+            function (node) {
+              return (
+                node.tagName === memory.tag &&
+                node.getAttribute("data-act") === memory.act &&
+                node.getAttribute("data-hash") === memory.hash
+              );
+            },
+          );
+        } else if (memory.name) {
+          target = Array.prototype.find.call(
+            el.querySelectorAll("input, select, textarea"),
+            function (node) {
+              return node.name === memory.name;
+            },
+          );
+        } else if (memory.tag) {
+          var matches = el.querySelectorAll(memory.tag.toLowerCase());
+          target = matches[memory.index] || null;
+        }
+      }
+      if (
+        target &&
+        el.contains(target) &&
+        !target.disabled &&
+        typeof target.focus === "function"
+      ) {
+        target.focus({ preventScroll: !focusId });
+      }
+    }
+
+    function render(focusId) {
+      rememberDrafts();
       el.innerHTML =
+        integrityBanner() +
+        networkStatus() +
         loopBanner() +
         '<div class="field-grid">' +
         '<div class="col-main">' +
@@ -1832,15 +2166,14 @@
         '<div class="col-side">' +
         outboxPanel() +
         backupPanel() +
+        researchExportPanel() +
         commonsPanel() +
         journalPanel() +
         "</div>" +
         "</div>";
+      restoreDrafts();
       wire();
-      var target = document.getElementById(focusId || active || "");
-      if (target && typeof target.focus === "function") {
-        target.focus({ preventScroll: !focusId });
-      }
+      restoreFocus(focusId);
       state.justSealed = null;
       state.justCracked = null;
     }
@@ -1916,6 +2249,14 @@
           settings.model = form.model.value.trim() || settings.model;
         });
       }
+      var backupFile = el.querySelector("#backup-file");
+      if (backupFile) {
+        backupFile.addEventListener("change", function () {
+          var file = backupFile.files && backupFile.files[0];
+          state.backupFile = file || null;
+          state.backupFileName = file ? file.name : "";
+        });
+      }
       var sharePurpose = el.querySelector("#share-purpose");
       if (sharePurpose) {
         sharePurpose.addEventListener("input", function () {
@@ -1989,6 +2330,10 @@
               state.shareHash = state.shareHash === hash ? null : hash;
               state.shareError = null;
               state.sharePurpose = "";
+              var purpose = document.getElementById("share-purpose");
+              if (purpose) {
+                purpose.value = "";
+              }
               render("share-purpose");
             },
             "share-cancel": function () {
@@ -2021,6 +2366,7 @@
                 importBackup();
               }
             },
+            "research-export": exportResearch,
             commons: function () {
               loadCommons();
             },
@@ -2109,9 +2455,10 @@
         render();
         return;
       }
-      if (!state.privateKey) {
+      if (!state.privateKey || !state.integrityReady) {
         state.error =
-          "The device key is not ready yet — sealing needs it. Wait a moment, or reload the page.";
+          state.integrityError ||
+          "The device key and journal integrity are not ready yet — wait a moment, or reload the page.";
         render();
         return;
       }
@@ -2132,8 +2479,6 @@
             ? root.VickreyTrust.coarseLocation(settings.area, 2)
             : null,
         });
-        var thumb = state.image ? await thumbnail(state.image.preview) : null;
-        journal.record(entry, { thumb: thumb });
         state.justSealed = entry.hash;
         state.lastSealed = entry.hash;
         state.verdict = null;
@@ -2149,18 +2494,29 @@
     }
 
     async function verify() {
-      state.verdict = await root.VickreyTrust.verifyChain(
-        queue.list(),
-        state.publicKey,
-      );
-      if (!state.verdict.ok) {
-        var broken = queue.list()[state.verdict.brokenAt];
-        state.justCracked = broken ? broken.hash : null;
+      try {
+        state.verdict = await verifyJournal(
+          journal,
+          state.publicKey,
+          trust,
+          repository,
+        );
+        state.integrityReady = state.verdict.ok;
+        state.integrityError = state.verdict.ok
+          ? null
+          : "The on-device journal does not verify. Sealing and sync are paused until the damaged record is recovered.";
+        if (!state.verdict.ok) {
+          var broken = journal.list()[state.verdict.brokenAt];
+          state.justCracked = broken ? broken.entry.hash : null;
+        }
+      } catch (err) {
+        state.integrityReady = false;
+        state.integrityError = err.message || String(err);
       }
       render();
     }
 
-    function tamper() {
+    async function tamper() {
       var entries = queue.list();
       if (!entries.length) {
         return;
@@ -2168,6 +2524,14 @@
       var last = entries.length - 1;
       var mutated = applyTamper(entries, last, "Misidentified magpie");
       queue.replace(entries[last].hash, mutated[last]);
+      try {
+        await repository.commitMemory();
+      } catch (err) {
+        state.integrityReady = false;
+        state.integrityError = err.message;
+        render();
+        return;
+      }
       state.verdict = null;
       state.syncError = null;
       state.justCracked = entries[last].hash;
@@ -2176,13 +2540,21 @@
       render();
     }
 
-    function restore(hash) {
+    async function restore(hash) {
       var record = journal.get(hash);
       if (!record) {
         return;
       }
       queue.replace(hash, record.entry);
       journal.markPending(hash);
+      try {
+        await repository.commitMemory();
+      } catch (err) {
+        state.integrityReady = false;
+        state.integrityError = err.message;
+        render();
+        return;
+      }
       state.verdict = null;
       state.syncError = null;
       state.justSealed = hash;
@@ -2190,24 +2562,9 @@
       render("sync");
     }
 
-    /* The drawn anchor times, one per commitment, kept across reloads so the
-     * jitter is never re-rolled (schedule.js draws it exactly once). */
-    var anchorTimes = (function () {
-      try {
-        return (
-          JSON.parse(root.localStorage.getItem(ANCHOR_PLAN_KEY) || "{}") || {}
-        );
-      } catch (err) {
-        return {};
-      }
-    })();
-
-    function saveAnchorTimes() {
-      try {
-        root.localStorage.setItem(ANCHOR_PLAN_KEY, JSON.stringify(anchorTimes));
-      } catch (err) {
-        /* storage unavailable: the draws live for this session only */
-      }
+    /* The schedule is part of the same durable state as the outbox. */
+    async function saveAnchorTimes(plan) {
+      await repository.commitMemory(plan);
     }
 
     var autoTimer = null;
@@ -2237,6 +2594,13 @@
         render();
         return;
       }
+      if (!state.integrityReady || !state.publicKey) {
+        state.syncError =
+          state.integrityError ||
+          "The device key and journal integrity are not ready yet. Nothing was sent.";
+        render();
+        return;
+      }
       state.busy = true;
       state.syncError = null;
       /* An explicit user Sync re-arms the bounded transient retry count. */
@@ -2254,13 +2618,23 @@
           render();
           return;
         }
-        plan = root.VickreySchedule.planAnchors(
-          queue.list(),
-          anchorTimes,
-          Date.now(),
-          settings.schedule,
-        );
-        saveAnchorTimes();
+        try {
+          plan = root.VickreySchedule.planAnchors(
+            queue.list(),
+            repository.anchorPlan(),
+            Date.now(),
+            settings.schedule,
+          );
+          await saveAnchorTimes(repository.anchorPlan());
+        } catch (err) {
+          state.busy = false;
+          state.integrityReady = false;
+          state.integrityError = err.message;
+          state.syncError =
+            "The anchor schedule could not be saved. Nothing was sent.";
+          render();
+          return;
+        }
         due = {};
         plan.send.forEach(function (entry) {
           due[entry.hash] = true;
@@ -2291,6 +2665,16 @@
         state.verdict = drained.verdict;
       }
       settleSync(journal, drained, rows);
+      try {
+        await repository.commitMemory();
+      } catch (err) {
+        state.integrityReady = false;
+        state.integrityError = err.message;
+        state.syncError =
+          "Delivery finished but its result could not be saved. Sync is paused; retry after storage recovers.";
+        render();
+        return;
+      }
       var sent = drained.sent.length;
       if (sent > 0) {
         state.walk.anchored = true;
@@ -2429,10 +2813,8 @@
       render();
     }
 
-    function downloadJson(name, value) {
-      var blob = new Blob([JSON.stringify(value, null, 2)], {
-        type: "application/json",
-      });
+    function downloadText(name, text, type) {
+      var blob = new Blob([text], { type: type });
       var url = URL.createObjectURL(blob);
       var link = document.createElement("a");
       link.href = url;
@@ -2443,6 +2825,80 @@
       root.setTimeout(function () {
         URL.revokeObjectURL(url);
       }, 1000);
+    }
+
+    function downloadJson(name, value) {
+      downloadText(name, JSON.stringify(value, null, 2), "application/json");
+    }
+
+    async function exportResearch() {
+      if (state.exportBusy || state.backupBusy || state.restoring) {
+        return;
+      }
+      if (!root.VickreyExport) {
+        state.exportError = "The research export module failed to load.";
+        render();
+        return;
+      }
+      if (!state.integrityReady || !journal.size()) {
+        state.exportError =
+          "The journal must verify before it can be exported. Nothing was downloaded.";
+        render();
+        return;
+      }
+      var dataset = document.getElementById("export-dataset");
+      var location = document.getElementById("export-location");
+      var consent = document.getElementById("export-location-consent");
+      var policy = location ? location.value : "withheld";
+      if (policy !== "withheld" && (!consent || !consent.checked)) {
+        state.exportError =
+          "Authorize the selected location policy before exporting coordinates.";
+        render();
+        return;
+      }
+      var locationPolicy =
+        policy === "withheld"
+          ? { allow: false }
+          : policy === "exact"
+            ? { allow: true, mode: "exact" }
+            : { allow: true, mode: "coarse", decimals: 2 };
+      var datasetName = dataset ? dataset.value.trim() : "";
+      state.exportBusy = true;
+      state.exportError = null;
+      state.exportNotice = "";
+      render();
+      try {
+        var records = journal.list();
+        var csv = await root.VickreyExport.buildResearchExport(
+          records,
+          state.publicKeyText,
+          {
+            datasetName: datasetName,
+            locationPolicy: locationPolicy,
+            checkpoint: repository.checkpoint(),
+            corrections: repository.corrections(),
+            bom: true,
+          },
+        );
+        downloadText(
+          "vickrey-research-" + new Date().toISOString().slice(0, 10) + ".csv",
+          csv,
+          "text/csv;charset=utf-8",
+        );
+        state.exportNotice =
+          "Downloaded " +
+          records.length +
+          " verified record" +
+          (records.length === 1 ? "" : "s") +
+          ". Location policy: " +
+          policy +
+          ". The CSV does not establish identification accuracy or capture time.";
+      } catch (err) {
+        state.exportError = err instanceof Error ? err.message : String(err);
+      } finally {
+        state.exportBusy = false;
+        render();
+      }
     }
 
     /* The disclosure flow, device-side. The service is asked twice — a fresh
@@ -2523,20 +2979,29 @@
     }
 
     /* Retry a failed anchor: the sealed entry goes back into the outbox and
-     * the record returns to pending. Nothing about the journal is lost. */
-    function retryAnchor(hash) {
-      var record = journal.get(hash);
-      if (!record || !record.entry) {
+     * the record returns to pending in one durable transaction. */
+    async function retryAnchor(hash) {
+      if (state.retryAnchorBusy) {
         return;
       }
-      var sync = record.sync || {};
-      if (sync.state !== "failed" && sync.state !== "refused") {
-        return;
-      }
-      queue.enqueue(record.entry);
-      journal.markPending(hash);
-      state.anchorNotice = "Re-queued the sealed entry for a fresh anchor.";
+      state.retryAnchorBusy = true;
+      state.anchorNotice = "";
+      state.anchorError = null;
       render();
+      try {
+        var retried = await repository.requeue(hash);
+        if (retried) {
+          state.anchorNotice = "Re-queued the sealed entry for a fresh anchor.";
+        }
+      } catch (err) {
+        state.integrityReady = false;
+        state.integrityError = err.message;
+        state.anchorError =
+          "The retry could not be saved. The entry was not re-queued; storage must recover before sync.";
+      } finally {
+        state.retryAnchorBusy = false;
+        render();
+      }
     }
 
     async function exportBackup() {
@@ -2561,13 +3026,15 @@
       render();
       try {
         var envelope = await root.VickreyBackup.encryptBackup(
-          root.localStorage,
+          repository.backupStorage(),
           pass.value,
         );
         downloadJson(
           "vickrey-backup-" + new Date().toISOString().slice(0, 10) + ".json",
           envelope,
         );
+        pass.value = "";
+        pass2.value = "";
         state.backupNotice =
           "Encrypted backup downloaded. The passphrase is the only key to it.";
       } catch (err) {
@@ -2582,9 +3049,8 @@
       if (state.backupBusy) {
         return;
       }
-      var fileInput = document.getElementById("backup-file");
       var pass = document.getElementById("restore-pass");
-      var file = fileInput && fileInput.files && fileInput.files[0];
+      var file = state.backupFile;
       state.backupError = null;
       state.backupNotice = "";
       if (!root.VickreyBackup) {
@@ -2616,7 +3082,7 @@
         var text = await file.text();
         var envelope = JSON.parse(text);
         await root.VickreyBackup.restoreBackup(
-          root.localStorage,
+          repository.backupStorage(),
           envelope,
           pass.value,
         );
@@ -2648,9 +3114,10 @@
         render();
         return;
       }
-      if (!state.privateKey) {
+      if (!state.privateKey || !state.integrityReady) {
         state.error =
-          "The device key is not ready yet — sealing needs it. Wait a moment, then try again.";
+          state.integrityError ||
+          "The device key and journal integrity are not ready yet — wait a moment, then try again.";
         render();
         return;
       }
@@ -2669,8 +3136,6 @@
             model: step.modelId,
             observedAt: step.observedAt,
             location: root.VickreyTrust.coarseLocation(step.location, 2),
-          });
-          journal.record(entry, {
             thumb: plates.plate(step.plate),
             recordedAt: step.observedAt,
           });
@@ -2688,15 +3153,17 @@
 
     /* Wipe this device's walk and start an empty one. The device key is kept:
      * it is the same device, and only the walk is being cleared. */
-    function clearDevice() {
+    async function clearDevice() {
       try {
-        root.localStorage.removeItem(QUEUE_KEY);
-        root.localStorage.removeItem(JOURNAL_KEY);
-        root.localStorage.removeItem(FLOW_KEY);
+        await repository.clearWalk();
+        root.location.reload();
       } catch (err) {
-        /* storage unavailable: the reload below still gives a clean page */
+        state.integrityReady = false;
+        state.integrityError = err.message;
+        state.error =
+          "The walk could not be cleared. Existing records were kept.";
+        render();
       }
-      root.location.reload();
     }
 
     /* ------------------------------------------------------- anchor service */
@@ -2828,6 +3295,14 @@
         }
       }
       if (changed) {
+        try {
+          await repository.commitMemory();
+        } catch (err) {
+          state.integrityReady = false;
+          state.integrityError = err.message;
+          state.anchorNotice =
+            "The receipt update could not be saved; sync is paused.";
+        }
         render(null, true);
       }
     }
@@ -2874,6 +3349,7 @@
         state.commonsError =
           "Commons search unavailable: " + String(err.message || err);
         state.commons = null;
+        toast(state.commonsError);
       }
       state.commonsLoading = false;
       render();
@@ -2935,24 +3411,54 @@
         state.context[hash] = {
           error: "Context unavailable: " + String(err.message || err),
         };
+        toast(state.context[hash].error);
       }
       render();
     }
 
     /* ---------------------------------------------------------------- boot */
 
+    el.addEventListener("input", rememberDrafts);
+    el.addEventListener("change", rememberDrafts);
+
     ensureKey()
-      .catch(function (err) {
-        state.error =
-          "Could not create a device key: " +
-          err.message +
-          ". Sealing needs Web Crypto — serve this page over https or localhost, then reload.";
-      })
-      .then(function () {
+      .then(async function () {
+        state.verdict = await verifyJournal(
+          journal,
+          state.publicKey,
+          trust,
+          repository,
+        );
+        if (state.verdict.reason === "checkpoint_missing" && journal.size()) {
+          await repository.ensureCheckpoint(state.privateKey);
+          state.verdict = await verifyJournal(
+            journal,
+            state.publicKey,
+            trust,
+            repository,
+          );
+        }
+        state.integrityReady = state.verdict.ok;
+        if (!state.verdict.ok) {
+          state.integrityError =
+            "The on-device journal does not verify (" +
+            state.verdict.reason +
+            " at entry " +
+            (state.verdict.brokenAt + 1) +
+            "). Sealing and sync are paused; use Check the seal or restore a backup.";
+        }
         render();
         probeCommons();
         probeContext();
         probeZanchor();
+      })
+      .catch(function (err) {
+        state.integrityReady = false;
+        state.integrityError =
+          "Could not prepare the device key or verify the journal: " +
+          err.message +
+          ". No replacement key was generated and no records were sent.";
+        render();
       });
     root.setInterval(function () {
       if (
@@ -2992,5 +3498,6 @@
     statusNote: statusNote,
     summaryOf: summaryOf,
     verdictText: verdictText,
+    verifyJournal: verifyJournal,
   };
 });

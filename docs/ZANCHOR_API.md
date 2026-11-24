@@ -34,15 +34,27 @@ Request:
 }
 ```
 
+Required header:
+
+```http
+Idempotency-Key: client-generated-key-001
+Authorization: Bearer <token>
+```
+
+The key is 8-128 letters, digits, dots, underscores, colons or hyphens.
+`Authorization` is required only in production.
+
 Nothing else is sent. No observation metadata is sent — no species, no area,
 no timestamp, no signature, no public key; the service can still correlate IP
 addresses, arrival times and commitments. The device's signature over `C`
 stays on-device and is presented at selective-disclosure time.
 
-Response `202` (example: a queued anchor; `status` walks
-`queued → broadcast → confirmed` or `failed`. `txid` appears at `broadcast`,
-`height` and `anchored_at` at `confirmed`, and `error` is present only on
-`failed`):
+Response `202` (example: a queued anchor). The usual path is
+`submitting → queued → broadcast → confirmed`; `submitting` is normally
+transient. `txid` appears at `broadcast`, `height` and `anchored_at` at
+`confirmed`, and `error` is present for `failed` or `reconciling`. Before an
+opid exists, `shielded` is `null`: no transaction has been submitted, so the
+service makes no shielded/transparent claim.
 
 ```json
 {
@@ -59,22 +71,67 @@ Response `202` (example: a queued anchor; `status` walks
 
 Errors:
 
-| Code | Shape                                       | Meaning                                                                                              |
-| ---- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| 400  | `{"detail": "…"}`                           | body is not a 64-hex commitment                                                                      |
-| 409  | `{"detail": "commitment already anchored"}` | **Replay rejection.** This commitment already has a receipt; no second anchor                        |
-| 503  | `{"detail": "…"}`                           | node unreachable / no spendable note left / anchor in flight (one at a time; retry once it confirms) |
+| Code | Shape                                  | Meaning                                                                                      |
+| ---- | -------------------------------------- | -------------------------------------------------------------------------------------------- |
+| 400  | `{"detail": "…"}`                      | invalid JSON/commitment or missing/malformed `Idempotency-Key`                               |
+| 401  | `{"detail": "unauthorized"}`           | production bearer token missing or wrong (`WWW-Authenticate: Bearer`)                        |
+| 409  | `{"detail": "…"}`                      | idempotency key reused with different raw bytes, or commitment already has an active receipt |
+| 413  | `{"detail": "request body too large"}` | body exceeds `ZANCHOR_MAX_BODY_BYTES` (default 16,384 bytes), including chunked bodies       |
+| 429  | `{"detail": "anchor quota exceeded"}`  | shared SQLite fixed-window anchor quota exhausted                                            |
+| 503  | `{"detail": "…"}`                      | node unreachable, wrong expected network, or another anchor is in flight                     |
 
 Nullifiers prevent spending the same note twice at consensus; they say
-nothing about commitments. Per-commitment deduplication is **this `409`**,
-enforced by the service's receipt database under one lock, in both modes.
-The service is fail-closed: a refused shielded send is a 503 with nothing
-downgraded — there is no transparent fallback.
+nothing about commitments. Per-commitment deduplication is the service's
+`409`, enforced by a SQLite uniqueness constraint and a serialized reservation
+in both modes. The one-at-a-time guard covers `submitting`, `reconciling`,
+`queued`, and `broadcast` receipts.
+
+### Idempotency, retries, and uncertain outcomes
+
+The service hashes the **exact request body bytes** with SHA-256 and stores an
+immutable `(Idempotency-Key, request_sha256, receipt_id)` record atomically
+with the initial `submitting` receipt, before any wallet submission.
+
+- Same key and same bytes returns the current state of the same receipt and
+  never submits a second operation. A replay is checked before node polling
+  and does not consume quota.
+- Same key with any changed bytes is `409`, even if the JSON meaning is
+  unchanged. A different key for an already active commitment is also `409`.
+- A definite node refusal or failed node operation becomes `failed`; the
+  receipt id and event history are retained. Retry that commitment with a
+  **new** idempotency key. The retry reuses the failed receipt id and appends
+  history. Replaying the old key still returns that same receipt and does not
+  resubmit.
+- A transport error, bare HTTP 5xx, malformed operation result, or process
+  crash after submission may have created a node operation. The receipt becomes
+  `reconciling` (an expired `submitting` lease is moved there on recovery).
+  The worker queries only the known opid with `z_getoperationstatus`; it never
+  calls `z_sendmany` for a reconciling receipt.
+- If the crash occurred before the opid could be persisted, automatic recovery
+  cannot identify the operation. The receipt remains `reconciling` and blocks
+  new anchors until an operator reconciles the node/wallet out of band. The
+  service does not guess, fabricate an opid, or blindly resend. `reconciling`
+  is not proof of either success or failure.
+
+Worker leases and their expiry are durable SQLite fields. Conditional lease
+claims prevent multiple service processes from advancing the same operation;
+the submitter identity separately allows a late RPC result to persist its opid
+without authorizing a resend.
+The service is fail-closed: a refused shielded send leaves a durable `failed`
+receipt with nothing downgraded — there is no transparent fallback.
+
+`ZANCHOR_ENV` selects the deployment environment (`demo` or `production`);
+it is separate from `ZANCHOR_MODE`, which still selects the transaction
+mechanism (`A` or `B`). Demo is the default and is rate-limited. Production
+requires `ZANCHOR_API_TOKEN` and bearer authentication on both POST endpoints.
 
 ## `GET /receipts/{receipt_id}`
 
 The verifier-held binding. Returns the receipt row, or `404`
-(`{"detail": "…"}`) for an unknown id.
+(`{"detail": "…"}`) for an unknown id. Internal opids, worker ids, lease
+expiry, idempotency keys, and request hashes are not exposed. Poll this
+endpoint for `reconciling`; do not retry with a new key expecting a new chain
+operation.
 
 ```json
 {
@@ -101,8 +158,9 @@ redundant**.
   `B` = commitment in the encrypted memo (the default).
 - `shielded` is the empirical property of the transaction that actually went to
   the node: `true` if it spends and receives in the shielded pool. There is no
-  transparent fallback: a refused send is a 503, so `shielded: false` exists in
-  the contract only for receipts written before the fallback was removed.
+  transparent fallback: a refused send leaves a `failed` receipt, so
+  `shielded: false` exists in the contract only for receipts written before the
+  fallback was removed. A submission with no opid yet reports `null`.
 
 The clients derive their labels from `shielded`, never from `mode` or from
 their own hopes:
@@ -147,7 +205,15 @@ endpoint must never echo a commitment.
   "mode": "B",
   "shielded": true,
   "notes_available": 3,
-  "network": "regtest"
+  "network": "regtest",
+  "env": "demo",
+  "auth_required": false,
+  "body_limit_bytes": 16384,
+  "quotas": {
+    "window_seconds": 60,
+    "anchor": 10,
+    "disclosure": 30
+  }
 }
 ```
 
@@ -159,11 +225,37 @@ is the node's own `getblockchaininfo` answer, normalised (`main`, `testnet`,
 `regtest`, or `unknown`). `shielded` says whether the running pipeline produces
 shielded transactions; the receipt is still the authority per anchor.
 
+`env` is `demo` or `production`. `auth_required` is true only in production.
+`body_limit_bytes` and `quotas` are the active limits, not token material; no
+API token or RPC credential is returned. Quotas are service-wide fixed windows
+shared through SQLite, so they cover all workers/processes using the database.
+
+Configuration:
+
+| Variable                       | Default | Meaning                                                                                        |
+| ------------------------------ | ------- | ---------------------------------------------------------------------------------------------- |
+| `ZANCHOR_ENV`                  | `demo`  | `demo` or `production`; invalid values fail startup                                            |
+| `ZANCHOR_API_TOKEN`            | unset   | required in production; bearer token for anchor and disclosure POSTs; ignored for auth in demo |
+| `ZANCHOR_MODE`                 | `B`     | transaction mechanism, `A` or `B` (not an environment setting)                                 |
+| `ZANCHOR_MAX_BODY_BYTES`       | `16384` | maximum JSON body bytes, including streamed/chunked requests                                   |
+| `ZANCHOR_QUOTA_WINDOW_SECONDS` | `60`    | fixed quota window                                                                             |
+| `ZANCHOR_ANCHOR_QUOTA`         | `10`    | anchor reservations per window; idempotent replays excluded                                    |
+| `ZANCHOR_DISCLOSURE_QUOTA`     | `30`    | disclosure POST attempts per window, including rejected verification attempts                  |
+| `ZANCHOR_LEASE_SECONDS`        | `300`   | submission/reconciliation worker lease duration                                                |
+
+Production refuses to start without a non-whitespace `ZANCHOR_API_TOKEN`.
+Demo also enforces body limits and quotas; it is not an unbounded bypass.
+Changing environment or mode requires a process restart, not a per-request
+switch.
+
 ## `GET /receipts/{receipt_id}/verify`
 
 Fresh node read every call — no cached verdict. Capability: the receipt id
-itself. `404` for an unknown id, `503` when the node is unreachable or absent.
-A pending receipt is advanced through the worker path first.
+itself; production bearer auth is not required here. `404` for an unknown id,
+`503` when the node is unreachable or absent. A pending receipt may be advanced
+through the leased worker path first. Reconciliation only queries a known
+opid; this endpoint never submits or resends an operation. A `reconciling`
+receipt without an opid cannot produce a verification proof automatically.
 
 ```json
 {
@@ -207,8 +299,10 @@ can never produce a proof — it exercises the UI only.
 
 ## `POST /receipts/{receipt_id}/disclosure`
 
-Body `{"purpose": "1–200 chars"}`. Runs the same fresh verification, refuses
-with `409` unless `commitment_verified` is true, `503` when the node is
+Body `{"purpose": "1–200 chars"}`. Production requires the same bearer token
+as `POST /anchor` (`401` otherwise). The body limit and disclosure fixed-window
+quota apply (`413` and `429` respectively). Runs the same fresh verification,
+refuses with `409` unless `commitment_verified` is true, `503` when the node is
 unavailable, `404` for an unknown id. On success it appends one line to the
 append-only `disclosure_audit` table (receipt id, time, purpose — no read
 endpoint) and returns:
@@ -246,6 +340,17 @@ The record's contents never touch this service: the field client assembles
 the shareable bundle (sealed entry + device public key + this response)
 locally and downloads it.
 
+## Durable storage guarantees
+
+SQLite migration is additive: existing receipt rows and audit rows are kept.
+New operation columns, immutable idempotency records, fixed-window quota
+counters, and append-only `anchor_events` are added without rewriting old
+receipts. Events contain only receipt/worker/opid identifiers, event type, and
+time; they never contain credentials, raw memos, commitments, or observation
+payloads. SQLite triggers reject updates and deletes on `anchor_events`,
+`disclosure_audit`, and `idempotency`. None of these internal tables has an
+HTTP enumeration endpoint.
+
 ## Client-side scheduling (owned by the field client)
 
 The jittered batch schedule is **client-side**: the client never POSTs at the
@@ -257,11 +362,26 @@ defaults).
 
 ## Status words
 
-The receipt `status` enum is exactly `queued`, `broadcast`, `confirmed`,
-`failed`. A `failed` receipt anchored nothing (the node rejected its note
-selection); re-submitting the same commitment is allowed and replaces it.
-While a receipt is `queued` or `broadcast`, the service accepts no further
-anchors (`503`) — the wallet's shielded view lags the chain by a few
-blocks, and a concurrent anchor could select the same note, which the node
-would reject as a duplicate nullifier. The client maps unknown values to
-its generic status note rather than guessing.
+The receipt `status` enum is exactly `submitting`, `reconciling`, `queued`,
+`broadcast`, `confirmed`, `failed`.
+
+- `submitting`: a durable receipt and worker lease exist; the wallet submission
+  is in progress or its lease expired before the outcome was recorded.
+- `reconciling`: the outcome is uncertain. Only the known opid may be queried;
+  no new operation is created. Without an opid, operator reconciliation is
+  required and the receipt remains blocked.
+- `queued`: the node accepted the submission and returned an opid, which is
+  durable but not public. The operation has not yet reported success.
+- `broadcast`: node operation success supplied a txid; chain confirmation is
+  still pending.
+- `confirmed`: the txid has at least one confirmation at the recorded height.
+- `failed`: a definite refusal or terminal node operation failure. Nothing is
+  blindly retried. A new idempotency key may retry the same commitment and
+  reuses this receipt id/history.
+
+While any receipt is `submitting`, `reconciling`, `queued`, or `broadcast`, the
+service accepts no different anchor (`503`) — the wallet's shielded view lags
+the chain by a few blocks, and a concurrent anchor could select the same note,
+which the node would reject as a duplicate nullifier. The client maps unknown
+values to its generic status note rather than guessing, and must not present
+`reconciling` as confirmed or failed.

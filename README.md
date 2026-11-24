@@ -1,12 +1,34 @@
 # Vickrey
 
-**Private, verifiable field records.** Record a sighting, seal it on your
-device with an Ed25519 signature, and anchor its commitment in a Zcash
-encrypted memo. Share one sealed record when you choose: a recipient can
-check its contents and signature locally, then ask the anchor service to
-check the memo. The shielded demo uses a private regtest chain; it is not a
-mainnet or public-testnet deployment. On-phone, offline identification is
-planned; the current model integration uses a reachable server.
+**Receipts for real life.** Vickrey is being developed as an agentic
+ground-truth layer: a claim is checked against remote evidence first, and
+when that is not enough, a bounded field task would pay a human observer for a
+sealed record.
+
+The current codebase implements the field-record primitive underneath that
+direction. Record a sighting, seal it on your device with an Ed25519
+signature, and anchor its commitment in a Zcash encrypted memo. Share one
+sealed record when you choose: a recipient can check its contents and
+signature locally, then ask the anchor service to check the memo. The
+shielded demo uses a private regtest chain; it is not a mainnet or
+public-testnet deployment. On-phone, offline identification is planned; the
+current model integration uses a reachable server.
+
+## Product direction
+
+**The fact-checker that can leave the internet.** A user or agent posts a
+claim; Vickrey produces an evidence brief, checks what remote data can
+establish, and opens a bounded field task only when ground truth is still
+needed. A verifier applies the rules, the settlement agent would pay on QIE,
+and the result becomes a shareable receipt.
+
+A local/demo implementation of that loop now exists in `services/receipts` and
+`apps/receipts`: deterministic remote context, a bounded field task, a signed
+verdict, simulated settlement and a public receipt. It is not yet integrated
+into the hosted demo, and independent review remediation is still in progress.
+QIE wallets, identity, escrow and real-funds settlement remain proposed — see
+[docs/REALITY_RECEIPTS.md](docs/REALITY_RECEIPTS.md) and
+[docs/STATUS.md](docs/STATUS.md).
 
 > **Try the live shielded demo:** [open the field client](https://vickrey.144.202.117.160.sslip.io/field/?anchor=shielded&minDelay=0&jitter=0)
 > (demo timing overrides active — production holds the 30-minute delay),
@@ -75,7 +97,8 @@ reveals the selected record, including its recorded coordinates.
 - **Science can still retract.** Wrong IDs get corrected off-chain while the
   anchor still proves the record's early state.
 - **Researchers can actually use it.** The ledger is the trust wrapper; the
-  plan is Darwin Core export.
+  source now includes privacy-preserving Darwin Core export, but the hosted
+  Pages client has not yet been updated to publish it.
 
 **Integrity is not accuracy**: verification detects changes against a sealed
 commitment. It does not establish that the observation or identification was
@@ -159,6 +182,8 @@ explicitly, pass `anchor=public`:
   gotchas, seeding, the ledger API, tests.
 - [docs/STRATEGY.md](docs/STRATEGY.md) — positioning, architecture, anchoring
   design, competitors, risks, interop.
+- [docs/REALITY_RECEIPTS.md](docs/REALITY_RECEIPTS.md) — the agentic
+  ground-truth direction, local demo slice and proposed QIE integration.
 - [docs/ECATHON.md](docs/ECATHON.md) — historical Zcash hackathon plan.
 - [docs/ZANCHOR_API.md](docs/ZANCHOR_API.md) — the pinned wire contract between the field client / explorer and the shielded anchor service.
 - [docs/TESTNET.md](docs/TESTNET.md) — the public-testnet path: Zebra + compat wallet syncing

@@ -45,14 +45,28 @@ not something the scheme guarantees.
 
 ## Taglines
 
-**Canonical — one product name, one slogan. Every surface uses exactly this:**
+**Canonical protocol mark — the durable name and metaphor:**
 
 - **Vickrey — A sealed bid on what you saw.** (`<title>`, hero, masthead,
-  README). The other lines below are supporting copy, never a substitute title.
+  README). Use this when explaining the cryptographic primitive or the origin
+  story.
 - **Sealed at capture. Countersigned by the network.** (supporting copy)
 - **Truthful by design.** (supporting copy)
 - Closing line: _"Vickrey proved that a sealed bid makes people honest. We just
   asked the same of a memory."_
+
+**Public product surface — Reality Receipts:** use this when the user is
+posting a claim, completing a challenge, or sharing an outcome. It is the
+relatable wrapper around the same seal, not a second product.
+
+- **Vickrey Reality Receipts — the fact-checker that can leave the internet.**
+- **Post a claim. Get receipts.**
+- **Remote evidence first. Human ground truth when needed.**
+- **Prove me wrong — with a receipt.**
+
+Do not lead consumer surfaces with "citizen science," "commitment scheme," or
+"proof-of-observation." The mechanism still matters; it just stays one layer
+below the challenge and receipt.
 
 ## Colour — every hue is a role in the mechanism
 

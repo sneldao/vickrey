@@ -13,6 +13,10 @@ def hornet() -> FakeHornet:
 
 @pytest.fixture
 def client(tmp_path, hornet: FakeHornet):
-    app = create_app(database_path=str(tmp_path / "ledger.db"), hornet=hornet)
+    app = create_app(
+        database_path=str(tmp_path / "ledger.db"),
+        hornet=hornet,
+        demo_mutations=True,
+    )
     with TestClient(app) as test_client:
         yield test_client, hornet

@@ -35,12 +35,53 @@
             },
             save: function () {},
           });
-    var records = (store.load() || []).filter(function (record) {
-      return record && record.entry && typeof record.entry.hash === "string";
-    });
+    var loaded = store.load() || [];
+    if (!Array.isArray(loaded)) {
+      throw new Error("journal storage is not a list");
+    }
+    var records = loaded;
 
     function persist() {
       store.save(records);
+    }
+
+    async function verify(publicKey, trustImpl) {
+      var trustApi = trustImpl || root.VickreyTrust;
+      if (!trustApi || typeof trustApi.verifyChain !== "function") {
+        throw new Error("journal verification needs VickreyTrust");
+      }
+      var entries = [];
+      for (var i = 0; i < records.length; i++) {
+        var record = records[i];
+        var entry = record && record.entry;
+        if (
+          !entry ||
+          typeof entry !== "object" ||
+          typeof entry.hash !== "string" ||
+          !/^[0-9a-f]{64}$/.test(entry.hash) ||
+          typeof entry.signature !== "string" ||
+          !entry.signature ||
+          typeof entry.observed_at !== "string" ||
+          !entry.observed_at ||
+          !entry.payload ||
+          typeof entry.payload !== "object" ||
+          Array.isArray(entry.payload) ||
+          (entry.prev !== null && typeof entry.prev !== "string")
+        ) {
+          return { ok: false, brokenAt: i, reason: "shape", checked: i };
+        }
+        entries.push(entry);
+      }
+      var verdict = await trustApi.verifyChain(entries, publicKey);
+      verdict.checked = entries.length;
+      return verdict;
+    }
+
+    function replaceAll(next) {
+      if (!Array.isArray(next)) {
+        throw new Error("journal storage is not a list");
+      }
+      records = next;
     }
 
     function indexOf(hash) {
@@ -205,9 +246,11 @@
       markPending: markPending,
       markRefused: markRefused,
       record: record,
+      replaceAll: replaceAll,
       size: function () {
         return records.length;
       },
+      verify: verify,
     };
   }
 

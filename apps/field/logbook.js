@@ -62,8 +62,12 @@
         modelId: id.model_id || input.model || opts.modelId,
         payload: payloadOf(id),
       });
+      if (typeof opts.commit === "function") {
+        await opts.commit(entry, input);
+      } else {
+        queue.enqueue(entry);
+      }
       head = entry.hash;
-      queue.enqueue(entry);
       return entry;
     }
 

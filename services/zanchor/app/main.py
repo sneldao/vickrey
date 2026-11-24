@@ -16,32 +16,71 @@ received in the shielded pool). Clients derive their labels from
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
 import os
 import re
 import threading
+import time
+import uuid
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.db import Receipts
+from app.db import (
+    AnchorInFlight,
+    CommitmentConflict,
+    IdempotencyConflict,
+    QuotaExceeded,
+    Receipts,
+)
 from app.rpc import RpcError, ZcashRpc
 
 logger = logging.getLogger("zanchor")
 
 COMMITMENT_RE = re.compile(r"^[0-9a-f]{64}$")
+IDEMPOTENCY_KEY_RE = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
 
 DEFAULT_ANCHOR_AMOUNT = "0.001"
 DEFAULT_FEE = "0.0001"
+DEFAULT_BODY_LIMIT = 16_384
+DEFAULT_ANCHOR_QUOTA = 10
+DEFAULT_DISCLOSURE_QUOTA = 30
+DEFAULT_QUOTA_WINDOW_SECONDS = 60
+DEFAULT_LEASE_SECONDS = 300
 WORKER_POLL_SECONDS = 2.0
 
 
 def _env(name: str, default: str = "") -> str:
     return os.environ.get(name, default)
+
+
+def _positive_int_env(name: str, default: int, maximum: int) -> int:
+    try:
+        value = int(_env(name, str(default)))
+    except ValueError:
+        raise ValueError(f"{name} must be a positive integer") from None
+    if not 1 <= value <= maximum:
+        raise ValueError(f"{name} must be between 1 and {maximum}")
+    return value
+
+
+def _runtime_environment() -> tuple[str, str | None]:
+    env = _env("ZANCHOR_ENV", "demo").lower()
+    if env not in ("demo", "production"):
+        raise ValueError("ZANCHOR_ENV must be demo or production")
+    token = _env("ZANCHOR_API_TOKEN") or None
+    if env == "production" and not token:
+        raise ValueError("ZANCHOR_API_TOKEN is required in production")
+    if token is not None and any(ch.isspace() for ch in token):
+        raise ValueError("ZANCHOR_API_TOKEN must not contain whitespace")
+    return env, token
 
 
 def build_rpc() -> ZcashRpc | None:
@@ -53,6 +92,65 @@ def build_store() -> Receipts:
     return Receipts(_env("ZANCHOR_DB", "data/zanchor.db"))
 
 
+class _BodyTooLarge(Exception):
+    pass
+
+
+def _body_limit_error(exc: BaseException) -> bool:
+    if isinstance(exc, _BodyTooLarge):
+        return True
+    if isinstance(exc, BaseExceptionGroup):
+        return any(_body_limit_error(item) for item in exc.exceptions)
+    return False
+
+
+class BodyLimitMiddleware:
+    """Bound streamed request bodies as well as Content-Length requests."""
+
+    def __init__(self, app: Any, max_bytes: int) -> None:
+        self.app = app
+        self.max_bytes = max_bytes
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] != "http" or scope["method"] not in ("POST", "PUT", "PATCH"):
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        length = headers.get(b"content-length")
+        if length is not None:
+            try:
+                if int(length) > self.max_bytes:
+                    await JSONResponse(
+                        status_code=413,
+                        content={"detail": "request body too large"},
+                        headers={"Cache-Control": "no-store"},
+                    )(scope, receive, send)
+                    return
+            except ValueError:
+                pass
+        total = 0
+
+        async def limited_receive() -> dict:
+            nonlocal total
+            message = await receive()
+            if message["type"] == "http.request":
+                total += len(message.get("body", b""))
+                if total > self.max_bytes:
+                    raise _BodyTooLarge
+            return message
+
+        try:
+            await self.app(scope, limited_receive, send)
+        except BaseException as exc:
+            if not _body_limit_error(exc):
+                raise
+            await JSONResponse(
+                status_code=413,
+                content={"detail": "request body too large"},
+                headers={"Cache-Control": "no-store"},
+            )(scope, receive, send)
+
+
 class AnchorService:
     """Wallet-facing anchor pipeline plus the receipt book."""
 
@@ -62,6 +160,7 @@ class AnchorService:
         self.mode = _env("ZANCHOR_MODE", "B").upper()
         if self.mode not in ("A", "B"):
             raise ValueError(f"ZANCHOR_MODE must be A or B, got {self.mode!r}")
+        self.env, self.api_token = _runtime_environment()
         self.amount = _env("ZANCHOR_ANCHOR_AMOUNT", DEFAULT_ANCHOR_AMOUNT)
         self.fee = _env("ZANCHOR_FEE", DEFAULT_FEE)
         self.anchor_zaddr = _env("ZANCHOR_ANCHOR_ZADDR")
@@ -70,7 +169,26 @@ class AnchorService:
         # network matches (e.g. "regtest" for the demo deployment) — a
         # public service must never spend on a non-demo chain.
         self.expected_network = _env("ZANCHOR_EXPECTED_NETWORK")
-        self._lock = threading.Lock()
+        self.worker_id = f"{os.getpid()}_{uuid.uuid4().hex}"
+        self.lease_seconds = _positive_int_env(
+            "ZANCHOR_LEASE_SECONDS", DEFAULT_LEASE_SECONDS, 3600
+        )
+        self.body_limit_bytes = _positive_int_env(
+            "ZANCHOR_MAX_BODY_BYTES", DEFAULT_BODY_LIMIT, 1_048_576
+        )
+        self.quota_window_seconds = _positive_int_env(
+            "ZANCHOR_QUOTA_WINDOW_SECONDS", DEFAULT_QUOTA_WINDOW_SECONDS, 86_400
+        )
+        self.anchor_quota = _positive_int_env(
+            "ZANCHOR_ANCHOR_QUOTA", DEFAULT_ANCHOR_QUOTA, 1_000_000
+        )
+        self.disclosure_quota = _positive_int_env(
+            "ZANCHOR_DISCLOSURE_QUOTA", DEFAULT_DISCLOSURE_QUOTA, 1_000_000
+        )
+
+    @property
+    def auth_required(self) -> bool:
+        return self.env == "production"
 
     # -- capability ------------------------------------------------------
 
@@ -114,7 +232,17 @@ class AnchorService:
 
     # -- anchoring ---------------------------------------------------------
 
-    def anchor(self, commitment: str) -> dict[str, Any]:
+    def anchor(
+        self, commitment: str, idempotency_key: str, request_sha256: str
+    ) -> dict[str, Any]:
+        try:
+            replay = self.store.idempotency_receipt(idempotency_key, request_sha256)
+        except IdempotencyConflict:
+            raise HTTPException(
+                409, "idempotency key reused with different request bytes"
+            ) from None
+        if replay is not None:
+            return _public(replay)
         if not self.node_up():
             raise HTTPException(503, "node unreachable")
         if self.expected_network:
@@ -127,54 +255,91 @@ class AnchorService:
                     503, "anchor service is not on its expected network"
                 )
 
-        # The duplicate check, the in-flight check, the send and the insert
-        # all happen under the one lock: a second request must not slip
-        # between "not anchored yet" and "operation created" and burn a
-        # second note for the same commitment or a second note at all.
-        with self._lock:
-            existing = self.store.by_commitment(commitment)
-            if existing is not None and existing["status"] != "failed":
-                raise HTTPException(409, "commitment already anchored")
-            if existing is not None:
-                # A failed attempt did not anchor anything; allow the retry.
-                self.store.delete(existing["receipt_id"])
-            # One anchor at a time: the wallet picks its note when the
-            # operation is created, and its shielded view lags the chain
-            # by a few blocks. A second anchor started before the first
-            # one confirms can pick the same note — the node then rejects
-            # it as a duplicate nullifier. The field scheduler already
-            # spaces anchors by tens of minutes; this is the backstop.
-            if self.store.unconfirmed():
-                raise HTTPException(503, "anchor in flight; retry once it confirms")
-            opid, txid, mode, shielded = self._anchor_tx(commitment)
-            status = "broadcast" if txid else "queued"
-            receipt = self.store.insert(
-                commitment, mode, shielded, opid, txid, status=status
+        try:
+            receipt, replayed = self.store.reserve_anchor(
+                commitment,
+                self.mode,
+                idempotency_key,
+                request_sha256,
+                self.worker_id,
+                time.time() + self.lease_seconds,
+                quota_limit=self.anchor_quota,
+                quota_window_seconds=self.quota_window_seconds,
             )
-            self._remember_shielded(shielded)
+        except IdempotencyConflict:
+            raise HTTPException(
+                409, "idempotency key reused with different request bytes"
+            ) from None
+        except CommitmentConflict:
+            raise HTTPException(409, "commitment already anchored") from None
+        except AnchorInFlight:
+            raise HTTPException(
+                503, "anchor in flight; retry once it settles"
+            ) from None
+        except QuotaExceeded:
+            raise HTTPException(429, "anchor quota exceeded") from None
+        if replayed:
             return _public(receipt)
 
-    def _anchor_tx(self, commitment: str) -> tuple[str | None, str | None, str, bool]:
-        """Return (opid, txid, mode, shielded) for one commitment.
-
-        Fail-closed: there is no downgrade path. Mode B anchors the
-        commitment in the encrypted memo or not at all; mode A (the
-        explicit legacy mode) burns a dedicated note or not at all. A
-        refusal is a 503, never a quieter transaction.
-        """
-        if self.mode == "B":
-            try:
-                return self._send_shielded(commitment), None, "B", True
-            except RpcError:
-                raise HTTPException(
-                    503, "Shielded memo anchoring unavailable; nothing downgraded"
-                ) from None
+        # The submitting receipt and lease are durable before this call. If
+        # the process dies here, recovery can only reconcile, never resend.
         try:
-            return self._send_shielded(None), None, "A", True
-        except RpcError:
-            raise HTTPException(
-                503, "Shielded beacon unavailable; nothing downgraded"
-            ) from None
+            opid, mode, shielded = self._anchor_tx(commitment)
+            if not isinstance(opid, str) or not opid:
+                raise OSError("node returned no operation id")
+            receipt = self.store.record_opid(
+                receipt["receipt_id"], self.worker_id, opid, mode, shielded
+            )
+            if receipt is None:
+                receipt = self.store.get(receipt["receipt_id"])
+            if receipt is None:
+                raise RuntimeError("submitted receipt missing")
+            self._remember_shielded(shielded)
+            return _public(receipt)
+        except RpcError as exc:
+            if _definite_rpc_failure(exc):
+                reason = (
+                    "Shielded memo anchoring unavailable; nothing downgraded"
+                    if self.mode == "B"
+                    else "Shielded beacon unavailable; nothing downgraded"
+                )
+                receipt = self.store.fail_submission(
+                    receipt["receipt_id"], self.worker_id, reason
+                )
+            else:
+                receipt = self.store.mark_submission_reconciling(
+                    receipt["receipt_id"],
+                    self.worker_id,
+                    "submission outcome uncertain; reconciliation required",
+                )
+            return _public(receipt or self.store.get(receipt["receipt_id"]))
+        except HTTPException:
+            # Local preflight refusals (for example no spendable note) are
+            # definite and retain the same receipt for a keyed retry.
+            receipt = self.store.fail_submission(
+                receipt["receipt_id"], self.worker_id, "anchor preflight failed"
+            )
+            return _public(receipt or self.store.get(receipt["receipt_id"]))
+        except OSError:
+            receipt = self.store.mark_submission_reconciling(
+                receipt["receipt_id"],
+                self.worker_id,
+                "submission outcome uncertain; reconciliation required",
+            )
+            return _public(receipt or self.store.get(receipt["receipt_id"]))
+        except Exception:
+            self.store.mark_submission_reconciling(
+                receipt["receipt_id"],
+                self.worker_id,
+                "submission outcome uncertain; reconciliation required",
+            )
+            raise
+
+    def _anchor_tx(self, commitment: str) -> tuple[str, str, bool]:
+        """Submit exactly one shielded operation; never downgrade the mode."""
+        if self.mode == "B":
+            return self._send_shielded(commitment), "B", True
+        return self._send_shielded(None), "A", True
 
     def _send_shielded(self, commitment: str | None) -> str:
         """One dedicated note burned for one commitment. Returns an opid.
@@ -232,16 +397,10 @@ class AnchorService:
         if self.rpc is None:
             raise HTTPException(503, "no node")
 
-        # A pending receipt is advanced first, under the same lock the
-        # worker holds, so verify never reads a half-updated row.
-        if row["status"] in ("queued", "broadcast"):
-            with self._lock:
-                try:
-                    self._advance(row)
-                except RpcError:
-                    pass
-                except Exception:
-                    raise HTTPException(503, "node unreachable")
+        # A worker lease fences advancement across processes. Verification
+        # never submits or resends; it only polls the already-known opid.
+        if row["status"] in ("queued", "broadcast", "reconciling"):
+            self._poll_one(receipt_id)
             row = self.store.get(receipt_id) or row
 
         try:
@@ -339,45 +498,60 @@ class AnchorService:
     # -- worker ------------------------------------------------------------
 
     def poll_pending(self) -> None:
+        self.store.expire_submitting_leases()
         if self.rpc is None:
             return
         for pending in self.store.unconfirmed():
-            # Same lock verify_receipt holds: a fresh read must never see a
-            # half-advanced row, and the row is re-read inside the lock so a
-            # receipt settled between listing and advancing is not worked on
-            # twice. Only the error type name is logged — the exception body
-            # can carry RPC credentials.
-            with self._lock:
-                try:
-                    row = self.store.get(pending["receipt_id"])
-                    if row is not None and row["status"] in ("queued", "broadcast"):
-                        self._advance(row)
-                except Exception as exc:
-                    # Only the error type: the exception body can carry RPC
-                    # credentials; the receipt id is a bearer capability.
-                    logger.warning(
-                        "anchor_poll_failed error_type=%s", type(exc).__name__
-                    )
+            self._poll_one(pending["receipt_id"])
+
+    def _poll_one(self, receipt_id: str) -> None:
+        if self.rpc is None:
+            return
+        receipt = self.store.claim_pending(
+            receipt_id, self.worker_id, time.time() + self.lease_seconds
+        )
+        if receipt is None:
+            return
+        try:
+            self._advance(receipt)
+        except Exception as exc:
+            # Only the error type: exception bodies and receipt ids can carry
+            # credentials or bearer capabilities.
+            logger.warning("anchor_poll_failed error_type=%s", type(exc).__name__)
+        finally:
+            self.store.release_lease(receipt_id, self.worker_id)
 
     def _advance(self, receipt: dict[str, Any]) -> None:
         assert self.rpc is not None
         rid = receipt["receipt_id"]
-        if receipt["status"] == "queued":
+        worker_id = receipt["worker_id"]
+        if receipt["status"] in ("queued", "reconciling"):
             if not receipt["opid"]:
+                self.store.mark_pending_reconciling(
+                    rid,
+                    worker_id,
+                    "operation id unavailable; manual reconciliation required",
+                )
                 return
-            status = self.rpc.operation_status(receipt["opid"])
-            state = status.get("status")
-            if state == "success":
-                result = status.get("result")
-                txid = result.get("txid") if isinstance(result, dict) else result
-                self.store.set_broadcast(rid, str(txid))
-                receipt = self.store.get(rid)
-            elif state in ("failed", "error"):
-                # The node's error string can carry internals; never log it
-                # and never serve it back inside a receipt.
-                logger.warning("anchor_operation_failed")
-                self.store.set_failed(rid, "node operation failed")
-                return
+            try:
+                status = self.rpc.operation_status(receipt["opid"])
+                state = status.get("status")
+                if state == "success":
+                    result = status.get("result")
+                    txid = result.get("txid") if isinstance(result, dict) else result
+                    if not isinstance(txid, str) or not txid:
+                        raise ValueError("operation success has no txid")
+                    self.store.set_broadcast(rid, txid, worker_id)
+                elif state in ("failed", "error"):
+                    logger.warning("anchor_operation_failed")
+                    self.store.set_failed(rid, "node operation failed", worker_id)
+            except Exception:
+                self.store.mark_pending_reconciling(
+                    rid,
+                    worker_id,
+                    "operation status unavailable; reconciliation required",
+                )
+                raise
             return
         if receipt["status"] == "broadcast" and receipt["txid"]:
             tx = self.rpc.transaction(receipt["txid"])
@@ -395,7 +569,18 @@ class AnchorService:
                         tx.get("blocktime")
                         or _block_time(self.rpc, tx.get("blockhash"))
                     ),
+                    worker_id,
                 )
+
+
+def _definite_rpc_failure(exc: RpcError) -> bool:
+    """A decoded JSON-RPC refusal is definite; a bare HTTP 5xx is not."""
+    if exc.code == -32000 and exc.message.startswith("node http"):
+        match = re.fullmatch(r"node http (\d+)", exc.message)
+        if match:
+            return 400 <= int(match.group(1)) < 500
+        return False
+    return True
 
 
 def memo_matches(memo: Any, commitment: str) -> bool:
@@ -454,7 +639,11 @@ def _public(receipt: dict[str, Any]) -> dict[str, Any]:
         "commitment": receipt["commitment"],
         "status": receipt["status"],
         "mode": receipt["mode"],
-        "shielded": receipt["shielded"],
+        # Before an opid exists no transaction has been submitted, so the
+        # service must not label the pending attempt transparent or shielded.
+        "shielded": (
+            receipt["shielded"] if receipt.get("opid") or receipt.get("txid") else None
+        ),
         "txid": receipt.get("txid"),
         "height": receipt.get("height"),
         "anchored_at": receipt.get("anchored_at"),
@@ -465,6 +654,7 @@ def _public(receipt: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_app() -> FastAPI:
+    _runtime_environment()  # fail before opening a store in misconfigured production
     rpc = build_rpc()
     store = build_store()
     service = AnchorService(rpc, store)
@@ -495,7 +685,9 @@ def build_app() -> FastAPI:
     async def private_errors(request, call_next):
         try:
             response = await call_next(request)
-        except Exception as exc:
+        except BaseException as exc:
+            if _body_limit_error(exc) or not isinstance(exc, Exception):
+                raise
             # Unexpected failure: log the type only, answer generically. No
             # traceback, no request detail — both can carry bearer ids.
             logger.error("request_failed error_type=%s", type(exc).__name__)
@@ -510,14 +702,59 @@ def build_app() -> FastAPI:
             svc.poll_pending()
             stop.wait(WORKER_POLL_SECONDS)
 
+    def _require_write_auth(request: Request) -> None:
+        if not service.auth_required:
+            return
+        scheme, separator, supplied = request.headers.get(
+            "authorization", ""
+        ).partition(" ")
+        if (
+            not separator
+            or scheme.lower() != "bearer"
+            or not hmac.compare_digest(
+                supplied.encode("utf-8"), service.api_token.encode("utf-8")
+            )
+        ):
+            raise HTTPException(
+                401, "unauthorized", headers={"WWW-Authenticate": "Bearer"}
+            )
+
+    def _decode_json_object(raw: bytes) -> dict[str, Any]:
+        try:
+            payload = json.loads(raw)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise HTTPException(400, "body must be a JSON object") from None
+        if not isinstance(payload, dict):
+            raise HTTPException(400, "body must be a JSON object")
+        return payload
+
+    async def _json_object(request: Request) -> tuple[dict[str, Any], bytes]:
+        raw = await request.body()
+        return _decode_json_object(raw), raw
+
     @app.post("/anchor", status_code=202)
-    def anchor(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        commitment = (payload or {}).get("commitment", "")
-        if not isinstance(commitment, str) or not COMMITMENT_RE.match(commitment):
+    async def anchor(request: Request) -> dict[str, Any]:
+        _require_write_auth(request)
+        raw = await request.body()
+        idempotency_key = request.headers.get("idempotency-key", "")
+        if not IDEMPOTENCY_KEY_RE.fullmatch(idempotency_key):
+            raise HTTPException(
+                400, "Idempotency-Key must be 8-128 letters, digits, . _ : or -"
+            )
+        request_sha256 = hashlib.sha256(raw).hexdigest()
+        try:
+            replay = service.store.idempotency_receipt(idempotency_key, request_sha256)
+        except IdempotencyConflict:
+            raise HTTPException(
+                409, "idempotency key reused with different request bytes"
+            ) from None
+        if replay is not None:
+            return _public(replay)
+        payload = _decode_json_object(raw)
+        commitment = payload.get("commitment", "")
+        if not isinstance(commitment, str) or not COMMITMENT_RE.fullmatch(commitment):
             raise HTTPException(400, "body is not a 64-hex commitment")
-        # Replay and in-flight checks live inside service.anchor's lock so
-        # two racing requests cannot both pass them.
-        return service.anchor(commitment)
+        return service.anchor(commitment, idempotency_key, request_sha256)
 
     @app.get("/receipts/{receipt_id}")
     def receipt(receipt_id: str) -> dict[str, Any]:
@@ -533,15 +770,23 @@ def build_app() -> FastAPI:
         return service.verify_receipt(receipt_id)
 
     @app.post("/receipts/{receipt_id}/disclosure")
-    def disclosure(
-        receipt_id: str, payload: dict[str, Any] = Body(...)
-    ) -> dict[str, Any]:
-        purpose = (payload or {}).get("purpose")
+    async def disclosure(receipt_id: str, request: Request) -> dict[str, Any]:
+        _require_write_auth(request)
+        payload, _ = await _json_object(request)
+        purpose = payload.get("purpose")
         if not isinstance(purpose, str):
             raise HTTPException(400, "purpose is required (1-200 characters)")
         purpose = purpose.strip()
         if not 1 <= len(purpose) <= 200:
             raise HTTPException(400, "purpose is required (1-200 characters)")
+        try:
+            service.store.consume_quota(
+                "disclosure",
+                limit=service.disclosure_quota,
+                window_seconds=service.quota_window_seconds,
+            )
+        except QuotaExceeded:
+            raise HTTPException(429, "disclosure quota exceeded") from None
         result = service.verify_receipt(receipt_id)
         if not result["commitment_verified"]:
             raise HTTPException(409, "commitment is not verified; nothing to disclose")
@@ -589,8 +834,19 @@ def build_app() -> FastAPI:
             "shielded": service.shielded_pipeline(),
             "notes_available": service.notes_available(),
             "network": service.network_name(),
+            "env": service.env,
+            "auth_required": service.auth_required,
+            "body_limit_bytes": service.body_limit_bytes,
+            "quotas": {
+                "window_seconds": service.quota_window_seconds,
+                "anchor": service.anchor_quota,
+                "disclosure": service.disclosure_quota,
+            },
         }
 
+    # Keep the streaming body guard outside the generic error middleware so
+    # an oversized chunk becomes 413 rather than a generic 500.
+    app.add_middleware(BodyLimitMiddleware, max_bytes=service.body_limit_bytes)
     return app
 
 

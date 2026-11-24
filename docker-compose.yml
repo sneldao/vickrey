@@ -48,7 +48,9 @@ services:
       start_period: 5s
 
   explorer:
-    build: ./apps/explorer
+    build:
+      context: .
+      dockerfile: apps/explorer/Dockerfile
     image: veles-explorer:day3
     container_name: explorer
     restart: unless-stopped
@@ -61,6 +63,8 @@ services:
     depends_on:
       ledger:
         condition: service_healthy
+      receipts:
+        condition: service_healthy
     healthcheck:
       test:
         ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health"]
@@ -69,5 +73,30 @@ services:
       retries: 5
       start_period: 3s
 
+  receipts:
+    build: ./services/receipts
+    container_name: receipts
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8099:8099"
+    environment:
+      RECEIPTS_MODE: demo
+      RECEIPTS_DATABASE_PATH: /data/receipts.db
+    volumes:
+      - receipts-data:/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
 volumes:
   ledger-data:
+  receipts-data:

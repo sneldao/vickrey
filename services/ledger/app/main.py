@@ -8,13 +8,17 @@ still equals the application copy. Tamper changes only the copy.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
+import re
+import secrets
 from contextlib import asynccontextmanager
 from typing import Any
 
-from fastapi import Body, FastAPI, HTTPException, Query, Response
+from fastapi import Body, FastAPI, HTTPException, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from app.atlas import ObservationStore
@@ -22,7 +26,14 @@ from app.atlas import connect as connect_observations
 from app.context import ContextError
 from app.context import context_from_env as open_context
 from app.context import DEFAULT_LIMIT as DEFAULT_CONTEXT_LIMIT
-from app.db import Database, load_json, normalize_block_id, parse_time_bound
+from app.db import (
+    ApplicationConflict,
+    Database,
+    IdempotencyConflict,
+    load_json,
+    normalize_block_id,
+    parse_time_bound,
+)
 from app.embedded import EmbeddedHornet, embedded_from_env
 from app.hornet import DEFAULT_HORNET_URL, HornetClient
 from app.tamper import mutate_application_payload
@@ -31,9 +42,14 @@ from app.verify import STATUS_VALUES, Status, VerifyResult, verify_record
 logger = logging.getLogger("ledger")
 
 TAMPER_NOTE = (
-    "DEMO ONLY. payload_json in this database was overwritten. "
-    "Hornet was not modified; reverify only GETs the block and metadata."
+    "DEMO ONLY. The active application copy was overwritten; the immutable "
+    "submission was not. Hornet was not modified."
 )
+IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{8,128}$")
+
+
+class VerificationConflict(Exception):
+    pass
 
 
 class ContextIn(BaseModel):
@@ -66,8 +82,12 @@ class ContextResult(BaseModel):
 class IngestIn(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    block_id: str = Field(validation_alias=AliasChoices("blockId", "block_id"))
-    tag: str
+    block_id: str = Field(
+        min_length=1,
+        max_length=256,
+        validation_alias=AliasChoices("blockId", "block_id"),
+    )
+    tag: str = Field(min_length=1, max_length=256)
     message: Any
     hornet_status: int | None = Field(
         default=None,
@@ -95,6 +115,8 @@ class MessageOut(BaseModel):
     tag: str
     flow_id: str | None
     payload_json: Any
+    submission_payload_json: Any
+    version: int
     inserted_at: str
     solid: bool | None
     content_match: bool | None
@@ -176,6 +198,8 @@ def message_out(row: dict) -> dict:
         "tag": row["tag"],
         "flow_id": row["flow_id"],
         "payload_json": load_json(row["payload_json"]),
+        "submission_payload_json": load_json(row["submission_payload_json"]),
+        "version": row["version"],
         "inserted_at": row["inserted_at"],
         "solid": None if row["solid"] is None else bool(row["solid"]),
         "content_match": None
@@ -217,7 +241,15 @@ def verify_stored(db: Database, hornet: Any, block_id: str) -> dict:
     except Exception as exc:
         logger.exception("verification failed for %s", block_id)
         result = _pending_error(f"verification error: {exc}")
-    db.save_verification(row["block_id"], result)
+    applied = db.save_verification(
+        row["block_id"],
+        result,
+        expected_version=row["version"],
+        checked_payload_json=row["payload_json"],
+        checked_tag=row["tag"],
+    )
+    if not applied:
+        raise VerificationConflict(block_id)
     updated = db.get(block_id)
     if updated is None:
         raise KeyError(block_id)
@@ -275,6 +307,26 @@ def _open_observation_store(explicit: Any | None) -> ObservationStore | None:
     return store
 
 
+def _env_flag(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a positive integer") from exc
+    if value < 1:
+        raise ValueError(f"{name} must be a positive integer")
+    return value
+
+
 def create_app(
     *,
     database_path: str | None = None,
@@ -284,8 +336,51 @@ def create_app(
     observation_store: Any | None = None,
     embedded: Any | None = None,
     context: Any | None = None,
+    mode: str | None = None,
+    api_token: str | None = None,
+    demo_mutations: bool | None = None,
+    max_body_bytes: int | None = None,
+    ingest_rate_limit: int | None = None,
+    context_rate_limit: int | None = None,
+    rate_window_seconds: int | None = None,
 ) -> FastAPI:
     logging.basicConfig(level=os.environ.get("LOG_LEVEL", "INFO"))
+    resolved_mode = (mode or os.environ.get("LEDGER_MODE", "demo")).strip().lower()
+    if resolved_mode not in {"demo", "production"}:
+        raise ValueError("LEDGER_MODE must be demo or production")
+    resolved_token = (
+        api_token if api_token is not None else os.environ.get("LEDGER_API_TOKEN")
+    )
+    resolved_token = resolved_token.strip() if resolved_token else ""
+    if resolved_mode == "production" and not resolved_token:
+        raise ValueError("LEDGER_API_TOKEN is required in production mode")
+    resolved_demo = (
+        _env_flag("LEDGER_DEMO_MUTATIONS") if demo_mutations is None else demo_mutations
+    )
+    if resolved_mode == "production" and resolved_demo:
+        raise ValueError("demo mutations cannot be enabled in production mode")
+    body_limit = (
+        _env_positive_int("LEDGER_MAX_BODY_BYTES", 1_048_576)
+        if max_body_bytes is None
+        else max_body_bytes
+    )
+    ingest_limit = (
+        _env_positive_int("LEDGER_INGEST_RATE_LIMIT", 60)
+        if ingest_rate_limit is None
+        else ingest_rate_limit
+    )
+    context_limit = (
+        _env_positive_int("LEDGER_CONTEXT_RATE_LIMIT", 10)
+        if context_rate_limit is None
+        else context_rate_limit
+    )
+    rate_window = (
+        _env_positive_int("LEDGER_RATE_WINDOW_SECONDS", 60)
+        if rate_window_seconds is None
+        else rate_window_seconds
+    )
+    if min(body_limit, ingest_limit, context_limit, rate_window) < 1:
+        raise ValueError("request limits must be positive")
     resolved_url = hornet_url or os.environ.get("HORNET_URL", DEFAULT_HORNET_URL)
     timeout = float(os.environ.get("HORNET_TIMEOUT", "5"))
     db_path = database_path or os.environ.get(
@@ -342,7 +437,7 @@ def create_app(
             "block. With HORNET_EMBEDDED=1 the block store is in-process and the "
             "check compares two stores rather than two processes."
         ),
-        version="0.3.0",
+        version="0.4.0",
         lifespan=lifespan,
     )
     app.state.db = database
@@ -361,6 +456,89 @@ def create_app(
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
+    app.state.mode = resolved_mode
+    app.state.api_token_required = resolved_mode == "production"
+    app.state.demo_mutations = resolved_demo
+
+    async def read_body_limited(request: Request) -> bytes:
+        body = bytearray()
+        async for chunk in request.stream():
+            body.extend(chunk)
+            if len(body) > body_limit:
+                raise HTTPException(status_code=413, detail="request body is too large")
+        raw = bytes(body)
+        # BaseHTTPMiddleware otherwise forwards an empty body after stream()
+        # consumption. Its cached-request wrapper replays this exact body.
+        request._body = raw
+        return raw
+
+    @app.middleware("http")
+    async def body_size_limit(request: Request, call_next):
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                length = int(declared)
+            except ValueError:
+                return JSONResponse(
+                    status_code=400, content={"detail": "invalid content-length"}
+                )
+            if length < 0:
+                return JSONResponse(
+                    status_code=400, content={"detail": "invalid content-length"}
+                )
+            if length > body_limit:
+                return JSONResponse(
+                    status_code=413, content={"detail": "request body is too large"}
+                )
+        if request.method in {"POST", "PUT", "PATCH"}:
+            try:
+                await read_body_limited(request)
+            except HTTPException as exc:
+                return JSONResponse(
+                    status_code=exc.status_code, content={"detail": exc.detail}
+                )
+        return await call_next(request)
+
+    def _authorize(request: Request, operation: str, limit: int) -> None:
+        header = request.headers.get("authorization")
+        if resolved_token:
+            scheme, separator, credential = (header or "").partition(" ")
+            if (
+                not separator
+                or scheme.lower() != "bearer"
+                or not secrets.compare_digest(credential, resolved_token)
+            ):
+                raise HTTPException(
+                    status_code=401,
+                    detail="valid bearer token required",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            subject = "token:" + hashlib.sha256(resolved_token.encode()).hexdigest()
+        elif header:
+            raise HTTPException(
+                status_code=401,
+                detail="invalid bearer token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        else:
+            host = request.client.host if request.client else "unknown"
+            subject = "anonymous:" + host
+        allowed, retry_after = database.consume_request_limit(
+            subject=subject,
+            operation=operation,
+            limit=limit,
+            window_seconds=rate_window,
+        )
+        if not allowed:
+            raise HTTPException(
+                status_code=429,
+                detail="request limit exceeded",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+    def _require_demo() -> None:
+        if not resolved_demo:
+            raise HTTPException(status_code=403, detail="demo mutations are disabled")
 
     def _anchoring_mode() -> str:
         """Name the current anchoring mode, and say what it costs.
@@ -407,7 +585,10 @@ def create_app(
             ),
             "health": "/health",
             "docs": "/docs",
-            "ingest": "/ingest",
+            "mode": resolved_mode,
+            "ingest": "/v2/ingest",
+            "demo_ingest": "/ingest" if resolved_mode == "demo" else None,
+            "demo_mutations": resolved_demo,
             "messages": "/messages",
             "context": "/context" if web is not None else None,
             "observations": {
@@ -431,10 +612,13 @@ def create_app(
                 anchoring.registered if anchoring is not None else None
             ),
             "observations": observations is not None,
+            "mode": resolved_mode,
+            "api_token_required": resolved_mode == "production",
+            "demo_mutations": resolved_demo,
         }
 
     @app.post("/context", response_model=ContextResult)
-    def context_lookup(body: ContextIn) -> dict:
+    def context_lookup(body: ContextIn, request: Request) -> dict:
         """Recent public reports of a species, from Tavily.
 
         Deliberately separate from the record: nothing here is sealed, anchored
@@ -446,6 +630,7 @@ def create_app(
                 status_code=503,
                 detail="no web context configured; set TAVILY_API_KEY",
             )
+        _authorize(request, "context", context_limit)
         try:
             return web.search(
                 species=body.species,
@@ -462,26 +647,39 @@ def create_app(
                 "results": [],
             }
 
-    @app.post("/ingest", response_model=MessageOut)
-    def ingest(body: IngestIn, response: Response) -> dict:
-        # In embedded mode this service is also the Messages API stand-in, so it
-        # writes the block before reading it back. The block still lands in a
-        # separate structure from the application copy, which is what the
-        # two-source check compares; see app/embedded.py for what this costs.
+    def _ingest_body(
+        body: IngestIn,
+        response: Response,
+        *,
+        idempotency_key: str | None = None,
+        request_hash: str | None = None,
+    ) -> dict:
+        try:
+            submission = app.state.db.submit_application(
+                block_id=body.block_id,
+                tag=body.tag,
+                flow_id=extract_flow_id(body.message, body.flow_id),
+                payload=body.message,
+                hornet_status=body.hornet_status,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+            )
+        except (ApplicationConflict, IdempotencyConflict) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+        if submission.replayed and submission.row["status"] != "PENDING":
+            response.status_code = 200
+            return message_out(submission.row)
+
+        # Embedded mode writes the block before reading it back. Registration is
+        # idempotent, so a retry can finish an interrupted first attempt.
         if anchoring is not None:
             anchoring.register(
                 block_id=body.block_id,
                 tag=body.tag,
                 message=body.message,
             )
-        created = app.state.db.upsert_application(
-            block_id=body.block_id,
-            tag=body.tag,
-            flow_id=extract_flow_id(body.message, body.flow_id),
-            payload=body.message,
-            hornet_status=body.hornet_status,
-        )
-        if observations is not None:
+        if observations is not None and submission.created:
             try:
                 observations.put(
                     block_id=body.block_id,
@@ -490,14 +688,47 @@ def create_app(
                     message=body.message,
                 )
             except Exception:
-                # The ledger is the source of truth. A searchable-mirror miss is
-                # logged, not fatal: the anchor and its verification still land.
                 logger.exception(
                     "Atlas observation store: mirror failed for %s", body.block_id
                 )
-        row = verify_stored(app.state.db, app.state.hornet, body.block_id)
-        response.status_code = 201 if created else 200
+        try:
+            row = verify_stored(app.state.db, app.state.hornet, body.block_id)
+        except VerificationConflict:
+            row = app.state.db.get(body.block_id)
+            if row is None:
+                raise HTTPException(status_code=404, detail="message not found")
+        response.status_code = 201 if submission.created else 200
         return message_out(row)
+
+    @app.post(
+        "/ingest",
+        response_model=MessageOut,
+        summary="DEMO ONLY: immutable submission without an idempotency key",
+    )
+    def ingest(body: IngestIn, request: Request, response: Response) -> dict:
+        if resolved_mode == "production":
+            raise HTTPException(
+                status_code=403, detail="use authenticated /v2/ingest in production"
+            )
+        _authorize(request, "ingest", ingest_limit)
+        return _ingest_body(body, response)
+
+    @app.post("/v2/ingest", response_model=MessageOut)
+    async def ingest_v2(body: IngestIn, request: Request, response: Response) -> dict:
+        _authorize(request, "ingest", ingest_limit)
+        raw = await read_body_limited(request)
+        key = (request.headers.get("idempotency-key") or "").strip()
+        if not IDEMPOTENCY_KEY.fullmatch(key):
+            raise HTTPException(
+                status_code=400,
+                detail="Idempotency-Key must be 8-128 letters, digits, . _ : or -",
+            )
+        return _ingest_body(
+            body,
+            response,
+            idempotency_key=key,
+            request_hash=hashlib.sha256(raw).hexdigest(),
+        )
 
     @app.get("/observations/similar", response_model=ObservationList)
     def observations_similar(
@@ -596,14 +827,20 @@ def create_app(
         return message_out(row)
 
     @app.post("/messages/{block_id}/reverify", response_model=MessageOut)
-    def reverify(block_id: str) -> dict:
+    def reverify(block_id: str, request: Request) -> dict:
         try:
             _clean_block_id(block_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _authorize(request, "reverify", ingest_limit)
         if app.state.db.get(block_id) is None:
             raise HTTPException(status_code=404, detail="message not found")
-        row = verify_stored(app.state.db, app.state.hornet, block_id)
+        try:
+            row = verify_stored(app.state.db, app.state.hornet, block_id)
+        except VerificationConflict as exc:
+            raise HTTPException(
+                status_code=409, detail="message changed during verification; retry"
+            ) from exc
         return message_out(row)
 
     @app.post(
@@ -618,11 +855,15 @@ def create_app(
             "while the block is still readable."
         ),
     )
-    def tamper(block_id: str, body: TamperIn | None = _OPTIONAL_TAMPER_BODY) -> dict:
+    def tamper(
+        block_id: str, request: Request, body: TamperIn | None = _OPTIONAL_TAMPER_BODY
+    ) -> dict:
         try:
             _clean_block_id(block_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _require_demo()
+        _authorize(request, "demo-mutation", ingest_limit)
         current = app.state.db.get(block_id)
         if current is None:
             raise HTTPException(status_code=404, detail="message not found")
@@ -647,11 +888,22 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        app.state.db.update_payload(block_id, mutated)
+        changed = app.state.db.update_payload(
+            block_id, mutated, expected_version=current["version"]
+        )
+        if not changed:
+            raise HTTPException(
+                status_code=409, detail="message changed before tamper; retry"
+            )
         logger.warning(
             "DEMO tamper of application payload for %s; Hornet not modified", block_id
         )
-        row = verify_stored(app.state.db, app.state.hornet, block_id)
+        try:
+            row = verify_stored(app.state.db, app.state.hornet, block_id)
+        except VerificationConflict as exc:
+            raise HTTPException(
+                status_code=409, detail="message changed during verification; retry"
+            ) from exc
         return {
             "demo_only": True,
             "note": f"{TAMPER_NOTE} Status after reverify: {row['status']}.",
@@ -670,11 +922,13 @@ def create_app(
             "back restores VERIFIED."
         ),
     )
-    def restore(block_id: str) -> dict:
+    def restore(block_id: str, request: Request) -> dict:
         try:
             _clean_block_id(block_id)
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        _require_demo()
+        _authorize(request, "demo-mutation", ingest_limit)
         current = app.state.db.get(block_id)
         if current is None:
             raise HTTPException(status_code=404, detail="message not found")
@@ -684,12 +938,23 @@ def create_app(
                 status_code=409,
                 detail="no anchored Hornet payload to restore from",
             )
-        app.state.db.update_payload(block_id, anchored)
+        changed = app.state.db.update_payload(
+            block_id, anchored, expected_version=current["version"]
+        )
+        if not changed:
+            raise HTTPException(
+                status_code=409, detail="message changed before restore; retry"
+            )
         logger.info(
             "DEMO restore of application payload for %s from anchored block",
             block_id,
         )
-        row = verify_stored(app.state.db, app.state.hornet, block_id)
+        try:
+            row = verify_stored(app.state.db, app.state.hornet, block_id)
+        except VerificationConflict as exc:
+            raise HTTPException(
+                status_code=409, detail="message changed during verification; retry"
+            ) from exc
         return message_out(row)
 
     return app

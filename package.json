@@ -1,0 +1,13 @@
+{
+  "name": "vickrey",
+  "private": true,
+  "scripts": {
+    "test:browser": "playwright test --config tests/browser/playwright.config.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1"
+  }
+}

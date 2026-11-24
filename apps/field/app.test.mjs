@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createRequire } from "node:module";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
@@ -19,6 +20,18 @@ function entry(extra = {}) {
     ...extra,
   };
 }
+
+test("the field page loads persistence and export modules before the app", () => {
+  const html = readFileSync(new URL("./index.html", import.meta.url), "utf8");
+  const scripts = Array.from(
+    html.matchAll(/<script src="([^"]+)" defer><\/script>/g),
+    (match) => match[1],
+  );
+  for (const dependency of ["integrity.js", "storage.js", "export.js"]) {
+    assert.ok(scripts.includes(dependency), `${dependency} must be loaded`);
+    assert.ok(scripts.indexOf(dependency) < scripts.indexOf("app.js"));
+  }
+});
 
 test("anchorMessage publishes the commitment, never the record", () => {
   const anchor = field.anchorMessage(entry(), "walk-1");
@@ -138,6 +151,35 @@ test("resolveConfig keeps numeric config values and shielded query aliases", () 
     field.resolveConfig({}, "?explorer=http://127.0.0.1:8080").explorerUrl,
     "http://127.0.0.1:8080",
   );
+});
+
+test("verifyJournal checks synced records even when the outbox is empty", async () => {
+  const { createJournal } = require("./journal.js");
+  const pair = await trust.generateKeyPair();
+  const sealed = await trust.sealObservation({
+    privateKey: pair.privateKey,
+    payload: { kind: "bird", species: "European robin", confidence: 0.9 },
+  });
+  let stored = [{ entry: sealed, sync: { state: "anchored" } }];
+  const store = {
+    load: () => JSON.parse(JSON.stringify(stored)),
+    save: (rows) => {
+      stored = JSON.parse(JSON.stringify(rows));
+    },
+  };
+  const journal = createJournal({ store });
+  assert.deepEqual(await field.verifyJournal(journal, pair.publicKey, trust), {
+    ok: true,
+    brokenAt: null,
+    checked: 1,
+  });
+
+  stored[0].entry.payload.species = "Forged orchid";
+  const reloaded = createJournal({ store });
+  const verdict = await field.verifyJournal(reloaded, pair.publicKey, trust);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, "hash");
+  assert.equal(verdict.brokenAt, 0);
 });
 
 test("drainVerified refuses a tampered queue and sends nothing", async () => {

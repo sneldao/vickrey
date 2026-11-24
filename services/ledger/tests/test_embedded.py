@@ -158,13 +158,17 @@ def test_without_embedded_mode_ingest_does_not_write_a_block(tmp_path):
 
 
 def test_embedded_mode_survives_a_tampered_copy_end_to_end(tmp_path):
-    """The ledger's own demo route still works with the store in-process.
+    """The ledger's explicit demo route still works with the store in-process.
 
-    Reverify, not re-ingest: ingesting the anchor again would legitimately
-    restore the application copy, which is the point of an upsert.
+    Re-ingesting the same immutable submission cannot restore an edited copy;
+    the separate restore route is the recovery half of the demo.
     """
     with TestClient(
-        create_app(database_path=str(tmp_path / "d.db"), embedded=True)
+        create_app(
+            database_path=str(tmp_path / "d.db"),
+            embedded=True,
+            demo_mutations=True,
+        )
     ) as c:
         assert c.post("/ingest", json=ANCHOR).json()["status"] == "VERIFIED"
         assert (

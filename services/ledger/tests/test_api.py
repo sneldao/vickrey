@@ -63,7 +63,15 @@ def test_tamper_keeps_ledger_payload_and_flips_match(client):
     assert reverified.json()["status"] == "PAYLOAD_MISMATCH"
     assert reverified.json()["ledger_payload_json"]["temperature"] == 21.5
 
-    restored = ingest(http)
+    replay = ingest(http)
+    assert replay.status_code == 200
+    assert replay.json()["payload_json"]["temperature"] == 999.9
+    assert (
+        http.get(f"/messages/{BLOCK_ID}").json()["payload_json"]["temperature"] == 999.9
+    )
+
+    restored = http.post(f"/messages/{BLOCK_ID}/restore")
+    assert restored.status_code == 200
     assert restored.json()["status"] == "VERIFIED"
     assert restored.json()["payload_json"]["temperature"] == 21.5
 

@@ -7,6 +7,7 @@ fail on any drift between the two.
 
 from __future__ import annotations
 
+import itertools
 import threading
 
 import pytest
@@ -91,8 +92,19 @@ def _commitment(n: int) -> str:
     return f"{n:064x}"
 
 
+_anchor_keys = itertools.count(1)
+
+
+def post_anchor(c, payload, key: str | None = None, **kwargs):
+    headers = dict(kwargs.pop("headers", {}))
+    headers["Idempotency-Key"] = key or f"anchor-{next(_anchor_keys)}"
+    return c.post("/anchor", json=payload, headers=headers, **kwargs)
+
+
 def make_app(tmp_path, monkeypatch, mode: str | None = "A"):
     monkeypatch.setenv("ZANCHOR_DB", str(tmp_path / "zanchor.db"))
+    monkeypatch.setenv("ZANCHOR_ENV", "demo")
+    monkeypatch.delenv("ZANCHOR_API_TOKEN", raising=False)
     if mode is None:
         monkeypatch.delenv("ZANCHOR_MODE", raising=False)
     else:
@@ -118,7 +130,7 @@ def test_default_mode_is_b_and_invalid_mode_fails(tmp_path, monkeypatch):
     app, service = make_app(tmp_path, monkeypatch, mode=None)
     assert service.mode == "B"
     with TestClient(app) as c:
-        r = c.post("/anchor", json={"commitment": _commitment(7)})
+        r = post_anchor(c, {"commitment": _commitment(7)})
         assert r.status_code == 202
         assert r.json()["mode"] == "B"
         assert r.json()["shielded"] is True
@@ -134,8 +146,8 @@ def test_default_mode_is_b_and_invalid_mode_fails(tmp_path, monkeypatch):
 
 
 def test_mode_b_refusal_does_not_downgrade(tmp_path, monkeypatch):
-    # A node that refuses the memo send must get a 503 — never a quieter
-    # transaction and never a silent mode-A anchor.
+    # A node that refuses the memo send leaves a durable failed receipt —
+    # never a quieter transaction or a silent mode-A anchor.
     app, service = make_app(tmp_path, monkeypatch, mode="B")
     rpc = service.rpc
 
@@ -144,11 +156,12 @@ def test_mode_b_refusal_does_not_downgrade(tmp_path, monkeypatch):
 
     rpc.send_shielded = refuse
     with TestClient(app) as c:
-        r = c.post("/anchor", json={"commitment": _commitment(8)})
-        assert r.status_code == 503
-        assert "downgraded" in r.json()["detail"]
+        r = post_anchor(c, {"commitment": _commitment(8)})
+        assert r.status_code == 202
+        assert r.json()["status"] == "failed"
+        assert "downgraded" in r.json()["error"]
         assert rpc.anchors == [], "no transaction may be attempted"
-        assert c.get("/receipts/anything").status_code == 404
+        assert c.get(f"/receipts/{r.json()['receipt_id']}").status_code == 200
 
 
 def test_mode_a_refusal_does_not_downgrade(tmp_path, monkeypatch):
@@ -159,8 +172,9 @@ def test_mode_a_refusal_does_not_downgrade(tmp_path, monkeypatch):
 
     service.rpc.send_shielded = refuse
     with TestClient(app) as c:
-        r = c.post("/anchor", json={"commitment": _commitment(9)})
-        assert r.status_code == 503
+        r = post_anchor(c, {"commitment": _commitment(9)})
+        assert r.status_code == 202
+        assert r.json()["status"] == "failed"
         assert service.rpc.anchors == []
 
 
@@ -191,7 +205,7 @@ def test_health_shape(client):
 
 def test_anchor_returns_receipt_with_mode_and_shielded(client):
     c, svc = client
-    r = c.post("/anchor", json={"commitment": _commitment(1)})
+    r = post_anchor(c, {"commitment": _commitment(1)})
     assert r.status_code == 202
     body = r.json()
     assert body["receipt_id"].startswith("rec_")
@@ -204,8 +218,8 @@ def test_anchor_returns_receipt_with_mode_and_shielded(client):
 
 def test_replay_is_409(client):
     c, svc = client
-    assert c.post("/anchor", json={"commitment": _commitment(2)}).status_code == 202
-    r = c.post("/anchor", json={"commitment": _commitment(2)})
+    assert post_anchor(c, {"commitment": _commitment(2)}).status_code == 202
+    r = post_anchor(c, {"commitment": _commitment(2)})
     assert r.status_code == 409
     assert r.json()["detail"] == "commitment already anchored"
     # exactly one transaction was made for the commitment
@@ -214,24 +228,24 @@ def test_replay_is_409(client):
 
 def test_bad_commitment_is_400(client):
     c, _ = client
-    assert c.post("/anchor", json={"commitment": "nope"}).status_code == 400
-    assert (
-        c.post("/anchor", json={"commitment": _commitment(3)[:63]}).status_code == 400
-    )
-    assert c.post("/anchor", json={}).status_code == 400
+    assert post_anchor(c, {"commitment": "nope"}).status_code == 400
+    assert post_anchor(c, {"commitment": _commitment(3)[:63]}).status_code == 400
+    assert post_anchor(c, {}).status_code == 400
 
 
-def test_no_notes_is_503_not_fallback(client):
+def test_no_notes_is_durable_failure_not_fallback(client):
     c, svc = client
     svc.rpc.notes = 0
-    r = c.post("/anchor", json={"commitment": _commitment(4)})
-    assert r.status_code == 503
+    r = post_anchor(c, {"commitment": _commitment(4)})
+    assert r.status_code == 202
+    assert r.json()["status"] == "failed"
     assert svc.rpc.anchors == []
+    assert c.get(f"/receipts/{r.json()['receipt_id']}").status_code == 200
 
 
 def test_receipt_roundtrip_and_404(client):
     c, _ = client
-    rid = c.post("/anchor", json={"commitment": _commitment(6)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(6)}).json()["receipt_id"]
     r = c.get(f"/receipts/{rid}")
     assert r.status_code == 200
     assert r.json()["receipt_id"] == rid
@@ -245,7 +259,7 @@ def test_no_receipt_listing_endpoint(client):
 
 def test_chain_tx_shape_and_404(client):
     c, svc = client
-    c.post("/anchor", json={"commitment": _commitment(8)})
+    post_anchor(c, {"commitment": _commitment(8)})
     txid = svc.rpc.anchors[0]["txid"]
     r = c.get(f"/chain/tx/{txid}")
     assert r.status_code == 200
@@ -261,7 +275,7 @@ def test_chain_tx_shape_and_404(client):
 
 def test_worker_advances_receipt_to_confirmed(client):
     c, svc = client
-    rid = c.post("/anchor", json={"commitment": _commitment(7)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(7)}).json()["receipt_id"]
     for _ in range(3):
         svc.poll_pending()
     row = c.get(f"/receipts/{rid}").json()
@@ -276,7 +290,7 @@ def test_worker_advances_receipt_to_confirmed(client):
 
 def test_verify_mode_b_memo_verifies(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(11)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(11)}).json()["receipt_id"]
     confirm(c, svc, rid)
     r = c.get(f"/receipts/{rid}/verify")
     assert r.status_code == 200
@@ -296,7 +310,7 @@ def test_verify_mode_b_memo_verifies(client_b):
 
 def test_verify_exact_unpadded_memo_also_matches(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(12)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(12)}).json()["receipt_id"]
     confirm(c, svc, rid)
     # Some wallets return the 33-byte memo without the 512-byte padding.
     svc.rpc.view_transaction = lambda t: {
@@ -307,7 +321,7 @@ def test_verify_exact_unpadded_memo_also_matches(client_b):
 
 def test_verify_rejects_substring_and_wrong_memos(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(13)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(13)}).json()["receipt_id"]
     confirm(c, svc, rid)
     # The commitment embedded inside a longer payload is not a match —
     # no substring search, ever.
@@ -327,9 +341,23 @@ def test_verify_rejects_substring_and_wrong_memos(client_b):
     assert c.get(f"/receipts/{rid}/verify").json()["commitment_verified"] is False
 
 
+def test_verify_rejects_nonzero_memo_padding(client_b):
+    c, svc = client_b
+    rid = post_anchor(c, {"commitment": _commitment(13)}).json()["receipt_id"]
+    confirm(c, svc, rid)
+    padded = ("00" + _commitment(13)).ljust(1024, "0")
+    svc.rpc.view_transaction = lambda t: {
+        "outputs": [{"type": "orchard", "memo": padded[:-2] + "01"}]
+    }
+    body = c.get(f"/receipts/{rid}/verify").json()
+    assert body["transaction_verified"] is True
+    assert body["commitment_verified"] is False
+    assert body["reason"] == "memo_mismatch"
+
+
 def test_verify_wrong_height_or_txid_fails(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(14)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(14)}).json()["receipt_id"]
     confirm(c, svc, rid)
     # Reorg: the transaction sits at a different height than the receipt.
     svc.rpc.anchors[0]["height"] = 107
@@ -346,7 +374,7 @@ def test_verify_wrong_height_or_txid_fails(client_b):
 
 def test_verify_zero_or_missing_confirmations_fail(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(15)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(15)}).json()["receipt_id"]
     confirm(c, svc, rid)
     svc.rpc.anchors[0]["confirmations"] = 0
     body = c.get(f"/receipts/{rid}/verify").json()
@@ -356,7 +384,7 @@ def test_verify_zero_or_missing_confirmations_fail(client_b):
 
 def test_verify_mode_a_is_never_commitment_verified(client):
     c, svc = client
-    rid = c.post("/anchor", json={"commitment": _commitment(16)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(16)}).json()["receipt_id"]
     confirm(c, svc, rid)
     body = c.get(f"/receipts/{rid}/verify").json()
     assert body["transaction_verified"] is True
@@ -367,7 +395,7 @@ def test_verify_mode_a_is_never_commitment_verified(client):
 
 def test_verify_pending_receipt_is_not_confirmed(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(17)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(17)}).json()["receipt_id"]
     # The verify path advances the receipt itself (queued -> broadcast ->
     # confirmed) through the same locked worker path.
     body = c.get(f"/receipts/{rid}/verify").json()
@@ -388,7 +416,7 @@ def test_verify_unknown_receipt_404_and_no_rpc_503(tmp_path, monkeypatch):
 
 def test_verify_unknown_network_fails_proof(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(19)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(19)}).json()["receipt_id"]
     confirm(c, svc, rid)
     svc.rpc.net = "signet"
     body = c.get(f"/receipts/{rid}/verify").json()
@@ -403,7 +431,7 @@ def test_verify_unknown_network_fails_proof(client_b):
 
 def test_disclosure_success_writes_one_audit_line(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(21)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(21)}).json()["receipt_id"]
     confirm(c, svc, rid)
     r = c.post(f"/receipts/{rid}/disclosure", json={"purpose": "  grant review  "})
     assert r.status_code == 200
@@ -443,7 +471,7 @@ def test_disclosure_rejected_or_unknown_writes_no_audit(client_b, client):
 
 def test_no_keys_or_enumeration_in_responses(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(23)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(23)}).json()["receipt_id"]
     confirm(c, svc, rid)
     for path in (
         f"/receipts/{rid}",
@@ -470,7 +498,7 @@ def test_concurrent_anchors_are_serialized(client_b):
 
     def post(n: int) -> None:
         barrier.wait()
-        r = c.post("/anchor", json={"commitment": _commitment(n)})
+        r = post_anchor(c, {"commitment": _commitment(n)})
         results.append(r.status_code)
 
     threads = [
@@ -490,7 +518,7 @@ def test_concurrent_anchors_are_serialized(client_b):
 
 def test_verify_txid_mismatch_in_node_answer_fails(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(40)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(40)}).json()["receipt_id"]
     confirm(c, svc, rid)
     # The node answers a different txid than the receipt holds.
     orig = svc.rpc.transaction
@@ -503,7 +531,7 @@ def test_verify_txid_mismatch_in_node_answer_fails(client_b):
 
 def test_verify_boolean_height_or_confirmations_fail(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(41)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(41)}).json()["receipt_id"]
     confirm(c, svc, rid)
     orig = svc.rpc.transaction
     svc.rpc.transaction = lambda t: {**orig(t), "confirmations": True}
@@ -517,7 +545,7 @@ def test_verify_boolean_height_or_confirmations_fail(client_b):
 
 def test_verify_unknown_network_fails_both_booleans(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(42)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(42)}).json()["receipt_id"]
     confirm(c, svc, rid)
     svc.rpc.net = "weirdchain"
     body = c.get(f"/receipts/{rid}/verify").json()
@@ -528,7 +556,7 @@ def test_verify_unknown_network_fails_both_booleans(client_b):
 
 def test_worker_survives_transport_outage(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(43)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(43)}).json()["receipt_id"]
     orig = svc.rpc.operation_status
 
     def outage(opid):
@@ -545,7 +573,7 @@ def test_worker_survives_transport_outage(client_b):
 
 def test_advance_needs_positive_confirmations(client_b):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(44)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(44)}).json()["receipt_id"]
     svc.poll_pending()  # queued -> broadcast
     svc.rpc.anchors[0]["confirmations"] = 0
     svc.poll_pending()
@@ -561,7 +589,7 @@ def test_expected_network_guard(tmp_path, monkeypatch):
     service.expected_network = "regtest"
     service.rpc.net = "main"
     with TestClient(app) as c:
-        r = c.post("/anchor", json={"commitment": _commitment(45)})
+        r = post_anchor(c, {"commitment": _commitment(45)})
         assert r.status_code == 503
         assert "expected network" in r.json()["detail"]
         assert service.rpc.anchors == []
@@ -600,7 +628,7 @@ def _sentinel_scan(text: str) -> list[str]:
 
 def test_worker_error_logs_no_bearer_or_credential(client_b, caplog):
     c, svc = client_b
-    c.post("/anchor", json={"commitment": _commitment(50)})
+    post_anchor(c, {"commitment": _commitment(50)})
 
     def poison(opid):
         raise RpcError(
@@ -619,7 +647,7 @@ def test_worker_error_logs_no_bearer_or_credential(client_b, caplog):
 
 def test_failed_operation_stores_generic_and_logs_nothing(client_b, caplog):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(51)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(51)}).json()["receipt_id"]
     svc.rpc.operation_status = lambda opid: {
         "status": "failed",
         "error": "SECRET_SENTINEL memo-xyzzy rpcuser:s3cret",
@@ -666,9 +694,7 @@ def test_restart_recovers_pending_receipt(tmp_path, monkeypatch):
     app, svc = make_app(tmp_path, monkeypatch, mode="B")
     db_path = str(tmp_path / "zanchor.db")
     with TestClient(app) as c:
-        rid = c.post("/anchor", json={"commitment": _commitment(52)}).json()[
-            "receipt_id"
-        ]
+        rid = post_anchor(c, {"commitment": _commitment(52)}).json()["receipt_id"]
         assert svc.store.get(rid)["status"] == "queued"
     svc.store.close()
 
@@ -691,9 +717,7 @@ def test_restart_recovers_broadcast_and_keeps_audit(tmp_path, monkeypatch):
     app, svc = make_app(tmp_path, monkeypatch, mode="B")
     db_path = str(tmp_path / "zanchor.db")
     with TestClient(app) as c:
-        rid = c.post("/anchor", json={"commitment": _commitment(53)}).json()[
-            "receipt_id"
-        ]
+        rid = post_anchor(c, {"commitment": _commitment(53)}).json()["receipt_id"]
         svc.poll_pending()  # -> broadcast
         assert svc.store.get(rid)["status"] == "broadcast"
         svc.store.audit_disclosure(rid, "pre-restart audit")
@@ -717,9 +741,7 @@ def test_restart_recovers_broadcast_and_keeps_audit(tmp_path, monkeypatch):
 def test_backup_to_snapshot_isolated_and_refuses_existing(tmp_path, monkeypatch):
     app, svc = make_app(tmp_path, monkeypatch, mode="B")
     with TestClient(app) as c:
-        rid = c.post("/anchor", json={"commitment": _commitment(54)}).json()[
-            "receipt_id"
-        ]
+        rid = post_anchor(c, {"commitment": _commitment(54)}).json()["receipt_id"]
         confirm(c, svc, rid)
         svc.store.audit_disclosure(rid, "snapshot audit")
 
@@ -735,7 +757,7 @@ def test_backup_to_snapshot_isolated_and_refuses_existing(tmp_path, monkeypatch)
     svc.store.audit_disclosure(rid, "after snapshot")
     svc2rpc_commit = _commitment(55)
     with TestClient(app) as c:
-        c.post("/anchor", json={"commitment": svc2rpc_commit})
+        post_anchor(c, {"commitment": svc2rpc_commit})
 
     check = sqlite3.connect(snap)
     try:
@@ -765,7 +787,7 @@ def test_backup_to_snapshot_isolated_and_refuses_existing(tmp_path, monkeypatch)
 
 def test_lost_operation_does_not_resubmit(client_b, caplog):
     c, svc = client_b
-    rid = c.post("/anchor", json={"commitment": _commitment(56)}).json()["receipt_id"]
+    rid = post_anchor(c, {"commitment": _commitment(56)}).json()["receipt_id"]
 
     # A lost operation: the node answers z_getoperationstatus with an empty
     # array — IndexError, not a queued status. Worker must survive it, keep
@@ -780,7 +802,7 @@ def test_lost_operation_does_not_resubmit(client_b, caplog):
         for _ in range(3):
             svc.poll_pending()
     assert len(svc.rpc.anchors) == 1  # never re-sent
-    assert c.get(f"/receipts/{rid}").json()["status"] == "queued"
+    assert c.get(f"/receipts/{rid}").json()["status"] == "reconciling"
     blob = "\n".join(r.getMessage() for r in caplog.records)
     assert "anchor_poll_failed" in blob
     assert "SECRET_SENTINEL" not in blob

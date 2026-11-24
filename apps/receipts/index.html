@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <meta name="color-scheme" content="light">
+  <title>Reality Receipts — Vickrey local demo</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to Reality Receipts</a>
+
+  <header class="site-header no-print">
+    <div class="page-shell header-inner">
+      <a class="brand" href="./" aria-label="Reality Receipts home">
+        <span class="wax-seal" aria-hidden="true">V</span>
+        <span>Vickrey <span class="brand-sub">Reality Receipts</span></span>
+      </a>
+      <span class="edition">One-claim vertical slice · local demo</span>
+    </div>
+  </header>
+
+  <main id="main" class="page-shell">
+    <section class="hero" aria-labelledby="page-title">
+      <p class="eyebrow">A claim, sealed—not a marketplace</p>
+      <h1 id="page-title">Reality Receipts</h1>
+      <p class="hero-copy">
+        Turn one bounded public claim into a locally signed observation, a
+        policy-bound verdict, and a redacted public receipt. The demo is explicit
+        about what is context, what is cryptographic, and what is only simulated.
+      </p>
+    </section>
+
+    <aside class="demo-warning no-print" aria-labelledby="demo-warning-title">
+      <div class="warning-mark" aria-hidden="true">!</div>
+      <div>
+        <h2 id="demo-warning-title">Local demo credentials — production rejects them</h2>
+        <p>
+          This page contains only the public demo bearer tokens and the demo-only
+          verifier private key documented by the service. They are insecure,
+          local-only credentials. The workflow refuses to send them unless
+          <code>/healthz</code> reports <code>mode=demo</code>,
+          <code>real_funds=false</code>, and
+          <code>settlement_network=simulated_testnet</code>.
+        </p>
+        <details class="credential-details">
+          <summary>Show documented local demo credentials</summary>
+          <dl class="credential-list">
+            <div><dt>Claimant token</dt><dd><code>demo-claimant-token-change-me</code></dd></div>
+            <div><dt>Observer token</dt><dd><code>demo-observer-token-change-me</code></dd></div>
+            <div><dt>Verifier token</dt><dd><code>demo-verifier-token-change-me</code></dd></div>
+            <div><dt>Settlement token</dt><dd><code>demo-settlement-token-change-me</code></dd></div>
+          </dl>
+          <p class="credential-label">Demo-only Ed25519 verifier key, PKCS#8 Base64 (never use in production)</p>
+          <pre class="credential-key"><code>MC4CAQAwBQYDK2VwBCIEIIbpY5LXW+aqAXbpNgZIndVrscwpfw3NnZgUdlFig6nF</code></pre>
+        </details>
+      </div>
+    </aside>
+
+    <section class="honesty-strip no-print" aria-label="Honesty boundaries">
+      <article><strong>Remote context ≠ proof</strong><span>Synthetic remote evidence only routes the claim.</span></article>
+      <article><strong>Commitment-only evidence</strong><span>The service receives no raw observation or precise location.</span></article>
+      <article><strong>A verifier applies policy</strong><span>The local demo policy is explicit and may be wrong.</span></article>
+      <article><strong>Settlement is simulated</strong><span>No wallet, chain transaction, QIE, or real funds.</span></article>
+    </section>
+
+    <div class="live-regions no-print" aria-label="Workflow messages">
+      <p id="workflow-status" class="status-line" role="status" aria-live="polite" aria-atomic="true">Ready. Compose one public, bounded claim.</p>
+      <p id="workflow-error" class="error-line" role="alert" aria-live="assertive" aria-atomic="true" data-active="false">No errors.</p>
+    </div>
+
+    <section class="panel composer no-print" aria-labelledby="composer-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">01 · Compose</p>
+          <h2 id="composer-title">One public claim</h2>
+        </div>
+        <p class="section-note">Public places only. No people, interiors, minors, or precise coordinates.</p>
+      </div>
+
+      <form id="claim-form">
+        <fieldset id="claim-fields">
+          <legend class="visually-hidden">Claim, criteria, and local demo observation</legend>
+
+          <div class="field field-wide">
+            <label for="claim">Claim</label>
+            <textarea id="claim" name="claim" rows="3" required maxlength="500" aria-describedby="claim-hint">The public north-trail kiosk notice is present today.</textarea>
+            <p id="claim-hint" class="hint">A single checkable statement, up to 500 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="category">Category</label>
+            <select id="category" name="category" required>
+              <option value="public_notice" selected>public_notice</option>
+            </select>
+            <p class="hint">The safe demo category.</p>
+          </div>
+
+          <div class="field">
+            <label for="bounty">Bounty <span class="unit">(simulated credits)</span></label>
+            <input id="bounty" name="bounty" type="number" min="1" max="1000000" step="1" value="250" required>
+            <p class="hint">Integer from 1 to 1,000,000. No real funds.</p>
+          </div>
+
+          <div class="field field-wide">
+            <label for="must-observe">What must be observed</label>
+            <textarea id="must-observe" name="must_observe" rows="2" required maxlength="300" aria-describedby="must-observe-hint">Read the posted notice at the public kiosk.</textarea>
+            <p id="must-observe-hint" class="hint">The verifier policy uses this public criterion, up to 300 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="public-location">Public location label</label>
+            <input id="public-location" name="public_location" type="text" value="North trail public kiosk" required maxlength="120" aria-describedby="location-hint">
+            <p id="location-hint" class="hint">A coarse public label, never an address or coordinates.</p>
+          </div>
+
+          <div class="field">
+            <label for="radius">Radius <span class="unit">(metres)</span></label>
+            <input id="radius" name="radius_m" type="number" min="1" max="1000" step="1" value="25" required>
+            <p class="hint">Bounded from 1 to 1,000 metres.</p>
+          </div>
+
+          <div class="field">
+            <label for="required-details">Required details</label>
+            <textarea id="required-details" name="required_details" rows="4" required aria-describedby="list-hint">notice title
+visible posting date</textarea>
+            <p id="list-hint" class="hint">One per line; 1–5 items, each up to 200 characters.</p>
+          </div>
+
+          <div class="field">
+            <label for="reject-if">Reject if</label>
+            <textarea id="reject-if" name="reject_if" rows="4" aria-describedby="reject-hint">notice is absent
+notice is unreadable</textarea>
+            <p id="reject-hint" class="hint">Optional; one per line, up to 5 items. Matching note text rejects.</p>
+          </div>
+
+          <div class="field field-wide">
+            <label for="expiry">Expiry <span class="unit">(your local time)</span></label>
+            <input id="expiry" name="expires_at" type="datetime-local" required aria-describedby="expiry-hint">
+            <p id="expiry-hint" class="hint">Converted to a UTC timestamp with microseconds. Maximum service window: 30 days.</p>
+          </div>
+
+          <div class="observation-fieldset field-wide">
+            <h3>Local demo observation</h3>
+            <p class="hint">This public-safe note is sealed on this device. It is not sent as raw evidence.</p>
+            <div class="observation-grid">
+              <div class="field">
+                <label for="observation-outcome">Observation result</label>
+                <select id="observation-outcome" name="observation_outcome" required>
+                  <option value="observed" selected>Observed</option>
+                  <option value="not_observed">Not observed</option>
+                  <option value="cannot_determine">Cannot determine</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="observation-note">Public-safe observation note</label>
+                <textarea id="observation-note" name="observation_note" rows="3" required maxlength="240" aria-describedby="observation-note-hint">The notice title and visible posting date were readable at the public kiosk.</textarea>
+                <p id="observation-note-hint" class="hint">Up to 240 characters; also used as allowlisted public metadata.</p>
+              </div>
+            </div>
+          </div>
+        </fieldset>
+      </form>
+    </section>
+
+    <section id="workflow" class="panel workflow no-print" aria-labelledby="workflow-title" aria-busy="false">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">02 · Run</p>
+          <h2 id="workflow-title">Demo workflow</h2>
+        </div>
+        <p id="endpoint-label" class="endpoint-label">API: same origin</p>
+      </div>
+
+      <ol class="stage-list" aria-label="Workflow stages">
+        <li class="stage" data-stage="health" data-state="pending">
+          <div><h3>Demo boundary</h3><p class="stage-detail">Not checked.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="claim" data-state="pending">
+          <div><h3>Challenge</h3><p class="stage-detail">Immutable claim and criteria not created.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="remote_evidence" data-state="pending">
+          <div><h3>Remote evidence</h3><p class="stage-detail">Context only; never cryptographic proof.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="field_evidence" data-state="pending">
+          <div><h3>Field evidence</h3><p class="stage-detail">A task is permitted only after insufficient remote evidence.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="verdict" data-state="pending">
+          <div><h3>Verdict</h3><p class="stage-detail">Canonical Ed25519 verdict signed under the local demo policy.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="settlement" data-state="pending">
+          <div><h3>Settlement</h3><p class="stage-detail">Deterministic simulator only; no real funds.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+        <li class="stage" data-stage="receipt" data-state="pending">
+          <div><h3>Public receipt</h3><p class="stage-detail">Fetched separately from the redacted public endpoint.</p></div>
+          <span class="stage-badge">Waiting</span>
+        </li>
+      </ol>
+
+      <div class="workflow-actions">
+        <button id="run-button" class="button button-primary" type="submit" form="claim-form">Run demo workflow</button>
+        <button id="retry-button" class="button button-secondary" type="button" hidden>Retry last step</button>
+        <button id="reset-button" class="button button-quiet" type="button" hidden>Edit / start over</button>
+        <button id="download-button" class="button button-secondary" type="button" disabled>Download local sealed record</button>
+      </div>
+      <p class="hint action-hint">
+        Each mutation receives a unique UUID idempotency key. A retry reuses the
+        exact saved key and request body; starting over creates a new challenge
+        and does not undo server records.
+      </p>
+
+      <details class="audit-details">
+        <summary>Local workflow identifiers</summary>
+        <dl id="workflow-ids" class="identifier-list">
+          <div><dt>Challenge</dt><dd>Not created</dd></div>
+        </dl>
+        <p class="hint">No bearer token or private key is shown here.</p>
+      </details>
+    </section>
+
+    <section id="receipt-section" class="panel receipt-section" aria-labelledby="receipt-title">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">03 · Verify</p>
+          <h2 id="receipt-title" tabindex="-1">Public receipt</h2>
+        </div>
+        <p class="section-note">Public, redacted JSON rendered without raw observation data.</p>
+      </div>
+
+      <form id="lookup-form" class="lookup-form no-print">
+        <div class="field lookup-field">
+          <label for="lookup-id">Look up by challenge ID</label>
+          <input id="lookup-id" name="challenge" type="text" placeholder="UUID challenge id" required autocomplete="off" spellcheck="false">
+        </div>
+        <button id="lookup-button" class="button button-secondary" type="submit">Fetch public receipt</button>
+      </form>
+      <p class="hint lookup-hint">Shareable view: <code>index.html?challenge=UUID</code>. Public lookup needs no bearer token.</p>
+
+      <div id="receipt-empty" class="receipt-empty">
+        <span class="empty-seal" aria-hidden="true">RR</span>
+        <p>No receipt loaded. Complete the demo or fetch a public challenge receipt.</p>
+      </div>
+
+      <article id="receipt-content" class="receipt" aria-label="Redacted public Reality Receipt" hidden></article>
+
+      <div id="receipt-actions" class="receipt-actions no-print" hidden>
+        <a id="receipt-share" class="button button-secondary" href="#">Open shareable receipt view</a>
+        <button id="copy-link-button" class="button button-secondary" type="button">Copy receipt link</button>
+        <button id="print-button" class="button button-quiet" type="button">Print receipt</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer no-print">
+    <div class="page-shell">
+      <p>Vickrey Reality Receipts · honest local vertical slice</p>
+      <p>No external fonts, assets, trackers, wallets, or production credentials.</p>
+    </div>
+  </footer>
+
+  <script src="config.js"></script>
+  <script src="../field/trust.js"></script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

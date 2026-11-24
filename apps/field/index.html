@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <a class="skip-link" href="#app">Skip to field client</a>
     <nav class="appnav" aria-label="Vickrey apps">
       <div class="appnav-inner">
         <a class="appnav-brand" href="../">
@@ -37,7 +38,7 @@
         <a class="appnav-cta" href="../explorer/">Inspect Evidence Board →</a>
       </div>
     </nav>
-    <header class="mast">
+    <header class="mast" aria-labelledby="field-title">
       <div class="mast-inner mast-grid">
         <div class="seal-wrap" aria-hidden="true">
           <svg class="seal" viewBox="0 0 48 48" role="img">
@@ -50,7 +51,7 @@
         <div class="mast-copy">
           <p class="eyebrow">Field · Tamper-evident device logbook &amp; anchor client</p>
           <div class="title-row">
-            <h1>Vickrey</h1>
+            <h1 id="field-title">Vickrey</h1>
             <p class="motto">A sealed bid on what you saw</p>
             <span class="ledger-badge mono" id="ledger-label">Ledger: mock Hornet demo</span>
           </div>
@@ -63,14 +64,14 @@
         </div>
       </div>
     </header>
-    <main id="app"></main>
-    <footer class="colophon">
+    <main id="app" tabindex="-1"></main>
+    <footer class="colophon" aria-label="Record integrity notice">
       The model only suggests; the observer decides, and that decision is
       sealed with the record. Verification detects changes against that seal;
       it does not establish the capture time or identification's accuracy. Apache-2.0.
     </footer>
     <noscript>This field client needs JavaScript to seal an observation.</noscript>
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="toast" id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
     <script src="config.js" defer></script>
     <script src="trust.js" defer></script>
     <script src="queue.js" defer></script>
@@ -79,6 +80,9 @@
     <script src="infer.js" defer></script>
     <script src="logbook.js" defer></script>
     <script src="journal.js" defer></script>
+    <script src="integrity.js" defer></script>
+    <script src="storage.js" defer></script>
+    <script src="export.js" defer></script>
     <script src="schedule.js" defer></script>
     <script src="specimens.js" defer></script>
     <script src="seed.js" defer></script>

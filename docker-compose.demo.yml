@@ -31,6 +31,31 @@ services:
       - vickrey-net
     restart: unless-stopped
 
+  receipts:
+    build:
+      context: services/receipts
+    container_name: vickrey-receipts
+    environment:
+      RECEIPTS_MODE: demo
+      RECEIPTS_DATABASE_PATH: /data/receipts.db
+    volumes:
+      - vickrey_receipts_data:/data
+    networks:
+      - vickrey-net
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
   web:
     build:
       context: .
@@ -41,6 +66,9 @@ services:
       - coolify
     ports:
       - "127.0.0.1:18094:80"
+    depends_on:
+      receipts:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.vickrey-demo.rule=Host(`${VICKREY_DEMO_HOST:-vickrey.144.202.117.160.sslip.io}`)"
@@ -53,6 +81,7 @@ services:
 
 volumes:
   vickrey_demo_receipts:
+  vickrey_receipts_data:
 
 networks:
   vickrey-net:

@@ -147,6 +147,44 @@ test("a failure stops at the first due entry and keeps the held ones", async () 
   );
 });
 
+test("localStore surfaces malformed persisted data instead of starting empty", () => {
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: () => "{broken",
+    setItem: () => {},
+  };
+  try {
+    assert.throws(
+      () => queue.localStore("vickrey.queue").load(),
+      (error) =>
+        error.code === "STORAGE_CORRUPT" &&
+        /could not be read/i.test(error.message),
+    );
+  } finally {
+    globalThis.localStorage = previous;
+  }
+});
+
+test("localStore surfaces write failures instead of pretending records persisted", () => {
+  const previous = globalThis.localStorage;
+  globalThis.localStorage = {
+    getItem: () => null,
+    setItem: () => {
+      throw new Error("QuotaExceededError");
+    },
+  };
+  try {
+    assert.throws(
+      () => queue.localStore("vickrey.queue").save(entries),
+      (error) =>
+        error.code === "STORAGE_WRITE" &&
+        /could not be saved/i.test(error.message),
+    );
+  } finally {
+    globalThis.localStorage = previous;
+  }
+});
+
 test("replace swaps one queued entry in place and persists", () => {
   const saved = [];
   const q = queue.createQueue({

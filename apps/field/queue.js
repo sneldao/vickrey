@@ -27,21 +27,49 @@
     };
   }
 
+  function storageError(code, action, key, cause) {
+    var error = new Error(
+      "Device storage could not be " +
+        action +
+        ' for "' +
+        key +
+        '". Existing records were not changed.',
+    );
+    error.code = code;
+    if (cause) {
+      error.cause = cause;
+    }
+    return error;
+  }
+
   function localStore(key) {
     return {
       load: function () {
+        var storage;
         try {
-          var raw = root.localStorage.getItem(key);
+          storage = root.localStorage;
+          if (!storage) {
+            throw new Error("localStorage unavailable");
+          }
+          var raw = storage.getItem(key);
           return raw ? JSON.parse(raw) : [];
         } catch (err) {
-          return [];
+          if (err && err.code === "STORAGE_READ") {
+            throw err;
+          }
+          throw storageError("STORAGE_CORRUPT", "read", key, err);
         }
       },
       save: function (items) {
+        var storage;
         try {
-          root.localStorage.setItem(key, JSON.stringify(items));
+          storage = root.localStorage;
+          if (!storage) {
+            throw new Error("localStorage unavailable");
+          }
+          storage.setItem(key, JSON.stringify(items));
         } catch (err) {
-          /* storage full or unavailable: keep the in-memory copy */
+          throw storageError("STORAGE_WRITE", "saved", key, err);
         }
       },
     };
@@ -63,6 +91,13 @@
 
     function size() {
       return items.length;
+    }
+
+    function replaceAll(next) {
+      if (!Array.isArray(next)) {
+        throw new Error("queue storage is not a list");
+      }
+      items = next.slice();
     }
 
     function enqueue(entry) {
@@ -116,6 +151,7 @@
       size: size,
       drain: drain,
       replace: replace,
+      replaceAll: replaceAll,
     };
   }
 

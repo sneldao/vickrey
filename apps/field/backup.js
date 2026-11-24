@@ -26,8 +26,10 @@
     "vickrey.queue",
     "vickrey.anchor_plan",
   ];
-  var ENVELOPE_SCHEMA = "vickrey.backup/1";
-  var DATA_SCHEMA = "vickrey.backup-data/1";
+  var ENVELOPE_SCHEMA = "vickrey.backup/2";
+  var LEGACY_ENVELOPE_SCHEMA = "vickrey.backup/1";
+  var DATA_SCHEMA = "vickrey.backup-data/2";
+  var LEGACY_DATA_SCHEMA = "vickrey.backup-data/1";
   var KDF = "PBKDF2-SHA256";
   var ITERATIONS = 600000;
   var MAX_BYTES = 10 * 1024 * 1024;
@@ -46,6 +48,16 @@
       return require("./trust.js");
     }
     throw new Error("VickreyTrust is not loaded");
+  }
+
+  function integrityModule() {
+    if (root.VickreyIntegrity) {
+      return root.VickreyIntegrity;
+    }
+    if (typeof module === "object" && module.exports) {
+      return require("./integrity.js");
+    }
+    throw new Error("VickreyIntegrity is not loaded");
   }
 
   function subtle() {
@@ -146,7 +158,7 @@
    * restored: exact key allowlist, per-key shapes, a device key whose public
    * and private halves really belong together, an intact journal chain under
    * that key, and a queue whose entries match the journal's sealed copies. */
-  async function validateStorage(storage, trust) {
+  async function validateStorage(storage, trust, metadata) {
     var deviceKey = parseJson(storage["vickrey.device_key"], "device key");
     if (
       !isPlainObject(deviceKey) ||
@@ -242,12 +254,41 @@
         fail("anchor plan holds an invalid draw");
       }
     });
+
+    if (metadata !== undefined && metadata !== null) {
+      if (!isPlainObject(metadata) || !Array.isArray(metadata.corrections)) {
+        fail("signed backup metadata is malformed");
+      }
+      var integrity = integrityModule();
+      var corrections = await integrity.verifyCorrections(
+        metadata.corrections,
+        entries,
+        pair.publicKey,
+      );
+      if (!corrections.ok) {
+        fail("the corrections do not verify (" + corrections.reason + ")");
+      }
+      if (!entries.length) {
+        if (metadata.checkpoint !== null || metadata.corrections.length) {
+          fail("an empty journal cannot retain a head or corrections");
+        }
+        return;
+      }
+      var checkpoint = await integrity.verifyCheckpoint(
+        metadata.checkpoint,
+        entries[entries.length - 1].hash,
+        entries.length,
+        pair.publicKey,
+      );
+      if (!checkpoint.ok) {
+        fail(
+          "the signed journal head does not verify (" + checkpoint.reason + ")",
+        );
+      }
+    }
   }
 
-  function checkData(data) {
-    if (!isPlainObject(data) || data.schema !== DATA_SCHEMA) {
-      fail('plaintext schema is not "' + DATA_SCHEMA + '"');
-    }
+  function checkStorage(data) {
     if (!isPlainObject(data.storage)) {
       fail("plaintext storage is not an object");
     }
@@ -256,16 +297,12 @@
       allowed[key] = true;
     });
     Object.keys(data.storage).forEach(function (key) {
-      // hasOwnProperty, not a truthy lookup: "__proto__" resolves to
-      // Object.prototype on a plain object and would slip through.
       if (!Object.prototype.hasOwnProperty.call(allowed, key)) {
         fail("unexpected key in backup: " + key);
       }
     });
     var storage = {};
     STORAGE_KEYS.forEach(function (key) {
-      /* Missing keys are not silently filled: a well-formed backup states
-       * every allowlisted key, null meaning "absent on the device". */
       if (!Object.prototype.hasOwnProperty.call(data.storage, key)) {
         fail("backup is missing key: " + key);
       }
@@ -278,6 +315,55 @@
     return storage;
   }
 
+  function checkData(data) {
+    if (!isPlainObject(data)) {
+      fail("plaintext is not an object");
+    }
+    if (data.schema === LEGACY_DATA_SCHEMA) {
+      if (
+        Object.keys(data).some(function (key) {
+          return key !== "schema" && key !== "storage";
+        })
+      ) {
+        fail("unexpected field in legacy backup");
+      }
+      return {
+        schema: LEGACY_DATA_SCHEMA,
+        storage: checkStorage(data),
+        checkpoint: null,
+        corrections: [],
+      };
+    }
+    if (data.schema !== DATA_SCHEMA) {
+      fail('plaintext schema is not "' + DATA_SCHEMA + '"');
+    }
+    var allowedFields = {
+      schema: 1,
+      storage: 1,
+      checkpoint: 1,
+      corrections: 1,
+    };
+    if (
+      Object.keys(data).some(function (key) {
+        return !Object.prototype.hasOwnProperty.call(allowedFields, key);
+      })
+    ) {
+      fail("unexpected field in backup");
+    }
+    if (!Object.prototype.hasOwnProperty.call(data, "checkpoint")) {
+      fail("backup is missing its signed journal head");
+    }
+    if (!Array.isArray(data.corrections)) {
+      fail("backup corrections are not a list");
+    }
+    return {
+      schema: DATA_SCHEMA,
+      storage: checkStorage(data),
+      checkpoint: data.checkpoint,
+      corrections: data.corrections,
+    };
+  }
+
   /* Snapshot the five keys and encrypt them. Throws unless the device key is
    * valid and the journal chain and queue are consistent, so a backup never
    * preserves a state the app could not mount. */
@@ -285,10 +371,19 @@
     var trust = trustModule();
     checkPassphrase(passphrase);
     var snapshot = readKeys(storage);
-    await validateStorage(snapshot, trust);
-    var plaintext = te.encode(
-      JSON.stringify({ schema: DATA_SCHEMA, storage: snapshot }),
-    );
+    var metadata =
+      typeof storage.backupMetadata === "function"
+        ? storage.backupMetadata()
+        : null;
+    await validateStorage(snapshot, trust, metadata);
+    var envelopeSchema = metadata ? ENVELOPE_SCHEMA : LEGACY_ENVELOPE_SCHEMA;
+    var dataSchema = metadata ? DATA_SCHEMA : LEGACY_DATA_SCHEMA;
+    var data = { schema: dataSchema, storage: snapshot };
+    if (metadata) {
+      data.checkpoint = metadata.checkpoint;
+      data.corrections = metadata.corrections;
+    }
+    var plaintext = te.encode(JSON.stringify(data));
     if (plaintext.length > MAX_BYTES) {
       throw new Error("the backup is larger than 10 MB");
     }
@@ -299,13 +394,13 @@
       {
         name: "AES-GCM",
         iv: iv,
-        additionalData: te.encode(ENVELOPE_SCHEMA),
+        additionalData: te.encode(envelopeSchema),
       },
       key,
       plaintext,
     );
     var envelope = {
-      schema: ENVELOPE_SCHEMA,
+      schema: envelopeSchema,
       kdf: KDF,
       iterations: ITERATIONS,
       salt: trust.bytesToBase64url(salt),
@@ -326,7 +421,11 @@
   async function decryptBackup(envelope, passphrase) {
     var trust = trustModule();
     checkPassphrase(passphrase);
-    if (!isPlainObject(envelope) || envelope.schema !== ENVELOPE_SCHEMA) {
+    if (
+      !isPlainObject(envelope) ||
+      (envelope.schema !== ENVELOPE_SCHEMA &&
+        envelope.schema !== LEGACY_ENVELOPE_SCHEMA)
+    ) {
       fail('envelope schema is not "' + ENVELOPE_SCHEMA + '"');
     }
     if (envelope.kdf !== KDF) {
@@ -357,7 +456,7 @@
         {
           name: "AES-GCM",
           iv: iv,
-          additionalData: te.encode(ENVELOPE_SCHEMA),
+          additionalData: te.encode(envelope.schema),
         },
         key,
         ciphertext,
@@ -377,8 +476,19 @@
       fail("decrypted backup is not valid JSON");
     }
     var storage = checkData(data);
-    await validateStorage(storage, trust);
-    return storage;
+    await validateStorage(
+      storage.storage,
+      trust,
+      storage.schema === DATA_SCHEMA ? storage : null,
+    );
+    if (storage.schema === LEGACY_DATA_SCHEMA) {
+      return storage.storage;
+    }
+    return {
+      ...storage.storage,
+      checkpoint: storage.checkpoint,
+      corrections: storage.corrections,
+    };
   }
 
   /* Write a validated backup onto an empty device. Refuses when a journal or
@@ -403,6 +513,18 @@
       );
     }
     var previous = readKeys(storage);
+    if (typeof storage.replaceAll === "function") {
+      await storage.replaceAll(data);
+      return data;
+    }
+    if (
+      Object.prototype.hasOwnProperty.call(data, "checkpoint") ||
+      Object.prototype.hasOwnProperty.call(data, "corrections")
+    ) {
+      throw new Error(
+        "this storage cannot retain the backup's signed head and corrections",
+      );
+    }
     try {
       STORAGE_KEYS.forEach(function (key) {
         if (data[key] === null) {

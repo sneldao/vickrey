@@ -1,26 +1,35 @@
 # Strategy — Vickrey: A sealed bid on what you saw
 
-> _Current as of 2026-10-30: [STATUS.md](STATUS.md) is the live status table, [DEPLOY_DEMO.md](DEPLOY_DEMO.md) the prepared private deployment, and [DISCLOSURE_DESIGN.md](DISCLOSURE_DESIGN.md) the implemented disclosure contract. Public-ledger sections below are the legacy path._
+> _Company direction updated 2026-11-23: [STATUS.md](STATUS.md) is the live status table, [REALITY_RECEIPTS.md](REALITY_RECEIPTS.md) is the agentic ground-truth direction, [DEPLOY_DEMO.md](DEPLOY_DEMO.md) the prepared private deployment, and [DISCLOSURE_DESIGN.md](DISCLOSURE_DESIGN.md) the implemented disclosure contract. Public-ledger sections below are the legacy path._
 
-**One line:** Identify it offline. Prove it later.
+**One line:** Receipts for real life: remote evidence first, human ground
+truth when needed.
+
+**Protocol line:** Identify it, seal it on device, prove it later.
 
 **Milestone 1 (done): Hacktoberfest 2026 — Week 1: Touch Grass.** An
 offline, open-weight field identifier with a tamper-evident ecological
 logbook — submitted October 11, 2026. The entry period and the record of
 what was filed live in [`BUILD.md`](BUILD.md) and [`archive/`](archive/).
 
-**Milestone 2 (current): ECATHON — a Zcash privacy hackathon.** Submission
-due **October 28, 2026, 23:59 UTC**. The target is the privacy gap the Week
-1 build left open: our public anchor ledger still reveals _who_ sealed _what_
-_where_ _when_ — a correlation map, not a poaching map, but a map nonetheless.
-ECATHON is where the anchor moves into the shielded pool. Full plan in
-[`ECATHON.md`](ECATHON.md).
+**Milestone 2 (done): ECATHON — a Zcash privacy hackathon.** The privacy gap
+the Week 1 build left open became a shielded anchor and selective-disclosure
+build. Full historical plan in [`ECATHON.md`](ECATHON.md); post-submission
+work is marked in [`STATUS.md`](STATUS.md).
+
+**Milestone 3 (strategy): QIE Reality Receipts.** The proposed product is an
+agent that can leave the internet: it turns a claim into an evidence brief,
+checks remote data first, funds a bounded field task when needed, verifies
+the sealed submission, and settles the result on QIE. This is a direction and
+MVP scope, not shipped code. Full reasoning in
+[`REALITY_RECEIPTS.md`](REALITY_RECEIPTS.md).
 
 **Status:** the single honest table is [`STATUS.md`](STATUS.md) — this document
 is the plan and the reasoning, not a live-state report. The seal → verify →
 anchor → crack loop is Live; the on-device model that opens the vision is Not
-built; the ledger anchors to embedded/mock Hornet, not a public tangle. Read
-STATUS.md before borrowing any claim from below.
+built; the ledger anchors to embedded/mock Hornet, not a public tangle; the
+agentic challenge, remote-evidence, QIE settlement, and share-card surfaces
+are Not built. Read STATUS.md before borrowing any claim from below.
 
 ## The re-frame: outcome first, domain second
 
@@ -30,8 +39,16 @@ Vickrey proves they still agree. Any outsider can parse that in one sentence —
 _"someone changed the record, and nobody noticed."_ The outdoor domain is the
 warmth; the mechanism is the hook.
 
+The company wedge is also not "a bounty marketplace." It is **agent-initiated
+ground truth**: the agent parses a claim, checks remote evidence, and buys a
+sealed field record only when the internet cannot resolve the claim. Vickrey
+is the first sponsor and verifier, so a challenge does not need a mature
+three-sided market to work. External sponsors and agent callers are the later
+marketplace surface; the proof card is the consumer surface.
+
 ```
-offline AI ID  →  signed observation  →  hash chain  →  ledger anchor  →  open commons
+claim → evidence brief → remote check → sealed field record → verdict → receipt
+                         └ insufficient └→ funded field task ┘
 ```
 
 ## Name and narrative
@@ -44,6 +61,11 @@ anchor relies on. Full system in [`BRAND.md`](BRAND.md).
 
 Voice: _"Vickrey proved that a sealed bid makes people honest. We just asked the
 same of a memory."_
+
+The public wrapper is **Reality Receipts**: post a claim, get receipts. That
+surface can use the challenge, proof-card, and "fact-checker that can leave the
+internet" language; the underlying company and protocol remain Vickrey and the
+seal metaphor. [`BRAND.md`](BRAND.md) keeps the boundary between the two.
 
 ## Why open-source AI is the core (not decoration)
 
@@ -155,12 +177,23 @@ Versus other entries (a model, and nothing else), the ledger unlocks:
   prove the record wasn't changed later.
 - **iNaturalist / eBird** are platforms: useful, gated, and their data is not
   independently verifiable.
+- **Verified capture and inspection platforms** — Truepic, Attestiv, FieldBas
+  and peers — already sell controlled capture, location checks, guided
+  workflows, and reports. Vickrey should not compete head-on as a generic
+  inspection app.
+- **Agent task marketplaces** — Execution Market, localhuman, WorkFunder,
+  ProofMarket, OPINION and peers — already let agents pay people for physical
+  tasks and GPS-verified evidence. Vickrey's edge is not "a human took a
+  photo"; it is sealed capture, commit-reveal disclosure, and an auditable
+  verdict/receipt trail.
 - **IOTA Audit Trails / Notarization** anchor data so a hash can be shown to have
   been published. Generic. Vickrey is the _reconciliation_ on top: it compares
   the record against an independent read and shows the verdict.
 
 The differentiator is not "we anchor things." It is "we prove your copy and the
-ledger still agree — and we can retract without losing the proof."
+ledger still agree — and we can retract without losing the proof." For Reality
+Receipts the sharper claim is "the agent knows when remote evidence is not
+enough, buys the missing ground truth, and leaves a receipt."
 
 ## Reused engine
 
@@ -179,13 +212,18 @@ two-source truth table is domain-agnostic and unchanged:
 
 ## Risks and mitigations
 
-| Risk                                     | Mitigation                                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Reads as a re-skin of the old build      | The offline gap + device signature + anchoring rule are new, load-bearing mechanics                                             |
-| Ledger is heavy for a one-week build     | Keep it optional; ship the offline signed log first, anchor second                                                              |
-| Sensitivity of location data             | Precise location and raw records stay off-chain; the anchor carries only coarse location + species summary; delayed publication |
-| "A ledger doesn't make a wrong ID right" | State the accuracy/integrity split openly; lead with the model quality                                                          |
-| Research can't consume it                | Darwin Core export is a planned first-class deliverable, not a nice-to-have — currently unimplemented                           |
+| Risk                                     | Mitigation                                                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Reads as a re-skin of the old build      | The Reality Receipts scope is a new claim → remote check → field bounty → verdict → payout surface                        |
+| Marketplace cold start                   | Vickrey is the first sponsor and verifier; ship a single-claim challenge loop before external sponsor tooling             |
+| QIE is decorative                        | QIE must hold the bounty escrow, criteria hash, verdict, and payout — not just store a commitment                         |
+| Remote evidence overclaim                | Show `remote_evidence` separately from `field_evidence`; satellite/context cannot replace a sealed ground-truth record    |
+| Agent task-marketplace crowd             | Lead with commit-reveal evidence and auditable receipts, not generic "pay someone to take a photo"                        |
+| Bounty farming                           | Bound tasks by geography/time, require sealed submissions, cap one resolution, and use observer reputation before scaling |
+| Public bounty leaks sensitive context    | Launch only safe public challenges; keep sensitive observations on the private disclosure path                            |
+| Ledger is heavy for a one-week build     | Keep the existing field-record primitive authoritative; add the smallest QIE settlement contract                          |
+| "A ledger doesn't make a wrong ID right" | State the accuracy/integrity split openly; the verifier policy decides eligibility, not the commitment                    |
+| Research can't consume it                | Darwin Core export is a planned first-class deliverable, not a nice-to-have — currently unimplemented                     |
 
 ## Leave for later
 

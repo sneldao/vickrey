@@ -238,6 +238,26 @@ test("journal records are copies: editing a queue entry never reaches them", asy
   assert.equal(q.size(), 1);
 });
 
+test("the journal verifies its complete history after the outbox drains", async () => {
+  const { journal, entry, publicKey } = await sealedPair();
+  const verdict = await journal.verify(publicKey, trust);
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.checked, 1);
+});
+
+test("malformed persisted records remain visible and fail closed", async () => {
+  const store = {
+    load: () => [{ entry: { hash: "not-a-sealed-record" } }],
+    save: () => {},
+  };
+  const journal = createJournal({ store });
+  assert.equal(journal.size(), 1);
+  const verdict = await journal.verify(null, trust);
+  assert.equal(verdict.ok, false);
+  assert.equal(verdict.reason, "shape");
+  assert.equal(verdict.brokenAt, 0);
+});
+
 test("adopting old queued entries backfills the journal once", async () => {
   const { q } = await sealedPair();
   const journal = createJournal({ store: memoryStore() });

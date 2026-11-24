@@ -21,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642cc1e84afbd3f7d5a086a3 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Syntax check
@@ -40,7 +40,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642cc1e84afbd3f7d5a086a3 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
           cache: npm
@@ -96,7 +96,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: services/ledger/requirements*.txt
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Run tests
@@ -116,7 +116,7 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: services/zanchor/requirements*.txt
       - name: Install dependencies
         run: python -m pip install -r requirements.txt pytest
       - name: Run tests
@@ -136,13 +136,13 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: services/receipts/requirements*.txt
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Run service tests
         run: python -m pytest -q
       - name: Set up Node
-        uses: actions/setup-node@49933ea5288caeca8642cc1e84afbd3f7d5a086a3 # v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 24
       - name: Run browser client contracts

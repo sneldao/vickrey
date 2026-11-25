@@ -1,12 +1,13 @@
 # Reality Receipts — product direction and demo slice
 
-_Status: release-candidate checkpoint, 2026-11-24. A local/demo implementation
-of the claim → remote check → field task → signed verdict → simulated settlement
-loop now exists in `services/receipts` and `apps/receipts`. It is not deployed,
-and its independent review remediation is still in progress. QIE wallets,
-identity, escrow, mainnet settlement and live remote-evidence providers remain
-proposed. [STATUS.md](STATUS.md) is authoritative for what is built, verified
-and deployed._
+_Status: QIE testnet checkpoint, 2026-11-25. The claim → remote check → field
+task → signed verdict → QIE escrow settlement loop is implemented in
+`services/receipts` and `apps/receipts`, deployed to the public demo host, and
+smoke-tested end to end on QIE testnet. It is not a production marketplace.
+QIE wallet/ID identity, mainnet settlement and live remote-evidence providers
+remain unbuilt. [STATUS.md](STATUS.md) is authoritative for what is built,
+verified and deployed; [QIE_SUBMISSION.md](QIE_SUBMISSION.md) carries the
+submission evidence._
 
 ## Implementation checkpoint
 
@@ -14,20 +15,23 @@ The demo slice is deliberately narrower than the product direction:
 
 - FastAPI + SQLite enforce role-scoped bearer credentials, idempotency, immutable
   submissions, signed Ed25519 verdicts and fixed-window quotas.
-- The remote-evidence adapter is deterministic synthetic context. It can return
-  likely, unlikely, insufficient or unavailable, but it is not a live evidence
-  provider and never proves truth.
-- Observers submit a commitment plus bounded public metadata. The independent
-  privacy review has identified contract gaps that must be fixed before this is
-  treated as acceptable for public use.
-- Settlement is a deterministic testnet simulator. It moves no real funds and
-  creates no chain transaction.
+- The remote-evidence adapter is deterministic synthetic context. The general
+  adapter can return likely, unlikely, insufficient or unavailable; the public
+  demo uses a fixed insufficient field-path variant so the full workflow is
+  repeatable. Neither is a live evidence provider nor cryptographic proof.
+- Observers submit a commitment plus bounded public metadata. Raw observations,
+  observer private keys and free-form precise location are not sent to the
+  service.
+- Settlement can run as a local simulator or through the QIE escrow adapter.
+  The public demo uses QIE testnet and records mined challenge, evidence and
+  resolution transactions in immutable chain events.
 - The browser source provides a single-claim workflow and public receipt
-  lookup/share view, but same-origin hosting, deployment and browser integration
-  are still pending.
+  lookup/share view. It is deployed through the same-origin Nginx route at
+  `https://vickrey.144.202.117.160.sslip.io/receipts/`.
 
 This is enough to exercise the workflow and review its trust boundaries. It is
-not a production marketplace, a QIE integration or a public claim of accuracy.
+not a production marketplace, trustless verification, mainnet settlement or a
+public claim of accuracy.
 
 ## One line
 
@@ -64,8 +68,7 @@ claim or challenge
   -> if unresolved, bounded field task
   -> sealed Vickrey record
   -> verifier decision
-  -> simulated payout + public receipt (demo)
-  -> QIE payout + public receipt (proposed)
+  -> QIE escrow payout/refund + public receipt (testnet demo)
 ```
 
 The first version should use safe, public challenges where a disclosed field
@@ -110,12 +113,12 @@ Keep the receipt honest by showing separate states:
 A remote check may lower the need for a field task; it must not silently
 replace a sealed field record.
 
-## What QIE would do
+## What QIE does in the demo
 
-The proposed QIE slice is meaningful because it controls money and public
+The QIE slice is meaningful because it controls money and public
 settlement, not because it stores a hash:
 
-- **QIE Wallet** identifies sponsors and observers.
+- **QIE/EVM addresses** identify the operator sponsor and observer in the MVP; QIE Wallet integration remains future work.
 - **QIE ID** can carry verifier identity or observer reputation later.
 - **A challenge contract** escrows the bounty and records the criteria hash.
 - **A submission transaction** records the sealed-record commitment hash.
@@ -125,7 +128,7 @@ settlement, not because it stores a hash:
   without publishing the raw record.
 
 The current Zcash anchor and manual disclosure design are not replaced by
-this. They are the private evidence path. QIE is proposed for public,
+this. They are the private evidence path. QIE is used here for public,
 safe-challenge settlement and receipts; sensitive observations need a separate
 policy before being attached to public payouts.
 
@@ -139,9 +142,52 @@ evidence service.
 
 The hackathon version must be net-new work, not a port label. The defensible
 QIE slice is the claim/brief workflow, remote-evidence adapter, field-task
-contract, verifier surface, QIE wallet/payment integration, mainnet receipt,
-and share card. The existing field-record primitive is baseline and should be
+contract, verifier surface, QIE payment integration, receipt,
+and share card. Mainnet deployment is a submission gate, not a completed claim. The existing field-record primitive is baseline and should be
 disclosed as such.
+
+## QIE execution plan — deadline-driven MVP
+
+External checkpoint, verified against the official hackathon page on
+2026-11-24: submissions close **2026-11-30 at 23:59 CET** (22:59 UTC/GMT).
+Demo week is **2026-12-01 through 2026-12-05**; winners and first payouts are
+scheduled for **2026-12-10**. The remaining prize tranche depends on traction
+milestones within the hackathon's stated 90-day model. The visible public page
+does not pin down exactly when that 90-day clock starts, so the team must
+confirm the start date with the organisers rather than assume it.
+
+The deadline means the only credible MVP is the smallest real settlement loop:
+
+1. Deploy one boring challenge contract on QIE: fixed bounty escrow,
+   `criteriaHash`, expiry, one evidence commitment, verifier resolution,
+   payout or refund.
+2. Wire the existing receipts workflow to real transaction hashes instead of
+   presenting the simulator as the primary settlement path.
+3. Publish one public-safe challenge and complete one real end-to-end flow:
+   challenge created, escrow funded, evidence commitment submitted, verdict
+   recorded, payout or refund executed.
+4. Render the receipt as the shareable proof object linking challenge,
+   commitment, verdict and transaction.
+5. Disclose clearly that the field-record primitive predates this QIE slice,
+   while the challenge workflow, contract integration and settlement surface
+   are the new hackathon work.
+
+Internal execution gates, working backward from the external deadline:
+
+| Date       | Required state                                                                                                                       |
+| ---------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| 2026-11-25 | MVP scope frozen; contract interface and deployment path implemented                                                                 |
+| 2026-11-26 | QIE testnet deployment working; mainnet deployment path ready subject to explicit operator approval                                  |
+| 2026-11-27 | One real end-to-end transaction path demonstrated; if this fails, treat the submission as at-risk                                    |
+| 2026-11-28 | Hardened receipts service and same-origin public demo deployed and smoke-tested                                                      |
+| 2026-11-29 | Submission package assembled: repo, live demo URL, contract address, track, transaction links, demo script and prior-work disclosure |
+| 2026-11-30 | contingency fixes only; submit before 23:59 CET                                                                                      |
+
+Deliberately out of the critical path: QIE ID reputation, live satellite or
+sensor providers, observer-marketplace generalisation, private rewards,
+sensitive-location bounties, the offline phone model and the blocked Zcash
+public-testnet migration. Those are later product work, not prerequisites for
+proving real QIE settlement.
 
 ## Proposed contracts
 
@@ -188,7 +234,7 @@ claim screen:
 1. Post or pick a claim.
 2. Watch the agent produce an evidence brief.
 3. See remote evidence and a confidence state.
-4. If unresolved, watch the agent post a simulated bounty in the demo; QIE funding is proposed.
+4. If unresolved, watch the agent escrow a small QIE testnet bounty in the demo.
 5. A field submission arrives and is checked.
 6. The agent pays or refuses.
 7. A shareable receipt is published.

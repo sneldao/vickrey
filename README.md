@@ -19,16 +19,22 @@ current model integration uses a reachable server.
 **The fact-checker that can leave the internet.** A user or agent posts a
 claim; Vickrey produces an evidence brief, checks what remote data can
 establish, and opens a bounded field task only when ground truth is still
-needed. A verifier applies the rules, the settlement agent would pay on QIE,
-and the result becomes a shareable receipt.
+needed. A verifier applies the rules, the settlement agent pays or refunds the
+QIE escrow, and the result becomes a shareable receipt.
 
-A local/demo implementation of that loop now exists in `services/receipts` and
+The QIE testnet implementation is live in `services/receipts` and
 `apps/receipts`: deterministic remote context, a bounded field task, a signed
-verdict, simulated settlement and a public receipt. It is not yet integrated
-into the hosted demo, and independent review remediation is still in progress.
-QIE wallets, identity, escrow and real-funds settlement remain proposed — see
-[docs/REALITY_RECEIPTS.md](docs/REALITY_RECEIPTS.md) and
+verdict, escrow creation, evidence commitment, resolution transaction and a
+public receipt with explorer links. It is a demo-mode testnet slice, not
+trustless verification or mainnet settlement. QIE wallet/ID integration and
+real-funds deployment remain unbuilt — see
+[docs/REALITY_RECEIPTS.md](docs/REALITY_RECEIPTS.md),
+[docs/QIE_SUBMISSION.md](docs/QIE_SUBMISSION.md) and
 [docs/STATUS.md](docs/STATUS.md).
+
+> **Try the QIE testnet receipts demo:** [open Reality Receipts](https://vickrey.144.202.117.160.sslip.io/receipts/)
+> and run one bounded public claim. Test QIE has no economic value; resolution
+> is operator-controlled in the MVP.
 
 > **Try the live shielded demo:** [open the field client](https://vickrey.144.202.117.160.sslip.io/field/?anchor=shielded&minDelay=0&jitter=0)
 > (demo timing overrides active — production holds the 30-minute delay),

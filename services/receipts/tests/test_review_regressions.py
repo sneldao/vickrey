@@ -8,14 +8,14 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.adapters import (
     DeterministicTestnetSimulator,
     RemoteEvidenceInput,
     RemoteEvidenceResult,
 )
 from app.signing import dump_json, iso_utc, verdict_signing_bytes
+from fastapi.testclient import TestClient
+
 from tests.support import (
     StaticRemoteAdapter,
     challenge_payload,

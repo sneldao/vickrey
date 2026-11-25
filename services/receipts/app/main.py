@@ -14,10 +14,12 @@ from fastapi import Body, Depends, FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from app.adapters import FieldPathDemoRemoteEvidenceAdapter
 from app.config import Principal, Settings
 from app.db import MutationResult
 from app.errors import QuotaExceeded, ServiceError
 from app.models import ChallengeIn, EmptyIn, SubmissionIn, VerdictIn
+from app.qie import adapter_from_env
 from app.service import ReceiptService
 
 logger = logging.getLogger("receipts.http")
@@ -105,6 +107,10 @@ def create_app(
     clock: Callable[[], datetime] | None = None,
 ) -> FastAPI:
     config = settings or Settings.from_env()
+    if remote_adapter is None and config.demo_field_path:
+        remote_adapter = FieldPathDemoRemoteEvidenceAdapter()
+    if settlement_adapter is None:
+        settlement_adapter = adapter_from_env()
     service = ReceiptService(
         config,
         remote_adapter=remote_adapter,
@@ -116,7 +122,7 @@ def create_app(
         version="1.0.0",
         description=(
             "Public-safe claim-to-receipt vertical slice. Remote evidence is contextual; "
-            "settlement is simulated and uses no real funds."
+            "settlement metadata is explicitly reported by the configured adapter."
         ),
     )
     app.state.settings = config
@@ -215,8 +221,15 @@ def create_app(
             "mode": config.mode,
             "remote_evidence_provider": service.remote_adapter.provider,
             "settlement_adapter": service.settlement_adapter.name,
-            "settlement_network": "simulated_testnet",
-            "real_funds": False,
+            "settlement_network": getattr(
+                service.settlement_adapter, "network", "simulated_testnet"
+            ),
+            "real_funds": bool(
+                getattr(service.settlement_adapter, "real_funds", False)
+            ),
+            "settlement_amount_unit": getattr(
+                service.settlement_adapter, "amount_unit", "simulated_credit"
+            ),
         }
 
     @app.post("/v1/challenges", status_code=201)

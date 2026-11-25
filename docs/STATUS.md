@@ -1,10 +1,11 @@
-# Status — current build status (2026-11-24)
+# Status — current build status (2026-11-25)
 
-As of 2026-11-24. This tree is a **release-candidate checkpoint, not a deployed
-backend release**. GitHub Pages now publishes the hardened static frontend; the
-public demo service still runs an earlier revision. Verification, disclosure,
-backup and demo-deployment work dated 2026-10-30 remains post-submission work;
-the recorded hackathon deadline was 2026-10-28.
+As of 2026-11-25, the QIE **testnet** Reality Receipts slice is implemented and
+publicly smoke-tested end to end. This is still not a production release and no
+mainnet funds have been used: QIE mainnet deployment is blocked on explicit
+operator approval and funding. Verification, disclosure, backup and demo-
+deployment work dated 2026-10-30 remains post-submission work; the recorded
+ECATHON deadline was 2026-10-28.
 
 ## Current
 
@@ -18,13 +19,13 @@ the recorded hackathon deadline was 2026-10-28.
 | Receipt verification and single-record disclosure | Built; prior browser/service-tested             | Verification still names its `service_wallet` source; it is not independent chain verification.                                                                                                                                                           |
 | Ledger v2 authority                               | Hardened in source; service-tested              | Immutable submissions, raw-byte idempotency, version-bound verification, append-only attempts, bearer auth and quotas.                                                                                                                                    |
 | Privacy-preserving research export                | Built in source; unit-tested                    | Darwin Core CSV with provenance, default location withholding and explicit consent; not yet published.                                                                                                                                                    |
-| Reality Receipts backend                          | Review remediation complete; tests green        | `services/receipts`: role-scoped FastAPI/SQLite workflow, deterministic remote context, signed verdicts and simulated settlement. Suite: 49 passed, including 18 independent-review regressions.                                                          |
-| Reality Receipts frontend                         | Hardened in source; static Pages published      | `apps/receipts`: controlled public metadata, local-only observation notes and strict verdict requests; 12 unit tests and 2 real-service browser tests pass. Pages deployment for `2305b8d` succeeded; hosted Nginx/API deployment remains pending.        |
+| Reality Receipts backend                          | QIE testnet path built; tests green             | `services/receipts`: role-scoped FastAPI/SQLite workflow, deterministic remote context, signed verdicts, schema-v3 chain events and QIE escrow settlement. Suite: 53 passed.                                                                              |
+| Reality Receipts frontend                         | Hardened and publicly deployed for QIE testnet  | `apps/receipts`: controlled public metadata, local-only observation notes, strict verdict requests, network-aware amounts and explorer links; 12 unit tests and 11 browser tests pass. Hosted Nginx/API smoke test completed.                             |
 | Remote-evidence / satellite checks                | Deterministic demo adapter only                 | No live satellite, sensor or external evidence provider is connected. Remote context is never cryptographic proof.                                                                                                                                        |
 | QIE Wallet / ID integration                       | Not built                                       | Proposed for observer/sponsor identity and settlement.                                                                                                                                                                                                    |
-| QIE challenge, bounty, and payout contract        | Not built                                       | No escrow, mainnet transaction or real-funds settlement exists.                                                                                                                                                                                           |
-| Shareable reality-receipt cards                   | Built; browser-tested; static surface published | Public receipt lookup, share URL, clipboard copy, redaction, 320px layout and print output pass locally against the real FastAPI demo. The static surface is on Pages; its hosted receipt API remains pending.                                            |
-| Public regtest deployment                         | Previously live; current source not deployed    | [HTTPS demo](https://vickrey.144.202.117.160.sslip.io/) ran API source 258c568 and passed earlier end-to-end checks. It does not certify this tree.                                                                                                       |
+| QIE challenge, bounty, and payout contract        | Built and deployed on QIE testnet               | `RealityReceiptsEscrow` at `0xb5BAEF1117B00D1B230Bf806EBFb3FEe5F7c96Ee`; Forge tests pass. Mainnet deployment remains blocked on explicit operator approval and real funds.                                                                               |
+| Shareable reality-receipt cards                   | Built; browser-tested; public testnet smoke run | Public receipt lookup, share URL, clipboard copy, redaction, 320px layout and print output pass locally against the real FastAPI demo. The hosted page rendered a complete QIE testnet receipt with three explorer transaction links.                     |
+| Public demo deployment                            | Live; QIE testnet receipts path smoke-tested    | [HTTPS demo](https://vickrey.144.202.117.160.sslip.io/receipts/) serves the current receipts frontend/API through the same-origin Nginx route. The legacy regtest anchor containers remain separate.                                                      |
 | GitHub Pages frontend                             | Hardened static frontend published              | Pages deployment for `2305b8d` succeeded and assembles the current field, explorer and receipts runtime assets. Live-surface smoke testing remains pending.                                                                                               |
 | Old public ledger (`vickrey-ledger.fly.dev`)      | Legacy, embedded anchoring                      | Earlier health reported `anchoring: embedded`, `independent_source: false`; not an independent verifier.                                                                                                                                                  |
 | Offline on-phone model                            | Not built                                       | Server-hosted inference was previously verified.                                                                                                                                                                                                          |
@@ -38,16 +39,12 @@ the recorded hackathon deadline was 2026-10-28.
 
 Last local verification of this checkpoint:
 
-- `node --test apps/field/*.test.mjs apps/explorer/*.test.mjs apps/receipts/*.test.mjs` — 181 passed.
-- `RECEIPTS_UPSTREAM=http://127.0.0.1:18099 npm run test:browser` — 11 passed in Chromium, including corruption, aborted storage writes, backup restore, keyboard/focus, 320px layout, real-service receipt workflow, public lookup/share and print output.
-- `npm run test:browser` without `RECEIPTS_UPSTREAM` — 9 passed and the 2 real-service scenarios skipped cleanly.
-- Ledger suite — 132 passed, 1 skipped.
-- `PYTHONPATH=services/zanchor python3 -m pytest services/zanchor/tests -q` — 56 passed.
-- `PYTHONPATH=services/receipts python3 -m pytest services/receipts/tests -q` — 49 passed after independent-review remediation; covers metadata privacy, replay/quota ordering, remote idempotency, capture authorization, lock-time expiry, principal quotas, settlement consistency, verdict normalization, expired-state reporting and v1 quota migration.
-- `PYTHONPATH=services/receipts node --test apps/receipts/*.test.mjs` — 12 passed; covers canonical signatures, same-origin API configuration, allowlisted metadata, local sealing and receipt redaction.
-- Workflow/Compose YAML parsing, shell syntax, Python compilation and `git diff --check` passed.
-- Changed-file pre-commit hooks and GitHub Pages runtime-asset assembly checks passed.
-- The existing regtest anchor and legacy ledger health endpoints were reachable during this checkpoint; that does not verify the current source.
+- `PYTHONPATH=services/receipts python3 -m pytest services/receipts/tests -q` — 53 passed; covers metadata privacy, replay/quota ordering, remote idempotency, capture authorization, lock-time expiry, principal quotas, settlement consistency, verdict normalization, expired-state reporting, QIE adapter validation and chain-event persistence.
+- `node --test apps/receipts/*.test.mjs` — 12 passed; covers canonical signatures, same-origin API configuration, allowlisted metadata, local sealing and receipt redaction.
+- `RECEIPTS_UPSTREAM=http://127.0.0.1:18099 npm run test:browser` — 11 passed in Chromium, including corruption, aborted storage writes, backup restore, keyboard/focus, 320px layout, deterministic real-service receipt workflow, public lookup/share and print output.
+- `forge test` in `services/receipts/contracts` — passed for the escrow contract suite.
+- Public QIE testnet smoke — the hosted browser workflow completed challenge `e9365963-b3c1-44ec-8063-22c0b83f61bf`, rendered all three explorer links and paid 0.001 test QIE; see [QIE_SUBMISSION.md](QIE_SUBMISSION.md).
+- The existing regtest anchor and legacy ledger health endpoints were reachable during this checkpoint; that does not verify those older surfaces against the current source.
 
 Docker is not installed in the local environment, so container builds and the
 new Compose topology are **not locally verified**. CI run
@@ -60,8 +57,9 @@ succeeded.
 
 ## Remaining before release
 
-1. Smoke-test the published Pages surfaces and deploy/smoke-test the hardened demo service, including the Nginx same-origin receipts route, before promoting the public demo URL.
-2. Complete the external public-testnet wallet, backup, funding and memo round-trip work. This remains blocked independently of the code checkpoint.
+1. Decide whether to approve and fund the QIE mainnet deployment. The testnet MVP is live, but the operator wallet has zero mainnet QIE and the deployment tooling intentionally refuses mainnet without explicit approval. Do not reuse testnet keys on mainnet.
+2. Commit and publish the final source, then finish the submission package in [QIE_SUBMISSION.md](QIE_SUBMISSION.md) before 2026-11-30 23:59 CET.
+3. Complete the external Zcash public-testnet wallet, backup, funding and memo round-trip work. This remains blocked independently of the code checkpoint and is deliberately outside the QIE critical path.
 
 ## Historical record
 

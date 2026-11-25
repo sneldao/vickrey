@@ -25,7 +25,7 @@ import {
   resolveApiBase,
   signCanonicalVerdict,
   verifyVerdictSignature,
-} from "./receipts-core.mjs";
+} from "./receipts-core.js";
 
 const require = createRequire(import.meta.url);
 const trust = require("../field/trust.js");
@@ -232,11 +232,30 @@ test("demo health gate fails closed and field work requires insufficient non-pro
   assert.deepEqual(demoHealthFailures(health), []);
   assert.deepEqual(
     demoHealthFailures({ ...health, mode: "production", real_funds: true }),
-    ["mode is not demo", "real_funds is not false"],
+    ["mode is not demo", "simulated settlement real_funds is not false"],
   );
   assert.deepEqual(
     demoHealthFailures({ ...health, settlement_network: "mainnet" }),
-    ["settlement_network is not simulated_testnet"],
+    ["settlement_network is unsupported"],
+  );
+  assert.deepEqual(
+    demoHealthFailures({ ...health, settlement_network: "qie_testnet" }),
+    [],
+  );
+  assert.deepEqual(
+    demoHealthFailures({
+      ...health,
+      settlement_network: "qie_mainnet",
+      real_funds: true,
+    }),
+    ["real QIE mainnet funds are not explicitly enabled"],
+  );
+  assert.deepEqual(
+    demoHealthFailures(
+      { ...health, settlement_network: "qie_mainnet", real_funds: true },
+      { allowRealFunds: true },
+    ),
+    [],
   );
   assert.equal(
     fieldTaskAllowed({ status: "insufficient", is_cryptographic_proof: false }),
@@ -414,7 +433,7 @@ test("public receipt redaction assumptions accept the service shape and reject l
       raw_observation_received: false,
       commitment_verified_against_raw_record: false,
     },
-    settlement: { real_funds: false },
+    settlement: { real_funds: false, network: "simulated_testnet" },
     limitations: ["Settlement is a deterministic simulator: no real funds."],
   };
   assert.deepEqual(publicReceiptProblems(receipt), []);
@@ -428,6 +447,29 @@ test("public receipt redaction assumptions accept the service shape and reject l
   const overstated = structuredClone(receipt);
   overstated.field_evidence.commitment_verified_against_raw_record = true;
   assert.ok(publicReceiptProblems(overstated).length > 0);
+
+  const qieReceipt = structuredClone(receipt);
+  qieReceipt.settlement = { real_funds: false, network: "qie_testnet" };
+  qieReceipt.limitations = [
+    "QIE settlement uses the operator-controlled contract.",
+    "QIE testnet coins have no economic value.",
+  ];
+  qieReceipt.chain_events = [
+    {
+      event_type: "challenge_resolved",
+      tx_hash: `0x${"c".repeat(64)}`,
+      explorer_url: `https://testnet.qie.digital/tx/0x${"c".repeat(64)}`,
+      event_data: { operation: "payout" },
+    },
+  ];
+  assert.deepEqual(publicReceiptProblems(qieReceipt), []);
+  const misreported = structuredClone(qieReceipt);
+  misreported.settlement.real_funds = true;
+  assert.ok(
+    publicReceiptProblems(misreported).some((problem) =>
+      problem.includes("misreports real funds"),
+    ),
+  );
 });
 
 test("idempotency keys are unique, bounded, and service-safe", () => {

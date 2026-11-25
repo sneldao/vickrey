@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from app.config import Settings
+from app.main import create_app
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from fastapi.testclient import TestClient
 
-from app.config import Settings
-from app.main import create_app
 from tests.support import CountingSettlementAdapter, FixedClock, StaticRemoteAdapter
 
 

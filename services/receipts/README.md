@@ -2,9 +2,9 @@
 
 Standalone FastAPI + SQLite demonstration of:
 
-`claim/brief -> remote evidence -> field task -> sealed commitment -> signed verdict -> simulated settlement -> public JSON receipt`
+`claim/brief -> remote evidence -> field task -> sealed commitment -> signed verdict -> settlement -> public JSON receipt`
 
-It is not a marketplace. Remote evidence is contextual, never cryptographic proof. The service stores no raw observation or structured precise location; coarse public labels are screened for coordinate-like values. Settlement is a deterministic testnet **simulator**: no wallet, RPC, real funds, QIE, or mainnet integration.
+It is not a marketplace. Remote evidence is contextual, never cryptographic proof. The service stores no raw observation or structured precise location; coarse public labels are screened for coordinate-like values. Settlement defaults to a deterministic testnet **simulator**. The hackathon deployment can instead use the narrow QIE escrow adapter, which creates real transactions on QIE testnet or mainnet while explicitly reporting `real_funds`.
 
 ## Run
 
@@ -73,9 +73,54 @@ All paths below are under `/v1`; mutating calls use `Authorization: Bearer <toke
 | POST   | `/verdicts/{verdict_id}/settlement`          | settlement                                                   |
 | GET    | `/receipts/{challenge_id}`                   | public; redacted JSON receipt                                |
 
-`GET /healthz` reports mode and honest adapter labels. Submission metadata is limited to `captured_at`, a coarse `public_location`, and the controlled `observation_status` (`observed`, `not_observed`, or `cannot_determine`); free-form summaries and coordinate-like labels are rejected. Public receipts omit submission metadata and raw observations. They identify the coarse public task location, commitment, policy verdict, simulator transaction ID (if any), source labels, limitations, and timestamps.
+`GET /healthz` reports mode and honest adapter labels. Submission metadata is limited to `captured_at`, a coarse `public_location`, and the controlled `observation_status` (`observed`, `not_observed`, or `cannot_determine`); free-form summaries and coordinate-like labels are rejected. Public receipts omit submission metadata and raw observations. They identify the coarse public task location, commitment, policy verdict, settlement transaction ID (if any), source labels, limitations, and timestamps.
 
-The demo remote provider deterministically maps its input hash to `likely`, `unlikely`, `insufficient`, or `unavailable`. Only `insufficient` permits a field task. Remote evaluation and its durable idempotency record commit under one write transaction, so concurrent identical requests invoke the adapter once; this also serializes other SQLite writers while the adapter runs. `accepted` pays the observer; `rejected` refunds the sponsor; `needs_witness` and `cannot_determine` record `no_payout`.
+The general demo remote provider deterministically maps its input hash to `likely`, `unlikely`, `insufficient`, or `unavailable`. Only `insufficient` permits a field task. Demo mode defaults to `deterministic_demo_field_path`, which always returns `insufficient` so public demonstrations reliably exercise the complete field-evidence path; set `RECEIPTS_DEMO_FIELD_PATH=false` to use the four-state input-hash variant. Remote evaluation and its durable idempotency record commit under one write transaction, so concurrent identical requests invoke the adapter once; this also serializes other SQLite writers while the adapter runs. `accepted` pays the observer; `rejected` refunds the sponsor; `needs_witness` and `cannot_determine` record `no_payout`.
+
+## QIE escrow settlement
+
+The QIE adapter is enabled only through environment configuration:
+
+```bash
+RECEIPTS_SETTLEMENT_ADAPTER=qie_escrow
+RECEIPTS_QIE_NETWORK=qie_testnet
+RECEIPTS_QIE_RPC_URL=https://rpc4testnet.qie.digital/
+RECEIPTS_QIE_CONTRACT_ADDRESS=0x...
+RECEIPTS_QIE_OPERATOR_PRIVATE_KEY=<environment-only secret>
+```
+
+For the demo principal mapping, the claimant subject must be the operator sponsor address and the observer subject must be the observer payout address. Example shape only:
+
+```json
+{
+  "demo-claimant-token-change-me": {
+    "role": "claimant",
+    "subject": "0xSponsorOperator"
+  },
+  "demo-observer-token-change-me": {
+    "role": "observer",
+    "subject": "0xObserverPayout"
+  },
+  "demo-verifier-token-change-me": {
+    "role": "verifier",
+    "subject": "verifier-1"
+  },
+  "demo-settlement-token-change-me": {
+    "role": "settlement",
+    "subject": "settlement-1"
+  }
+}
+```
+
+The adapter expects wei-denominated integer bounties and `RECEIPTS_MAX_BOUNTY_AMOUNT` high enough for the intended demo amount. It records immutable chain events for challenge creation, evidence submission and resolution. QIE testnet reports `real_funds=false`. Mainnet uses chain ID 1990, reports `real_funds=true`, and is refused unless `RECEIPTS_QIE_MAINNET_ACK=I_APPROVE_REAL_QIE_MAINNET_FUNDS` is present. Resolution is operator-controlled in this MVP; non-terminal verdicts do not close escrow and unresolved escrow relies on the contract expiry path.
+
+The minimal contract and deployment script live in `contracts/`. Run tests with Foundry:
+
+```bash
+cd contracts
+forge test
+QIE_DEPLOYER_PRIVATE_KEY=0x... ./deploy-qie.sh testnet
+```
 
 ## Verdict signing
 

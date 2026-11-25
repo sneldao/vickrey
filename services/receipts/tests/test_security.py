@@ -5,9 +5,9 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from app.config import Settings
 from fastapi.testclient import TestClient
 
-from app.config import Settings
 from tests.support import (
     challenge_payload,
     create_challenge,

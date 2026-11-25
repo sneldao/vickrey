@@ -35,9 +35,11 @@ services:
     build:
       context: services/receipts
     container_name: vickrey-receipts
+    env_file: ${VICKREY_DEMO_ENV:?demo env file required}
     environment:
       RECEIPTS_MODE: demo
       RECEIPTS_DATABASE_PATH: /data/receipts.db
+      RECEIPTS_DEMO_FIELD_PATH: "true"
     volumes:
       - vickrey_receipts_data:/data
     networks:

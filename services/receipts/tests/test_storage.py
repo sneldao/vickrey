@@ -6,9 +6,9 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
+from app.db import SCHEMA_V1, SCHEMA_VERSION, Database
 from fastapi.testclient import TestClient
 
-from app.db import SCHEMA_V1, Database
 from tests.support import (
     CountingSettlementAdapter,
     StaticRemoteAdapter,
@@ -293,7 +293,7 @@ def test_restart_persistence_and_idempotent_settlement_replay(
 def test_schema_is_additive_and_future_versions_fail_closed(settings):
     database = Database(settings.database_path)
     with database.connect() as conn:
-        assert conn.execute("PRAGMA user_version").fetchone()[0] == 2
+        assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     Database(settings.database_path)
     with database.connect() as conn:
         conn.execute("PRAGMA user_version=99")

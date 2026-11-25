@@ -7,14 +7,14 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.errors import IdempotencyConflict, QuotaExceeded
 from app.signing import dump_json
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_V1 = """
 CREATE TABLE IF NOT EXISTS challenges (
@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS challenges (
     criteria_hash TEXT NOT NULL CHECK (length(criteria_hash) = 64),
     brief_json TEXT NOT NULL,
     bounty_amount INTEGER NOT NULL CHECK (bounty_amount > 0),
-    currency TEXT NOT NULL CHECK (currency = 'SIMULATED_TESTNET_CREDITS'),
+    currency TEXT NOT NULL CHECK (currency IN ('SIMULATED_TESTNET_CREDITS', 'QIE')),
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     version INTEGER NOT NULL DEFAULT 1 CHECK (version = 1)
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS field_tasks (
     evidence_requirements_json TEXT NOT NULL,
     reject_if_json TEXT NOT NULL,
     bounty_amount INTEGER NOT NULL CHECK (bounty_amount > 0),
-    currency TEXT NOT NULL CHECK (currency = 'SIMULATED_TESTNET_CREDITS'),
+    currency TEXT NOT NULL CHECK (currency IN ('SIMULATED_TESTNET_CREDITS', 'QIE')),
     expires_at TEXT NOT NULL,
     created_at TEXT NOT NULL,
     version INTEGER NOT NULL DEFAULT 1 CHECK (version = 1)
@@ -112,11 +112,11 @@ CREATE TABLE IF NOT EXISTS settlements (
     status TEXT NOT NULL CHECK (status IN ('settled', 'no_payout')),
     recipient_subject TEXT NOT NULL,
     amount INTEGER NOT NULL CHECK (amount >= 0),
-    currency TEXT NOT NULL CHECK (currency = 'SIMULATED_TESTNET_CREDITS'),
+    currency TEXT NOT NULL CHECK (currency IN ('SIMULATED_TESTNET_CREDITS', 'QIE')),
     txid TEXT,
     adapter TEXT NOT NULL,
-    network TEXT NOT NULL CHECK (network = 'simulated_testnet'),
-    real_funds INTEGER NOT NULL CHECK (real_funds = 0),
+    network TEXT NOT NULL CHECK (network IN ('simulated_testnet', 'qie_testnet', 'qie_mainnet')),
+    real_funds INTEGER NOT NULL CHECK (real_funds IN (0, 1)),
     settled_at TEXT NOT NULL,
     CHECK ((operation = 'no_payout' AND amount = 0 AND txid IS NULL)
         OR (operation IN ('payout', 'refund') AND amount > 0 AND txid IS NOT NULL))
@@ -229,7 +229,38 @@ BEGIN
 END;
 """
 
-MIGRATIONS: dict[int, str] = {1: SCHEMA_V1, 2: SCHEMA_V2}
+
+SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS chain_events (
+    id TEXT PRIMARY KEY,
+    event_type TEXT NOT NULL CHECK (event_type IN ('challenge_created', 'evidence_submitted', 'challenge_resolved')),
+    challenge_id TEXT NOT NULL REFERENCES challenges(id),
+    submission_id TEXT REFERENCES submissions(id),
+    verdict_id TEXT REFERENCES verdicts(id),
+    tx_hash TEXT NOT NULL UNIQUE,
+    chain_id INTEGER NOT NULL CHECK (chain_id > 0),
+    contract_address TEXT NOT NULL,
+    sender_address TEXT NOT NULL,
+    network TEXT NOT NULL CHECK (network IN ('qie_testnet', 'qie_mainnet')),
+    currency TEXT NOT NULL CHECK (currency = 'QIE'),
+    amount INTEGER NOT NULL CHECK (amount >= 0),
+    payload_json TEXT NOT NULL,
+    block_number INTEGER,
+    explorer_url TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chain_events_challenge
+    ON chain_events(challenge_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_chain_events_submission
+    ON chain_events(submission_id);
+
+CREATE TRIGGER IF NOT EXISTS chain_events_no_update
+BEFORE UPDATE ON chain_events BEGIN SELECT RAISE(ABORT, 'chain events are immutable'); END;
+CREATE TRIGGER IF NOT EXISTS chain_events_no_delete
+BEFORE DELETE ON chain_events BEGIN SELECT RAISE(ABORT, 'chain events are immutable'); END;
+"""
+
+MIGRATIONS: dict[int, str] = {1: SCHEMA_V1, 2: SCHEMA_V2, 3: SCHEMA_V3}
 
 
 @dataclass(frozen=True)
@@ -255,7 +286,8 @@ class Database:
             for version in sorted(MIGRATIONS):
                 if version <= current:
                     continue
-                # Migrations are additive CREATE IF NOT EXISTS statements only.
+                # Migrations are additive CREATE IF NOT EXISTS statements only. QIE currency
+                # support predates deployment; reset unreleased demo databases created with v1/v2.
                 conn.executescript(MIGRATIONS[version])
                 conn.execute(f"PRAGMA user_version={version}")
 
@@ -384,4 +416,4 @@ class Database:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)

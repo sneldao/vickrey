@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
-
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from app.adapters import (
     DeterministicTestnetSimulator,
@@ -14,6 +12,7 @@ from app.adapters import (
 )
 from app.models import VerdictIn
 from app.signing import iso_utc, verdict_signing_bytes
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 DEMO_TOKENS = {
     "claimant": "demo-claimant-token-change-me",
@@ -29,7 +28,7 @@ def headers(role: str, key: str) -> dict[str, str]:
 
 class FixedClock:
     def __init__(self) -> None:
-        self.current = datetime(2026, 11, 24, 12, 0, tzinfo=timezone.utc)
+        self.current = datetime(2026, 11, 24, 12, 0, tzinfo=UTC)
 
     def __call__(self) -> datetime:
         return self.current

@@ -6,10 +6,12 @@ from app.adapters import (
     SIMULATED_CURRENCY,
     DeterministicDemoRemoteEvidenceAdapter,
     DeterministicTestnetSimulator,
+    FieldPathDemoRemoteEvidenceAdapter,
     RemoteEvidenceInput,
     SettlementRequest,
 )
 from app.signing import dump_json
+
 from tests.support import create_challenge
 
 
@@ -31,6 +33,23 @@ def test_demo_remote_provider_is_deterministic_and_can_return_every_honest_state
         assert first.provider == "deterministic_demo"
         seen.add(first.status)
     assert seen == {"likely", "unlikely", "insufficient", "unavailable"}
+
+
+def test_field_path_demo_remote_provider_repeatably_enters_field_evidence():
+    adapter = FieldPathDemoRemoteEvidenceAdapter()
+    evidence_input = RemoteEvidenceInput(
+        challenge_id="challenge-repeatable",
+        claim="Bounded public claim",
+        category="public_notice",
+        criteria_hash="0" * 64,
+        expires_at="2026-11-24T14:00:00.000000Z",
+    )
+    first = adapter.evaluate(evidence_input)
+    second = adapter.evaluate(evidence_input)
+    assert first == second
+    assert first.status == "insufficient"
+    assert first.provider == "deterministic_demo_field_path"
+    assert first.source_label == "deterministic_synthetic_demo"
 
 
 def test_simulator_is_deterministic_idempotent_and_never_moves_real_funds():

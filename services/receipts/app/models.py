@@ -62,7 +62,7 @@ class ChallengeIn(StrictModel):
     category: str = Field(pattern=ID_RE, max_length=64)
     criteria: CriteriaIn
     expires_at: datetime
-    bounty_amount: int = Field(ge=1, le=1_000_000_000)
+    bounty_amount: int = Field(ge=1, le=10**18)
 
     @field_validator("expires_at")
     @classmethod

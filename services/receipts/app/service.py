@@ -8,7 +8,7 @@ import logging
 import sqlite3
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from app.adapters import (
@@ -69,13 +69,13 @@ class ReceiptService:
         self.db = database or Database(settings.database_path)
         self.remote_adapter = remote_adapter or DeterministicDemoRemoteEvidenceAdapter()
         self.settlement_adapter = settlement_adapter or DeterministicTestnetSimulator()
-        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.clock = clock or (lambda: datetime.now(UTC))
 
     def _now(self) -> datetime:
         value = self.clock()
         if value.tzinfo is None or value.utcoffset() is None:
             raise RuntimeError("service clock must be timezone-aware")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def _quota(self, conn: sqlite3.Connection, principal: Principal) -> None:
         self.db.consume_quota(
@@ -96,7 +96,7 @@ class ReceiptService:
 
     @staticmethod
     def _parse_time(value: str) -> datetime:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(value)
 
     def _require_not_expired(self, row: sqlite3.Row, now: datetime) -> None:
         if now >= self._parse_time(row["expires_at"]):
@@ -111,9 +111,99 @@ class ReceiptService:
         material = dump_json({"schema": CRITERIA_SCHEMA, "criteria": criteria})
         return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
+    def _settlement_currency(self) -> str:
+        return getattr(self.settlement_adapter, "currency", SIMULATED_CURRENCY)
+
+    def _settlement_network(self) -> str:
+        return getattr(self.settlement_adapter, "network", "simulated_testnet")
+
+    def _settlement_real_funds(self) -> bool:
+        return bool(getattr(self.settlement_adapter, "real_funds", False))
+
+    def _run_chain_hook(
+        self, hook: Callable[..., dict[str, Any]], **kwargs: Any
+    ) -> dict[str, Any]:
+        try:
+            return hook(**kwargs)
+        except Exception as exc:
+            logger.error("qie_chain_hook_failed error_type=%s", type(exc).__name__)
+            raise ServiceError(
+                "QIE escrow transaction failed or was not confirmed", status_code=502
+            ) from exc
+
+    def _insert_chain_event(
+        self, conn: sqlite3.Connection, event: dict[str, Any]
+    ) -> sqlite3.Row:
+        event_id = self._new_id()
+        created_at = iso_utc(self._now())
+        conn.execute(
+            """
+            INSERT INTO chain_events (
+                id, event_type, challenge_id, submission_id, verdict_id, tx_hash,
+                chain_id, contract_address, sender_address, network, currency, amount,
+                payload_json, block_number, explorer_url, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                event["event_type"],
+                event["challenge_id"],
+                event.get("submission_id"),
+                event.get("verdict_id"),
+                event["tx_hash"],
+                event["chain_id"],
+                event["contract_address"],
+                event["sender_address"],
+                event["network"],
+                event["currency"],
+                event["amount"],
+                dump_json(event["payload"]),
+                event.get("block_number"),
+                event.get("explorer_url"),
+                created_at,
+            ),
+        )
+        return conn.execute(
+            "SELECT * FROM chain_events WHERE id = ?", (event_id,)
+        ).fetchone()
+
+    @staticmethod
+    def _chain_event_base(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "event_type": row["event_type"],
+            "challenge_id": row["challenge_id"],
+            "submission_id": row["submission_id"],
+            "verdict_id": row["verdict_id"],
+            "tx_hash": row["tx_hash"],
+            "chain_id": row["chain_id"],
+            "contract_address": row["contract_address"],
+            "sender_address": row["sender_address"],
+            "network": row["network"],
+            "currency": row["currency"],
+            "amount": row["amount"],
+            "event_data": json.loads(row["payload_json"]),
+            "block_number": row["block_number"],
+            "explorer_url": row["explorer_url"],
+            "created_at": row["created_at"],
+        }
+
+    def _chain_events_for(
+        self, conn: sqlite3.Connection, challenge_id: str
+    ) -> list[dict[str, Any]]:
+        rows = conn.execute(
+            """
+            SELECT * FROM chain_events
+            WHERE challenge_id = ?
+            ORDER BY created_at ASC, rowid ASC
+            """,
+            (challenge_id,),
+        ).fetchall()
+        return [self._chain_event_base(row) for row in rows]
+
     @staticmethod
     def _brief(
-        payload: ChallengeIn, criteria: dict[str, Any], expires_at: str
+        payload: ChallengeIn, criteria: dict[str, Any], expires_at: str, currency: str
     ) -> dict[str, Any]:
         return {
             "schema": BRIEF_SCHEMA,
@@ -124,7 +214,7 @@ class ReceiptService:
             "deadline": expires_at,
             "required_details": criteria["required_details"],
             "counts_against": criteria["reject_if"],
-            "bounty": {"amount": payload.bounty_amount, "currency": SIMULATED_CURRENCY},
+            "bounty": {"amount": payload.bounty_amount, "currency": currency},
             "safety_boundary": "Public, bounded tasks only; no people, interiors or minors.",
         }
 
@@ -225,7 +315,7 @@ class ReceiptService:
             "txid": row["txid"],
             "adapter": row["adapter"],
             "network": row["network"],
-            "real_funds": False,
+            "real_funds": bool(row["real_funds"]),
             "settled_at": row["settled_at"],
         }
 
@@ -266,7 +356,8 @@ class ReceiptService:
             criteria = payload.criteria.model_dump(mode="json")
             criteria_hash = self._criteria_hash(criteria)
             challenge_id = self._new_id()
-            brief = self._brief(payload, criteria, expires_at)
+            currency = self._settlement_currency()
+            brief = self._brief(payload, criteria, expires_at, currency)
             conn.execute(
                 """
                 INSERT INTO challenges (
@@ -285,7 +376,7 @@ class ReceiptService:
                     criteria_hash,
                     dump_json(brief),
                     payload.bounty_amount,
-                    SIMULATED_CURRENCY,
+                    currency,
                     expires_at,
                     now_text,
                 ),
@@ -293,7 +384,25 @@ class ReceiptService:
             row = conn.execute(
                 "SELECT * FROM challenges WHERE id = ?", (challenge_id,)
             ).fetchone()
+            chain_events: list[dict[str, Any]] = []
+            create_hook = getattr(
+                self.settlement_adapter, "create_challenge_escrow", None
+            )
+            if create_hook is not None:
+                event = self._run_chain_hook(
+                    create_hook,
+                    challenge_id=challenge_id,
+                    criteria_hash=criteria_hash,
+                    expires_at_epoch=int(payload.expires_at.timestamp()),
+                    amount=payload.bounty_amount,
+                    sponsor=principal.subject,
+                )
+                chain_events.append(
+                    self._chain_event_base(self._insert_chain_event(conn, event))
+                )
             data = {"challenge": self._challenge_base(row)}
+            if chain_events:
+                data["chain_events"] = chain_events
             self.db.remember(
                 conn,
                 operation="create_challenge",
@@ -328,11 +437,13 @@ class ReceiptService:
                 """,
                 (challenge_id,),
             ).fetchone()
+            chain_events = self._chain_events_for(conn, challenge_id)
         result = self._challenge_base(row)
         result["remote_evidence"] = (
             None if remote is None else self._remote_base(remote)
         )
         result["field_task"] = None if task is None else self._task_base(task)
+        result["chain_events"] = chain_events
         now = self._now()
         if terminal is not None:
             state = "resolved"
@@ -632,7 +743,24 @@ class ReceiptService:
                 """,
                 (submission_id,),
             ).fetchone()
+            chain_events: list[dict[str, Any]] = []
+            submit_hook = getattr(
+                self.settlement_adapter, "submit_evidence_escrow", None
+            )
+            if submit_hook is not None:
+                event = self._run_chain_hook(
+                    submit_hook,
+                    challenge_id=challenge_id,
+                    submission_id=submission_id,
+                    commitment=commitment,
+                    observer=principal.subject,
+                )
+                chain_events.append(
+                    self._chain_event_base(self._insert_chain_event(conn, event))
+                )
             data = {"submission": self._submission_base(row)}
+            if chain_events:
+                data["chain_events"] = chain_events
             self.db.remember(
                 conn,
                 operation="submit_evidence",
@@ -749,7 +877,7 @@ class ReceiptService:
                         "invalid_signature",
                         "Ed25519 signature did not verify",
                     )
-                issued = payload.issued_at.astimezone(timezone.utc)
+                issued = payload.issued_at.astimezone(UTC)
                 if issued > now + timedelta(minutes=5) or issued < now - timedelta(
                     hours=1
                 ):
@@ -956,24 +1084,38 @@ class ReceiptService:
                 amount = 0
                 recipient = "none"
             settlement_id = self._new_id()
-            adapter_result = self.settlement_adapter.settle(
-                SettlementRequest(
-                    settlement_id=settlement_id,
-                    challenge_id=verdict["challenge_id"],
-                    verdict_id=verdict_id,
-                    operation=operation,
-                    amount=amount,
-                    currency=challenge["currency"],
-                    recipient=recipient,
+            try:
+                adapter_result = self.settlement_adapter.settle(
+                    SettlementRequest(
+                        settlement_id=settlement_id,
+                        challenge_id=verdict["challenge_id"],
+                        verdict_id=verdict_id,
+                        operation=operation,
+                        amount=amount,
+                        currency=challenge["currency"],
+                        recipient=recipient,
+                    )
                 )
-            )
-            if (
-                adapter_result.real_funds
-                or adapter_result.network != "simulated_testnet"
-            ):
+            except Exception as exc:
+                logger.error(
+                    "settlement_adapter_failed error_type=%s", type(exc).__name__
+                )
                 raise ServiceError(
-                    "settlement adapter violated the simulation boundary",
+                    "settlement adapter failed or the transaction was not confirmed",
                     status_code=502,
+                ) from exc
+            if adapter_result.network not in {
+                "simulated_testnet",
+                "qie_testnet",
+                "qie_mainnet",
+            }:
+                raise ServiceError(
+                    "settlement adapter returned an unsupported network",
+                    status_code=502,
+                )
+            if adapter_result.real_funds and adapter_result.network != "qie_mainnet":
+                raise ServiceError(
+                    "settlement adapter misreported real funds", status_code=502
                 )
             if adapter_result.amount != amount:
                 raise ServiceError(
@@ -1007,7 +1149,7 @@ class ReceiptService:
                 INSERT INTO settlements (
                     id, verdict_id, challenge_id, operation, status, recipient_subject,
                     amount, currency, txid, adapter, network, real_funds, settled_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     settlement_id,
@@ -1021,13 +1163,28 @@ class ReceiptService:
                     adapter_result.txid,
                     self.settlement_adapter.name,
                     adapter_result.network,
+                    int(adapter_result.real_funds),
                     settled_at,
                 ),
             )
+            chain_events: list[dict[str, Any]] = []
+            if adapter_result.chain_event is not None:
+                if adapter_result.chain_event.get("tx_hash") != adapter_result.txid:
+                    raise ServiceError(
+                        "settlement adapter returned mismatched chain metadata",
+                        status_code=502,
+                    )
+                chain_events.append(
+                    self._chain_event_base(
+                        self._insert_chain_event(conn, adapter_result.chain_event)
+                    )
+                )
             row = conn.execute(
                 "SELECT * FROM settlements WHERE id = ?", (settlement_id,)
             ).fetchone()
             data = {"settlement": self._settlement_base(row)}
+            if chain_events:
+                data["chain_events"] = chain_events
             self.db.remember(
                 conn,
                 operation="settlement",
@@ -1040,6 +1197,32 @@ class ReceiptService:
                 created_at=settled_at,
             )
             return MutationResult(data=data)
+
+    def _receipt_limitations(self) -> list[str]:
+        limitations = [
+            "Remote evidence is contextual and is never cryptographic proof.",
+            "The service stores a commitment, not the raw observation, and does not verify it against raw bytes.",
+            "A verifier applies an explicit policy and may be wrong.",
+        ]
+        if self._settlement_network() == "simulated_testnet":
+            limitations.append(
+                "Settlement is a deterministic simulator: no real funds, chain transaction, QIE or mainnet integration."
+            )
+        else:
+            limitations.extend(
+                [
+                    "QIE settlement uses the operator-controlled RealityReceiptsEscrow contract; it is not trustless verification.",
+                    "The observer payout address is authenticated by service bearer configuration and relayed by the operator, not by a wallet signature in this MVP.",
+                    "Non-terminal verdicts do not close the on-chain escrow; unresolved escrow is recoverable only through the contract expiry path.",
+                ]
+            )
+            if self._settlement_network() == "qie_testnet":
+                limitations.append("QIE testnet coins have no economic value.")
+            if self._settlement_network() == "qie_mainnet":
+                limitations.append(
+                    "Real QIE mainnet funds move when a terminal verdict is settled."
+                )
+        return limitations
 
     def public_receipt(self, challenge_id: str) -> dict[str, Any]:
         with self.db.connect() as conn:
@@ -1070,6 +1253,7 @@ class ReceiptService:
             settlement = conn.execute(
                 "SELECT * FROM settlements WHERE verdict_id = ?", (verdict["id"],)
             ).fetchone()
+            chain_events = self._chain_events_for(conn, challenge_id)
         challenge_data = self._challenge_base(challenge)
         remote_data = self._remote_base(remote)
         verdict_data = self._verdict_base(verdict)
@@ -1084,8 +1268,8 @@ class ReceiptService:
                 "currency": challenge["currency"],
                 "txid": None,
                 "adapter": None,
-                "network": "simulated_testnet",
-                "real_funds": False,
+                "network": self._settlement_network(),
+                "real_funds": self._settlement_real_funds(),
                 "settled_at": None,
             }
         )
@@ -1127,16 +1311,12 @@ class ReceiptService:
                 if settlement is None
                 else settlement["settled_at"],
             },
+            "chain_events": chain_events,
             "verification_sources": {
                 "remote_evidence": remote["source_label"],
                 "field_evidence": "sealed_record_commitment_only",
                 "verdict": "configured_verifier_policy_decision",
                 "settlement": None if settlement is None else settlement["adapter"],
             },
-            "limitations": [
-                "Remote evidence is contextual and is never cryptographic proof.",
-                "The service stores a commitment, not the raw observation, and does not verify it against raw bytes.",
-                "A verifier applies an explicit policy and may be wrong.",
-                "Settlement is a deterministic simulator: no real funds, chain transaction, QIE or mainnet integration.",
-            ],
+            "limitations": self._receipt_limitations(),
         }

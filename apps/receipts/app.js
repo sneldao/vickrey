@@ -21,7 +21,7 @@ import {
   signCanonicalVerdict,
   submissionUrl,
   verdictUrl,
-} from "./receipts-core.mjs";
+} from "./receipts-core.js";
 
 const byId = (id) => document.getElementById(id);
 const dom = {
@@ -97,7 +97,7 @@ const ACTION_LABEL = {
   seal: "local seal",
   submit: "commitment submission",
   verdict: "verdict signing and submission",
-  settle: "simulated settlement",
+  settle: "settlement",
   receipt: "public receipt fetch",
 };
 const BADGE_TEXT = {
@@ -127,6 +127,21 @@ const state = {
   context: null,
   receipt: null,
 };
+let bountyUserEdited = false;
+
+function applyBountyDefault(network) {
+  if (bountyUserEdited) return;
+  dom.bounty.value = isSimulatedSettlement(network)
+    ? "250"
+    : "1000000000000000";
+}
+
+async function primeNetworkDefault() {
+  const response = await requestJson(healthUrl(state.apiBase)).catch(
+    () => null,
+  );
+  if (response) applyBountyDefault(response.data?.settlement_network);
+}
 
 function setStatus(message) {
   dom.status.textContent = message;
@@ -148,6 +163,56 @@ function setStage(name, status, detail) {
   if (detail !== undefined) stage.detail.textContent = detail;
 }
 
+function isSimulatedSettlement(network) {
+  return network === "simulated_testnet";
+}
+
+function settlementNetworkLabel(network) {
+  if (network === "simulated_testnet") return "simulated testnet";
+  if (network === "qie_testnet") return "QIE testnet";
+  if (network === "qie_mainnet") return "QIE mainnet";
+  return network || "unknown network";
+}
+
+function settlementTransactionLabel(network) {
+  return isSimulatedSettlement(network)
+    ? "Simulator transaction"
+    : "Transaction";
+}
+
+function formatAmount(amount, currency, network) {
+  if (amount === null || amount === undefined) return "—";
+  if (currency === "QIE") {
+    if (!Number.isSafeInteger(amount)) {
+      return `${Number(amount).toLocaleString()} wei (${settlementNetworkLabel(network)})`;
+    }
+    const wei = BigInt(amount);
+    const unit = 1_000_000_000_000_000_000n;
+    const whole = wei / unit;
+    const fraction = (wei % unit)
+      .toString()
+      .padStart(18, "0")
+      .replace(/0+$/, "");
+    const qie = fraction ? `${whole}.${fraction}` : String(whole);
+    return `${qie} QIE (${amount.toLocaleString()} wei)`;
+  }
+  const suffix = isSimulatedSettlement(network) ? " (simulated)" : "";
+  return `${amount.toLocaleString()} ${currency}${suffix}`;
+}
+
+function settlementBoundaryNote(network) {
+  if (network === "simulated_testnet") {
+    return "Deterministic simulator only: no wallet, chain, QIE, or real funds.";
+  }
+  if (network === "qie_testnet") {
+    return "QIE testnet escrow transaction. Test coins have no economic value; resolution is operator-controlled in this MVP.";
+  }
+  if (network === "qie_mainnet") {
+    return "QIE mainnet escrow transaction. Real funds move; resolution is operator-controlled in this MVP.";
+  }
+  return "Settlement network could not be classified.";
+}
+
 function resetStages() {
   const initialDetails = {
     health: "Not checked.",
@@ -156,7 +221,7 @@ function resetStages() {
     field_evidence:
       "A task is permitted only after insufficient remote evidence.",
     verdict: "Canonical Ed25519 verdict signed under the local demo policy.",
-    settlement: "Deterministic simulator only; no real funds.",
+    settlement: "Configured settlement adapter not checked.",
     receipt: "Fetched separately from the redacted public endpoint.",
   };
   for (const name of STAGE_ORDER)
@@ -265,7 +330,11 @@ function renderReceipt(receipt, { focus = false } = {}) {
       ["Sponsor", challenge.sponsor],
       [
         "Bounty",
-        `${challenge.bounty.amount.toLocaleString()} ${challenge.bounty.currency} (simulated)`,
+        formatAmount(
+          challenge.bounty.amount,
+          challenge.bounty.currency,
+          settlement.network,
+        ),
       ],
       ["Expires", challenge.expires_at],
       ["Criteria hash", receipt.criteria_hash, true],
@@ -361,7 +430,11 @@ function renderReceipt(receipt, { focus = false } = {}) {
   );
   grid.append(verdictCard);
 
-  const settlementCard = receiptCard("Simulated settlement");
+  const settlementCard = receiptCard(
+    isSimulatedSettlement(settlement.network)
+      ? "Simulated settlement"
+      : `QIE settlement · ${settlementNetworkLabel(settlement.network)}`,
+  );
   settlementCard.append(
     definitionList([
       ["Operation", settlement.operation || "Pending"],
@@ -369,12 +442,16 @@ function renderReceipt(receipt, { focus = false } = {}) {
       ["Recipient", settlement.recipient || "—"],
       [
         "Amount",
-        settlement.amount === null ? "—" : settlement.amount.toLocaleString(),
+        formatAmount(
+          settlement.amount,
+          settlement.currency,
+          settlement.network,
+        ),
       ],
       ["Currency", settlement.currency],
       ["Network", settlement.network],
       [
-        "Simulator transaction",
+        settlementTransactionLabel(settlement.network),
         settlement.txid || "None",
         Boolean(settlement.txid),
       ],
@@ -383,13 +460,51 @@ function renderReceipt(receipt, { focus = false } = {}) {
     ]),
   );
   settlementCard.append(
-    node(
-      "p",
-      "boundary-note",
-      "Deterministic simulator only: no wallet, chain, QIE, or real funds.",
-    ),
+    node("p", "boundary-note", settlementBoundaryNote(settlement.network)),
   );
   grid.append(settlementCard);
+
+  if (Array.isArray(receipt.chain_events) && receipt.chain_events.length) {
+    const chainCard = receiptCard("QIE chain events", true);
+    const eventsList = node("ul", "chain-events");
+    for (const event of receipt.chain_events) {
+      const item = node("li");
+      item.append(node("strong", "", event.event_type.replaceAll("_", " ")));
+      item.append(
+        document.createTextNode(
+          ` · ${settlementNetworkLabel(event.network)} · chain ${event.chain_id} · block ${event.block_number ?? "—"} · `,
+        ),
+      );
+      let explorerUrl = "";
+      try {
+        const parsed = new URL(event.explorer_url || "");
+        if (parsed.protocol === "https:") explorerUrl = parsed.href;
+      } catch {
+        explorerUrl = "";
+      }
+      if (explorerUrl) {
+        const link = node("a", "mono", `${event.tx_hash.slice(0, 12)}…`);
+        link.href = explorerUrl;
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+        item.append(link);
+      } else {
+        item.append(
+          node("span", "mono", event.tx_hash || "no transaction hash"),
+        );
+      }
+      eventsList.append(item);
+    }
+    chainCard.append(eventsList);
+    chainCard.append(
+      node(
+        "p",
+        "boundary-note",
+        "These links are transaction evidence only. They do not make the verifier's physical-world judgment trustless.",
+      ),
+    );
+    grid.append(chainCard);
+  }
 
   const timestampsCard = receiptCard("Public timeline", true);
   timestampsCard.append(
@@ -460,7 +575,10 @@ function renderIdentifiers() {
     ["Verdict UUID", context.verdict?.verdict_id],
     ["Verdict record", context.verdict?.id],
     ["Settlement", context.settlement?.id],
-    ["Simulated transaction", context.settlement?.txid],
+    [
+      settlementTransactionLabel(context.health?.settlement_network),
+      context.settlement?.txid,
+    ],
   ].filter(
     ([, value]) => value !== undefined && value !== null && value !== "",
   );
@@ -534,9 +652,13 @@ function readClaimSnapshot() {
     if (!Number.isInteger(radius) || radius < 1 || radius > 1000) {
       throw new Error("Radius must be an integer from 1 to 1,000 metres.");
     }
-    if (!Number.isInteger(bounty) || bounty < 1 || bounty > 1_000_000) {
+    if (
+      !Number.isInteger(bounty) ||
+      bounty < 1 ||
+      !Number.isSafeInteger(bounty)
+    ) {
       throw new Error(
-        "Bounty must be an integer from 1 to 1,000,000 simulated credits.",
+        "Bounty must be a positive safe integer in the service's base units (simulated credits, or wei for QIE).",
       );
     }
     return {
@@ -565,7 +687,7 @@ function assertDemoConfiguration() {
   for (const role of Object.keys(DOCUMENTED_DEMO_TOKENS)) {
     if (config.demoCredentials?.[role] !== DOCUMENTED_DEMO_TOKENS[role]) {
       throw new Error(
-        `Refusing to run: ${role} credentials are not the documented local demo token.`,
+        `Refusing to run: ${role} credentials are not the documented demo token.`,
       );
     }
   }
@@ -590,7 +712,9 @@ async function checkedHealth({ updateStage = false } = {}) {
     );
   }
   const response = await requestJson(healthUrl(state.apiBase));
-  const failures = demoHealthFailures(response.data);
+  const failures = demoHealthFailures(response.data, {
+    allowRealFunds: config.allowRealQieMainnet === true,
+  });
   if (failures.length) {
     setStage("health", "error", `Refused: ${failures.join("; ")}.`);
     throw new Error(
@@ -598,11 +722,12 @@ async function checkedHealth({ updateStage = false } = {}) {
     );
   }
   state.context.health = response.data;
+  applyBountyDefault(response.data?.settlement_network);
   if (updateStage) {
     setStage(
       "health",
       "success",
-      `mode=demo · real_funds=false · settlement_network=simulated_testnet. Provider: ${response.data.remote_evidence_provider}; settlement: ${response.data.settlement_adapter}.`,
+      `mode=demo · real_funds=${response.data.real_funds} · settlement_network=${response.data.settlement_network}. Provider: ${response.data.remote_evidence_provider}; settlement: ${response.data.settlement_adapter}.`,
     );
   }
   return response.data;
@@ -876,19 +1001,23 @@ async function runWorkflow() {
         url: verdictUrl(state.apiBase, context.verdict.id),
       });
       const settlement = data.settlement;
+      const expectedNetwork = context.health?.settlement_network;
       if (
-        settlement.real_funds !== false ||
-        settlement.network !== "simulated_testnet"
+        settlement.network !== expectedNetwork ||
+        settlement.real_funds !== context.health?.real_funds
       ) {
         throw new Error(
-          "Settlement response violated the simulated-no-real-funds boundary.",
+          "Settlement response does not match the checked /healthz settlement boundary.",
         );
       }
       context.settlement = settlement;
+      const txText = settlement.txid
+        ? `${settlementTransactionLabel(settlement.network)} ${settlement.txid}`
+        : "No settlement transaction (no payout)";
       setStage(
         "settlement",
         "success",
-        `${context.settlement.operation}: ${context.settlement.amount} ${context.settlement.currency}. ${context.settlement.txid || "No simulator transaction (no payout)"}. No real funds.`,
+        `${settlement.operation}: ${formatAmount(settlement.amount, settlement.currency, settlement.network)}. ${txText}. real_funds=${settlement.real_funds}.`,
       );
       renderIdentifiers();
     }
@@ -920,7 +1049,7 @@ async function runWorkflow() {
     context.failedAt = null;
     state.running = false;
     setStatus(
-      `Demo complete: ${context.receipt.status}. Verdict ${context.verdict.verdict}; settlement ${context.settlement.operation} on simulated_testnet with no real funds.`,
+      `Demo complete: ${context.receipt.status}. Verdict ${context.verdict.verdict}; settlement ${context.settlement.operation} on ${context.settlement.network}; real_funds=${context.settlement.real_funds}.`,
     );
     setError(null, false);
     updateButtons();
@@ -1021,7 +1150,7 @@ async function lookupReceipt(challengeId, { focus = false } = {}) {
     const response = await requestJson(receiptUrl(state.apiBase, id));
     renderReceipt(response.data, { focus });
     setStatus(
-      `Public receipt loaded: ${response.data.status}. Settlement is simulated with no real funds.`,
+      `Public receipt loaded: ${response.data.status}. Settlement network ${response.data.settlement?.network}; real_funds=${response.data.settlement?.real_funds}.`,
     );
   } catch (error) {
     setError(error);
@@ -1077,6 +1206,9 @@ function downloadLocalRecord() {
   );
 }
 
+dom.bounty.addEventListener("input", () => {
+  bountyUserEdited = true;
+});
 dom.form.addEventListener("submit", (event) => {
   event.preventDefault();
   void startWorkflow();
@@ -1113,6 +1245,7 @@ try {
 }
 
 initializeExpiry();
+if (!state.baseError) void primeNetworkDefault();
 resetStages();
 renderIdentifiers();
 updateButtons();

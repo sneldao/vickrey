@@ -1,0 +1,463 @@
+{
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "initialOperator",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "criteriaHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "uint64",
+          "name": "expiresAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "createChallenge",
+      "outputs": [],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getChallenge",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "sponsor",
+              "type": "address"
+            },
+            {
+              "internalType": "uint256",
+              "name": "amount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "criteriaHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint64",
+              "name": "expiresAt",
+              "type": "uint64"
+            },
+            {
+              "internalType": "enum RealityReceiptsEscrow.ChallengeState",
+              "name": "state",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "submissionId",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "commitmentHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "address",
+              "name": "observer",
+              "type": "address"
+            },
+            {
+              "internalType": "enum RealityReceiptsEscrow.Resolution",
+              "name": "resolution",
+              "type": "uint8"
+            },
+            {
+              "internalType": "bytes32",
+              "name": "proofHash",
+              "type": "bytes32"
+            },
+            {
+              "internalType": "uint64",
+              "name": "resolvedAt",
+              "type": "uint64"
+            }
+          ],
+          "internalType": "struct RealityReceiptsEscrow.Challenge",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "operator",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "owner",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        }
+      ],
+      "name": "refundExpired",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "enum RealityReceiptsEscrow.Resolution",
+          "name": "resolution",
+          "type": "uint8"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "proofHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "resolveChallenge",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "nextOperator",
+          "type": "address"
+        }
+      ],
+      "name": "setOperator",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "submissionId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "commitmentHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "submitEvidence",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "submissionId",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "commitmentHash",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "observer",
+          "type": "address"
+        }
+      ],
+      "name": "submitEvidenceFor",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sponsor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "criteriaHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "expiresAt",
+          "type": "uint64"
+        }
+      ],
+      "name": "ChallengeCreated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sponsor",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "ChallengeRefunded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "submissionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "enum RealityReceiptsEscrow.Resolution",
+          "name": "resolution",
+          "type": "uint8"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "proofHash",
+          "type": "bytes32"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "paidTo",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "uint256",
+          "name": "amount",
+          "type": "uint256"
+        }
+      ],
+      "name": "ChallengeResolved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "challengeId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "submissionId",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "observer",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "bytes32",
+          "name": "commitmentHash",
+          "type": "bytes32"
+        }
+      ],
+      "name": "EvidenceSubmitted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "previousOperator",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "newOperator",
+          "type": "address"
+        }
+      ],
+      "name": "OperatorChanged",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "ChallengeExists",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ChallengeMissing",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ChallengeNotExpired",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ChallengeNotOpen",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidExpiry",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotOperator",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotOwner",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "Reentrant",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SubmissionExists",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "SubmissionMissing",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TransferFailed",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ZeroAddress",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ZeroAmount",
+      "type": "error"
+    }
+  ],
+  "bytecode": "0x6080604052348015600e575f5ffd5b50604051610f9d380380610f9d833981016040819052602b9160a8565b6001600160a01b03811660515760405163d92e233d60e01b815260040160405180910390fd5b5f80546001600160a01b031990811633178255600180546001600160a01b0385169216821790556040519091907fd58299b712891143e76310d5e664c4203c940a67db37cf856bdaa3c5c76a802c908290a35060d3565b5f6020828403121560b7575f5ffd5b81516001600160a01b038116811460cc575f5ffd5b9392505050565b610ebd806100e05f395ff3fe608060405260043610610084575f3560e01c80638da5cb5b116100575780638da5cb5b14610128578063b3ab15fb14610146578063b8a0075e14610165578063cc3e049b14610184578063f11ab2c5146101a3575f5ffd5b80632623745314610088578063458d2bf11461009d578063570ca735146100d2578063804bc99414610109575b5f5ffd5b61009b610096366004610c23565b6101c2565b005b3480156100a8575f5ffd5b506100bc6100b7366004610c65565b610410565b6040516100c99190610cb4565b60405180910390f35b3480156100dd575f5ffd5b506001546100f1906001600160a01b031681565b6040516001600160a01b0390911681526020016100c9565b348015610114575f5ffd5b5061009b610123366004610d7d565b610572565b348015610133575f5ffd5b505f546100f1906001600160a01b031681565b348015610151575f5ffd5b5061009b610160366004610dc1565b610583565b348015610170575f5ffd5b5061009b61017f366004610de1565b61062f565b34801561018f575f5ffd5b5061009b61019e366004610c65565b610897565b3480156101ae575f5ffd5b5061009b6101bd366004610e19565b610a20565b345f036101e257604051631f2a200560e01b815260040160405180910390fd5b428167ffffffffffffffff161161020b5760405162d36c8560e81b815260040160405180910390fd5b5f838152600260205260409020546001600160a01b03161561024057604051634ddb632760e11b815260040160405180910390fd5b604080516101608101825233815234602080830191825282840186815267ffffffffffffffff868116606086019081525f6080870181815260a0880182905260c0880182905260e088018290526101008801829052610120880182905261014088018290528b8252600295869052979020865181546001600160a01b0319166001600160a01b0390911617815594516001860155915184840155905160038401805467ffffffffffffffff198116929093169182178155955194959394939268ffffffffffffffffff199092161790600160401b90849081111561032657610326610c7c565b021790555060a0820151600482015560c0820151600582015560e08201516006820180546001600160a01b039092166001600160a01b0319831681178255610100850151926001600160a81b03191617600160a01b83600381111561038d5761038d610c7c565b02179055506101208201516007820155610140909101516008909101805467ffffffffffffffff191667ffffffffffffffff928316179055604080513481526020810185905291831690820152339084907f33e81f41b753199bb8626af3cd372aca02a82c4559dd6af834fda4829f34ca999060600160405180910390a3505050565b60408051610160810182525f80825260208201819052918101829052606081018290526080810182905260a0810182905260c0810182905260e08101829052610100810182905261012081018290526101408101919091525f8281526002602081815260409283902083516101608101855281546001600160a01b031681526001820154928101929092528083015493820193909352600383015467ffffffffffffffff811660608301529092916080840191600160401b900460ff16908111156104dd576104dd610c7c565b60028111156104ee576104ee610c7c565b8152600482015460208201526005820154604082015260068201546001600160a01b0381166060830152608090910190600160a01b900460ff16600381111561053957610539610c7c565b600381111561054a5761054a610c7c565b81526007820154602082015260089091015467ffffffffffffffff1660409091015292915050565b61057e83838333610a5d565b505050565b5f546001600160a01b031633146105ad576040516330cd747160e01b815260040160405180910390fd5b6001600160a01b0381166105d45760405163d92e233d60e01b815260040160405180910390fd5b6001546040516001600160a01b038084169216907fd58299b712891143e76310d5e664c4203c940a67db37cf856bdaa3c5c76a802c905f90a3600180546001600160a01b0319166001600160a01b0392909216919091179055565b6001546001600160a01b0316331461065a57604051631f0853c160e21b815260040160405180910390fd5b600154600160a01b900460ff16156106855760405163769dd35360e11b815260040160405180910390fd5b6001805460ff60a01b1916600160a01b1790555f83815260026020526040902080546001600160a01b03166106cd5760405163a7b0c19960e01b815260040160405180910390fd5b5f6003820154600160401b900460ff1660028111156106ee576106ee610c7c565b1461070c576040516323077b5160e21b815260040160405180910390fd5b5f83600381111561071f5761071f610c7c565b0361073d57604051631e5ac46f60e21b815260040160405180910390fd5b600183600381111561075157610751610c7c565b148015610769575060068101546001600160a01b0316155b1561078757604051631e5ac46f60e21b815260040160405180910390fd5b6003810180546001919060ff60401b1916600160401b83021790555060068101805484919060ff60a01b1916600160a01b8360038111156107ca576107ca610c7c565b02179055506007810182905560088101805467ffffffffffffffff19164267ffffffffffffffff161790555f600184600381111561080a5761080a610c7c565b03610823575060068101546001600160a01b0316610830565b5080546001600160a01b03165b600182015461083f8282610bb3565b8260040154867ff86324c55b61c4fea23e9ebf912036eeee323a74630398fbadc4959465a22a828787868660405161087a9493929190610e55565b60405180910390a350506001805460ff60a01b1916905550505050565b600154600160a01b900460ff16156108c25760405163769dd35360e11b815260040160405180910390fd5b6001805460ff60a01b1916600160a01b1790555f81815260026020526040902080546001600160a01b031661090a5760405163a7b0c19960e01b815260040160405180910390fd5b5f6003820154600160401b900460ff16600281111561092b5761092b610c7c565b14610949576040516323077b5160e21b815260040160405180910390fd5b600381015467ffffffffffffffff1642101561097857604051630a8f83ff60e11b815260040160405180910390fd5b60038101805460ff60401b19166802000000000000000017905560088101805467ffffffffffffffff19164267ffffffffffffffff16179055600181015481546109cb906001600160a01b031682610bb3565b81546040518281526001600160a01b039091169084907f3bd37a2c50e9ad253e5dbf24a40c4f71c5f2a52ed813a9d135d6d7cdb8f2512e9060200160405180910390a350506001805460ff60a01b1916905550565b6001546001600160a01b03163314610a4b57604051631f0853c160e21b815260040160405180910390fd5b610a5784848484610a5d565b50505050565b6001600160a01b038116610a845760405163d92e233d60e01b815260040160405180910390fd5b5f84815260026020526040902080546001600160a01b0316610ab95760405163a7b0c19960e01b815260040160405180910390fd5b5f6003820154600160401b900460ff166002811115610ada57610ada610c7c565b14610af8576040516323077b5160e21b815260040160405180910390fd5b600381015467ffffffffffffffff164210610b255760405162d36c8560e81b815260040160405180910390fd5b600481015415610b475760405162a08ced60e51b815260040160405180910390fd5b60048101849055600581018390556006810180546001600160a01b0319166001600160a01b038416908117909155604051848152859087907f5b85e772542d5b997a6c88ec6778d25dbaa67595a561f7e1cbfadabbf2b6036a9060200160405180910390a45050505050565b5f826001600160a01b0316826040515f6040518083038185875af1925050503d805f8114610bfc576040519150601f19603f3d011682016040523d82523d5f602084013e610c01565b606091505b505090508061057e576040516312171d8360e31b815260040160405180910390fd5b5f5f5f60608486031215610c35575f5ffd5b8335925060208401359150604084013567ffffffffffffffff81168114610c5a575f5ffd5b809150509250925092565b5f60208284031215610c75575f5ffd5b5035919050565b634e487b7160e01b5f52602160045260245ffd5b60038110610ca057610ca0610c7c565b9052565b60048110610ca057610ca0610c7c565b81516001600160a01b03168152610160810160208301516020830152604083015160408301526060830151610cf5606084018267ffffffffffffffff169052565b506080830151610d086080840182610c90565b5060a083015160a083015260c083015160c083015260e0830151610d3760e08401826001600160a01b03169052565b50610100830151610d4c610100840182610ca4565b50610120830151610120830152610140830151610d7661014084018267ffffffffffffffff169052565b5092915050565b5f5f5f60608486031215610d8f575f5ffd5b505081359360208301359350604090920135919050565b80356001600160a01b0381168114610dbc575f5ffd5b919050565b5f60208284031215610dd1575f5ffd5b610dda82610da6565b9392505050565b5f5f5f60608486031215610df3575f5ffd5b83359250602084013560048110610e08575f5ffd5b929592945050506040919091013590565b5f5f5f5f60808587031215610e2c575f5ffd5b843593506020850135925060408501359150610e4a60608601610da6565b905092959194509250565b60808101610e638287610ca4565b60208201949094526001600160a01b0392909216604083015260609091015291905056fea26469706673582212209b635a743df030b8873bddb2227fe196f82af93001752ac9b9ade18ff28d13cf64736f6c634300081e0033",
+  "compiler": "0.8.30",
+  "contractName": "RealityReceiptsEscrow"
+}

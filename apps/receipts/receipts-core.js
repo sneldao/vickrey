@@ -4,6 +4,11 @@ export const LOCAL_RECORD_SCHEMA =
 export const PUBLIC_RECEIPT_SCHEMA = "reality-receipts.public-receipt.v1";
 export const DEMO_POLICY_ID = "public-notice-v1";
 export const DEMO_POLICY_VERSION = 1;
+export const SETTLEMENT_NETWORKS = new Set([
+  "simulated_testnet",
+  "qie_testnet",
+  "qie_mainnet",
+]);
 export const IDEMPOTENCY_RE = /^[A-Za-z0-9._:-]{8,128}$/;
 export const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -429,15 +434,31 @@ export async function assertWebCryptoEd25519(cryptoImpl = globalThis.crypto) {
   }
 }
 
-export function demoHealthFailures(health) {
+export function demoHealthFailures(health, { allowRealFunds = false } = {}) {
   const failures = [];
   if (!health || typeof health !== "object")
     return ["health response is missing"];
   if (health.status !== "ok") failures.push("status is not ok");
   if (health.mode !== "demo") failures.push("mode is not demo");
-  if (health.real_funds !== false) failures.push("real_funds is not false");
-  if (health.settlement_network !== "simulated_testnet") {
-    failures.push("settlement_network is not simulated_testnet");
+  if (typeof health.real_funds !== "boolean") {
+    failures.push("real_funds is not boolean");
+  }
+  if (!SETTLEMENT_NETWORKS.has(health.settlement_network)) {
+    failures.push("settlement_network is unsupported");
+  } else if (health.settlement_network === "simulated_testnet") {
+    if (health.real_funds !== false) {
+      failures.push("simulated settlement real_funds is not false");
+    }
+  } else if (health.settlement_network === "qie_testnet") {
+    if (health.real_funds !== false) {
+      failures.push("QIE testnet real_funds is not false");
+    }
+  } else if (health.settlement_network === "qie_mainnet") {
+    if (health.real_funds !== true) {
+      failures.push("QIE mainnet real_funds is not true");
+    } else if (!allowRealFunds) {
+      failures.push("real QIE mainnet funds are not explicitly enabled");
+    }
   }
   return failures;
 }
@@ -697,16 +718,37 @@ export function publicReceiptProblems(receipt) {
   if (receipt.remote_evidence?.is_cryptographic_proof !== false) {
     problems.push("receipt presents remote context as proof");
   }
-  if (receipt.settlement?.real_funds !== false) {
-    problems.push("receipt does not affirm simulated settlement");
+  const network = receipt.settlement?.network;
+  const realFunds = receipt.settlement?.real_funds;
+  if (!SETTLEMENT_NETWORKS.has(network)) {
+    problems.push("receipt settlement network is unsupported");
   }
-  if (
-    !Array.isArray(receipt.limitations) ||
-    !receipt.limitations.some((item) =>
-      String(item).toLowerCase().includes("no real funds"),
-    )
-  ) {
-    problems.push("receipt omits the no-real-funds limitation");
+  if (typeof realFunds !== "boolean") {
+    problems.push("receipt settlement real_funds is not boolean");
+  } else if (network === "simulated_testnet" || network === "qie_testnet") {
+    if (realFunds !== false) {
+      problems.push("receipt misreports real funds on a no-value network");
+    }
+  } else if (network === "qie_mainnet" && realFunds !== true) {
+    problems.push("receipt misreports QIE mainnet settlement as non-real");
+  }
+  const limitations = Array.isArray(receipt.limitations)
+    ? receipt.limitations.map((item) => String(item).toLowerCase())
+    : [];
+  if (network === "simulated_testnet") {
+    if (!limitations.some((item) => item.includes("no real funds"))) {
+      problems.push("receipt omits the no-real-funds limitation");
+    }
+  } else if (network === "qie_testnet") {
+    if (!limitations.some((item) => item.includes("no economic value"))) {
+      problems.push("receipt omits the QIE testnet no-value limitation");
+    }
+  } else if (network === "qie_mainnet") {
+    if (!limitations.some((item) => item.includes("real qie mainnet funds"))) {
+      problems.push("receipt omits the real-mainnet-funds limitation");
+    }
+  } else {
+    problems.push("receipt limitations cannot be validated");
   }
   const forbiddenKeys = new Set([
     "public_metadata",

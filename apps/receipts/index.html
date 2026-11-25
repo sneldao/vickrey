@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="referrer" content="no-referrer">
   <meta name="color-scheme" content="light">
-  <title>Reality Receipts — Vickrey local demo</title>
+  <title>Reality Receipts — Vickrey QIE demo</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -22,7 +22,7 @@
         <a href="../field/">Field Client</a>
         <a href="../explorer/">Evidence Explorer</a>
       </nav>
-      <span class="edition">One-claim vertical slice · local demo</span>
+      <span class="edition">One-claim vertical slice · QIE-aware demo</span>
     </div>
   </header>
 
@@ -32,25 +32,27 @@
       <h1 id="page-title">Reality Receipts</h1>
       <p class="hero-copy">
         Turn one bounded public claim into a locally signed observation, a
-        policy-bound verdict, and a redacted public receipt. The demo is explicit
-        about what is context, what is cryptographic, and what is only simulated.
+        policy-bound verdict, settlement evidence, and a redacted public receipt.
+        The demo is explicit about what is context, what is cryptographic, what
+        is simulated, and what is a QIE testnet transaction.
       </p>
     </section>
 
     <aside class="demo-warning no-print" aria-labelledby="demo-warning-title">
       <div class="warning-mark" aria-hidden="true">!</div>
       <div>
-        <h2 id="demo-warning-title">Local demo credentials — production rejects them</h2>
+        <h2 id="demo-warning-title">Demo credentials — never production credentials</h2>
         <p>
           This page contains only the public demo bearer tokens and the demo-only
-          verifier private key documented by the service. They are insecure,
-          local-only credentials. The workflow refuses to send them unless
-          <code>/healthz</code> reports <code>mode=demo</code>,
-          <code>real_funds=false</code>, and
-          <code>settlement_network=simulated_testnet</code>.
+          verifier private key documented by the service. They are insecure
+          demo credentials. The workflow refuses to send them unless
+          <code>/healthz</code> reports <code>mode=demo</code> and a supported
+          settlement boundary: the simulator, or QIE testnet with
+          <code>real_funds=false</code>. Real QIE mainnet operation requires a
+          separate explicit local configuration and is not enabled by this page.
         </p>
         <details class="credential-details">
-          <summary>Show documented local demo credentials</summary>
+          <summary>Show documented demo credentials</summary>
           <dl class="credential-list">
             <div><dt>Claimant token</dt><dd><code>demo-claimant-token-change-me</code></dd></div>
             <div><dt>Observer token</dt><dd><code>demo-observer-token-change-me</code></dd></div>
@@ -67,7 +69,7 @@
       <article><strong>Remote context ≠ proof</strong><span>Synthetic remote evidence only routes the claim.</span></article>
       <article><strong>Commitment-only evidence</strong><span>The service receives no raw observation or precise location.</span></article>
       <article><strong>A verifier applies policy</strong><span>The local demo policy is explicit and may be wrong.</span></article>
-      <article><strong>Settlement is simulated</strong><span>No wallet, chain transaction, QIE, or real funds.</span></article>
+      <article><strong>Settlement is explicit</strong><span>Simulator and QIE transactions are labeled with network, funds status, and explorer evidence.</span></article>
     </section>
 
     <div class="live-regions no-print" aria-label="Workflow messages">
@@ -103,9 +105,9 @@
           </div>
 
           <div class="field">
-            <label for="bounty">Bounty <span class="unit">(simulated credits)</span></label>
-            <input id="bounty" name="bounty" type="number" min="1" max="1000000" step="1" value="250" required>
-            <p class="hint">Integer from 1 to 1,000,000. No real funds.</p>
+            <label for="bounty">Bounty <span class="unit">(base units)</span></label>
+            <input id="bounty" name="bounty" type="text" inputmode="numeric" pattern="[0-9]+" value="1000000000000000" required>
+            <p class="hint">Positive integer base units: simulated credits in simulator mode, wei in QIE mode. For 0.001 QIE use 1000000000000000.</p>
           </div>
 
           <div class="field field-wide">
@@ -200,7 +202,7 @@ notice is unreadable</textarea>
           <span class="stage-badge">Waiting</span>
         </li>
         <li class="stage" data-stage="settlement" data-state="pending">
-          <div><h3>Settlement</h3><p class="stage-detail">Deterministic simulator only; no real funds.</p></div>
+          <div><h3>Settlement</h3><p class="stage-detail">Configured settlement adapter not checked.</p></div>
           <span class="stage-badge">Waiting</span>
         </li>
         <li class="stage" data-stage="receipt" data-state="pending">

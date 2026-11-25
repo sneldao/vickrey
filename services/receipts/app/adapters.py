@@ -81,6 +81,23 @@ class DeterministicDemoRemoteEvidenceAdapter:
         )
 
 
+class FieldPathDemoRemoteEvidenceAdapter:
+    """Synthetic context fixed to the field-evidence path for repeatable demos."""
+
+    provider = "deterministic_demo_field_path"
+    provider_version = "demo-1"
+    source_label = "deterministic_synthetic_demo"
+
+    def evaluate(self, evidence_input: RemoteEvidenceInput) -> RemoteEvidenceResult:
+        return RemoteEvidenceResult(
+            status="insufficient",
+            summary="Synthetic context cannot resolve this bounded field claim.",
+            provider=self.provider,
+            provider_version=self.provider_version,
+            source_label=self.source_label,
+        )
+
+
 @dataclass(frozen=True)
 class SettlementRequest:
     settlement_id: str
@@ -100,6 +117,7 @@ class SettlementResult:
     currency: str
     network: str
     real_funds: bool = False
+    chain_event: dict | None = None
 
 
 class SettlementAdapter(Protocol):
@@ -112,6 +130,10 @@ class DeterministicTestnetSimulator:
     """No wallet, RPC, chain or funds. The same operation always yields one txid."""
 
     name = "deterministic_testnet_simulator"
+    currency = SIMULATED_CURRENCY
+    amount_unit = "simulated_credit"
+    network = SIMULATED_NETWORK
+    real_funds = False
 
     def settle(self, request: SettlementRequest) -> SettlementResult:
         if request.operation == "no_payout":

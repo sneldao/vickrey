@@ -5,7 +5,7 @@
  * port, open index.html?receipts=http://127.0.0.1:8099 (a same-origin proxy is
  * still preferable for browser runs).
  *
- * The credentials below are the public, local-only demo credentials documented
+ * The credentials below are the public demo credentials documented
  * in services/receipts/README.md. Production configuration rejects them. This
  * app never asks for, reads, or transmits production credentials.
  */

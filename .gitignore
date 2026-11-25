@@ -52,3 +52,7 @@ docs/film/assets/
 # Local node configs with real credentials stay out of git.
 services/zanchor/docker/zcash.conf
 services/zanchor/data/
+
+# Foundry build output; the service artifact is exported explicitly.
+services/receipts/contracts/cache/
+services/receipts/contracts/out/

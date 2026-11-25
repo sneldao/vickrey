@@ -52,6 +52,7 @@ class Settings:
     quota_per_hour: int = 120
     max_challenge_window_seconds: int = 30 * 24 * 60 * 60
     max_bounty_amount: int = 1_000_000
+    demo_field_path: bool = False
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Settings:
@@ -136,7 +137,12 @@ class Settings:
                 90 * 24 * 60 * 60,
             ),
             max_bounty_amount=_bounded_int(
-                env, "RECEIPTS_MAX_BOUNTY_AMOUNT", 1_000_000, 1, 1_000_000_000
+                env, "RECEIPTS_MAX_BOUNTY_AMOUNT", 1_000_000, 1, 10**18
+            ),
+            demo_field_path=_bool_env(
+                env,
+                "RECEIPTS_DEMO_FIELD_PATH",
+                mode == "demo",
             ),
         )
 
@@ -154,6 +160,18 @@ def _bounded_int(
     if not minimum <= value <= maximum:
         raise ValueError(f"{name} must be between {minimum} and {maximum}")
     return value
+
+
+def _bool_env(env: Mapping[str, str], name: str, default: bool) -> bool:
+    raw = env.get(name)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError(f"{name} must be true or false")
 
 
 def _load_public_key(raw: str) -> Ed25519PublicKey:

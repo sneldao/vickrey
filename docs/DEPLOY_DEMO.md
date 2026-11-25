@@ -1,12 +1,12 @@
-# Demo deployment runbook — private regtest
+# Demo deployment runbook — private regtest + QIE receipts
 
-**Live since 2026-10-30** at `https://vickrey.144.202.117.160.sslip.io` —
-`vickrey-demo-api`, `vickrey-demo-miner` and `vickrey-demo-web` all running;
-the old `vickrey-zanchor-test` / `vickrey-zcashd-regtest` containers are
-unchanged. The runbook below is the record of how it was brought up and how
-to rebuild it. Pushing `main` republishes only the static GitHub Pages site
-(the workflow patches the generated `config.js` to point at this live API);
-it does not deploy or touch the node.
+**Live at `https://vickrey.144.202.117.160.sslip.io`**. The legacy
+`vickrey-demo-api`, `vickrey-demo-miner`, `vickrey-zanchor-test` and
+`vickrey-zcashd-regtest` containers remain the private regtest surface. On
+2026-11-25 the web container was rebuilt so `/receipts/` proxies to
+`vickrey-receipts`, a QIE-testnet-backed Reality Receipts service. Pushing
+`main` republishes only the static GitHub Pages site; it does not deploy or
+touch this host.
 
 - `vickrey-demo-api` — zanchor mode B, `ZANCHOR_EXPECTED_NETWORK=regtest`
   (the service checks the configured node's reported network before each
@@ -33,24 +33,34 @@ Both compose networks are external and must exist already: `vickrey-net`
    #   ZANCHOR_ANCHOR_ZADDR=<dedicated zaddr, copied from vickrey-zanchor-test env>
    #   ZANCHOR_RECIPIENT_ZADDR=<dedicated zaddr, same source>
    #   ZANCHOR_CORS_ORIGINS=https://vickrey.144.202.117.160.sslip.io,https://sneldao.github.io
+   # plus, for the QIE receipts service:
+   #   RECEIPTS_TOKENS_JSON=<compact demo-role JSON; claimant/observer subjects are QIE addresses>
+   #   RECEIPTS_SETTLEMENT_ADAPTER=qie_escrow
+   #   RECEIPTS_QIE_NETWORK=qie_testnet
+   #   RECEIPTS_QIE_RPC_URL=https://rpc4testnet.qie.digital/
+   #   RECEIPTS_QIE_CONTRACT_ADDRESS=<deployed escrow address>
+   #   RECEIPTS_QIE_OPERATOR_PRIVATE_KEY=<testnet-only secret>
+   #   RECEIPTS_MAX_BOUNTY_AMOUNT=1000000000000000
+   #   RECEIPTS_QUOTA_PER_HOUR=24
    chmod 600 ~/.config/vickrey/demo.env
    ```
 
-   Do not fund or reset anything; the existing wallet already holds the
-   dedicated addresses.
+   Do not fund or reset the Zcash wallet; it already holds the dedicated
+   addresses. Keep QIE testnet keys separate from any future mainnet keys.
 
-2. From the repo copy root on the host, build all three images:
+2. From the repo copy root on the host, build the images being updated:
 
    ```bash
    VICKREY_DEMO_ENV=~/.config/vickrey/demo.env \
-     docker compose -f docker-compose.demo.yml build api miner web
+     docker compose -f docker-compose.demo.yml build api miner receipts web
    ```
 
-3. Start the private pieces only (both bind localhost — nothing public):
+3. Start the private pieces only. The legacy API and web bind localhost;
+   receipts is internal to the Docker network:
 
    ```bash
    VICKREY_DEMO_ENV=~/.config/vickrey/demo.env \
-     docker compose -f docker-compose.demo.yml up -d api miner
+     docker compose -f docker-compose.demo.yml up -d api miner receipts
    ```
 
 4. Check readiness (all output is non-secret):
@@ -121,8 +131,21 @@ justified:
    at `127.0.0.1:18093` (or via a port forward).
 4. `GET /receipts/{id}/verify` returns `commitment_verified: true` with
    `network: regtest`, and `POST …/disclosure` returns the receipt + verification metadata; the field client assembles the shareable bundle locally.
-5. Then `VICKREY_DEMO_ENV=~/.config/vickrey/demo.env docker compose -f docker-compose.demo.yml up -d web`
-   and let Traefik issue the cert.
+5. For the receipts path, inspect the internal health before publishing the
+   web container:
+
+   ```bash
+   docker exec vickrey-receipts python -c \
+     "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8099/healthz').read().decode())"
+   ```
+
+   It must report `settlement_adapter=qie_reality_receipts_escrow`,
+   `settlement_network=qie_testnet` and `real_funds=false` for the current
+   testnet demo.
+
+6. Then `VICKREY_DEMO_ENV=~/.config/vickrey/demo.env docker compose -f docker-compose.demo.yml up -d web`,
+   let Traefik issue the cert, complete one browser workflow, and confirm
+   three explorer links render.
 
 ## Logging policy
 

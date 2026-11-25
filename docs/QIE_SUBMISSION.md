@@ -105,6 +105,95 @@ slice. The net-new QIE work is the Reality Receipts claim workflow, escrow
 contract, backend QIE settlement integration, chain-event receipt model,
 network-aware browser receipt surface, deployment and public testnet evidence.
 
+## Draft submission-form answers
+
+Replace the two `TBD_MAINNET` values after the funded mainnet proof. Do not
+submit the testnet contract as the mainnet contract.
+
+**Project name:** Reality Receipts by Vickrey
+
+**Track:** AI + Autonomous Agents
+
+**Secondary fit:** Commerce & Real World
+
+**Repository:** <https://github.com/sneldao/vickrey>
+
+**Live demo:** <https://vickrey.144.202.117.160.sslip.io/receipts/>
+
+**Mainnet contract:** `TBD_MAINNET_CONTRACT`
+
+**Mainnet proof receipt:** `TBD_MAINNET_RECEIPT_URL`
+
+**Testnet reference contract:** [`0xb5BAEF1117B00D1B230Bf806EBFb3FEe5F7c96Ee`](https://testnet.qie.digital/address/0xb5BAEF1117B00D1B230Bf806EBFb3FEe5F7c96Ee)
+
+**Short description:**
+
+Reality Receipts lets an autonomous verification agent pay for bounded physical-world
+evidence without publishing the raw observation. The agent posts one public-safe
+claim, checks remote context first, escrows a fixed QIE bounty, receives a sealed
+evidence commitment, applies an explicit verifier policy, and resolves the escrow
+on QIE. The resulting public receipt links the claim criteria hash, evidence
+commitment, signed verdict, settlement transaction and explorer proof.
+
+**Detailed description:**
+
+Reality Receipts is a Vickrey vertical slice for agentic ground truth. AI agents
+can search the web, but many economically important facts are physical and time-bound:
+whether a notice is posted, whether a machine is operating, whether a public object
+is present, or whether a local condition changed. When remote evidence cannot resolve
+such a claim, the system creates a bounded field task and pays a human observer only
+after a policy-bound verdict.
+
+The hackathon implementation is intentionally narrow and honest. It is not a generic
+marketplace and does not pretend that a photo hash proves reality. The implemented
+loop is: claim and criteria → remote-context check → sealed field-evidence commitment
+→ Ed25519-signed verifier verdict → QIE escrow resolution → public redacted receipt.
+The service never receives the raw observation or precise location. The chain stores
+commitments and settlement state, not private evidence.
+
+The new hackathon work is the QIE-native challenge workflow and settlement layer:
+a Solidity escrow contract, web3 backend adapter, immutable chain-event receipt model,
+operator-controlled proof runner, network-aware browser receipt UI, and public deployment.
+The earlier Vickrey sealed-record primitive is disclosed as prior work; this submission
+does not present that pre-existing primitive as new hackathon output.
+
+The public interactive demo runs on QIE testnet so anyone can execute the full workflow
+without spending real funds. The mainnet proof service is intentionally operator-controlled:
+real-funds mutation routes are not publicly exposed with demo credentials. Judges can
+inspect the mainnet contract, the read-only public mainnet receipt, and the explorer
+transactions, while the interactive testnet demo demonstrates the complete product flow.
+
+**Demo script for judges:**
+
+1. Open the live demo and confirm the warning explains testnet/demo boundaries.
+2. Run the demo workflow with the prefilled public-notice claim.
+3. Watch the stages: demo boundary, challenge, remote evidence, field evidence,
+   verdict, settlement, public receipt.
+4. Open the three explorer links in the receipt: escrow creation, evidence commitment,
+   and resolution/payout.
+5. Copy the shareable receipt URL and confirm it renders without a bearer token.
+6. Inspect the mainnet contract and mainnet receipt links in this submission.
+7. Compare the receipt limitations with the implementation; the system labels
+   synthetic context, commitment-only evidence, operator-controlled resolution,
+   and testnet/mainnet funds status explicitly.
+
+**Why QIE:**
+
+QIE is the settlement and commerce layer: the agent creates a native-QIE escrow,
+the observer evidence commitment is relayed on-chain, and the verdict resolution
+pays or refunds real value. QIE is not used as a passive hash notary; it controls
+the bounty state machine and payout. The design leaves room for later QIE Wallet,
+QIE ID and reputation integration, but those are not falsely claimed in this MVP.
+
+**Traction plan:**
+
+The first traction wedge is low-value public observation challenges that produce
+shareable receipts: creator dares, local service checks, public infrastructure checks,
+and citizen-science observations. The next 90-day milestones are recurring sponsors,
+repeat observers, completed receipt count, mainnet transaction volume, and external
+agent/API callers. The current implementation is the settlement proof and product
+surface needed before inviting those users.
+
 ## Remaining submission gates
 
 1. **Mainnet decision — blocker.** The official page says “Mainnet only.” The

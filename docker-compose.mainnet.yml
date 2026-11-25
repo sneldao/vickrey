@@ -1,0 +1,44 @@
+# Optional QIE mainnet receipts service. Use together with docker-compose.demo.yml:
+#   VICKREY_DEMO_ENV=~/.config/vickrey/demo.env \
+#   VICKREY_MAINNET_ENV=~/.config/vickrey/mainnet.env \
+#     docker compose -f docker-compose.demo.yml -f docker-compose.mainnet.yml up -d receipts-mainnet
+# The mainnet env file is outside the repo, mode 600, and contains strong unique
+# bearer tokens plus the real-funds QIE operator key and explicit acknowledgement.
+
+services:
+  receipts-mainnet:
+    build:
+      context: services/receipts
+    container_name: vickrey-receipts-mainnet
+    env_file: ${VICKREY_MAINNET_ENV:?mainnet env file required}
+    environment:
+      RECEIPTS_MODE: production
+      RECEIPTS_DATABASE_PATH: /data/receipts.db
+      # The hackathon proof still uses deterministic synthetic remote context.
+      # This only routes claims to the field-evidence path; it is not evidence
+      # proof and is disclosed in every receipt limitation.
+      RECEIPTS_DEMO_FIELD_PATH: "true"
+    volumes:
+      - vickrey_receipts_mainnet_data:/data
+    networks:
+      - vickrey-net
+    ports:
+      # Operator-only mutation surface. Public nginx exposes only health and
+      # public receipt GETs under /mainnet/; it does not expose POST routes.
+      - "127.0.0.1:18095:8099"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8099/healthz')",
+        ]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  vickrey_receipts_mainnet_data:

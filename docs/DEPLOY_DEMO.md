@@ -147,6 +147,71 @@ justified:
    let Traefik issue the cert, complete one browser workflow, and confirm
    three explorer links render.
 
+## Optional QIE mainnet proof service
+
+The interactive public demo must remain testnet-only: its documented demo
+credentials would otherwise let strangers move real funds. The optional mainnet
+service is therefore an operator-controlled proof service with separate strong
+bearer tokens, a localhost-only mutation port, and nginx exposure limited to
+`GET /mainnet/healthz` and `GET /mainnet/v1/receipts/{id}`.
+
+1. Create `~/.config/vickrey/mainnet.env` outside the repo, mode 600. It must
+   use fresh strong tokens and fresh mainnet-only QIE keys, never the documented
+   demo credentials or testnet keys. Required receipts variables:
+
+   ```bash
+   RECEIPTS_TOKENS_JSON=<compact strong-token role JSON; claimant subject is the operator QIE address, observer subject is the payout QIE address>
+   RECEIPTS_VERIFIER_PUBLIC_KEY=<operator-generated Ed25519 public key hex>
+   RECEIPTS_SETTLEMENT_ADAPTER=qie_escrow
+   RECEIPTS_QIE_NETWORK=qie_mainnet
+   RECEIPTS_QIE_RPC_URL=https://rpc1mainnet.qie.digital/
+   RECEIPTS_QIE_CHAIN_ID=1990
+   RECEIPTS_QIE_EXPLORER_URL=https://mainnet.qie.digital/
+   RECEIPTS_QIE_CONTRACT_ADDRESS=<fresh mainnet escrow address>
+   RECEIPTS_QIE_OPERATOR_PRIVATE_KEY=<mainnet-only secret>
+   RECEIPTS_QIE_MAINNET_ACK=I_APPROVE_REAL_QIE_MAINNET_FUNDS
+   RECEIPTS_MAX_BOUNTY_AMOUNT=1000000000000000
+   RECEIPTS_QUOTA_PER_HOUR=12
+   ```
+
+   Keep the corresponding verifier private key and per-role tokens only in a
+   separate operator-local file. Do not place them in the public browser config,
+   repository, docs, shell history, or submission text.
+
+2. Build and start the optional service with the compose override:
+
+   ```bash
+   VICKREY_DEMO_ENV=~/.config/vickrey/demo.env    VICKREY_MAINNET_ENV=~/.config/vickrey/mainnet.env      docker compose -f docker-compose.demo.yml -f docker-compose.mainnet.yml      build receipts-mainnet
+
+   VICKREY_DEMO_ENV=~/.config/vickrey/demo.env    VICKREY_MAINNET_ENV=~/.config/vickrey/mainnet.env      docker compose -f docker-compose.demo.yml -f docker-compose.mainnet.yml      up -d receipts-mainnet
+   ```
+
+   Its internal health must report `settlement_network=qie_mainnet` and
+   `real_funds=true` before any workflow is attempted.
+
+3. Run one controlled proof through the localhost-only port. From the operator
+   machine, forward the port and use the non-secret-writing runner:
+
+   ```bash
+   ssh -L 18095:127.0.0.1:18095 <host>
+   # in another shell, with the operator-local token/private-key environment loaded:
+   python services/receipts/scripts/run_qie_flow.py      --base-url http://127.0.0.1:18095      --approve-mainnet      --output /tmp/vickrey-mainnet-proof.json
+   ```
+
+   The script prints only challenge, receipt, transaction and explorer metadata.
+   It writes the local sealed record and public receipt without private keys or
+   bearer tokens.
+
+4. Rebuild/start web so nginx includes the read-only mainnet routes. Public
+   receipt lookup can then use:
+
+   ```text
+   https://<host>/receipts/index.html?receipts=/mainnet&challenge=<challenge-id>
+   ```
+
+   `POST /mainnet/...` is intentionally not exposed. If the mainnet service is
+   absent, those routes may return 502/404 but the testnet demo must remain up.
+
 ## Logging policy
 
 The API image runs Uvicorn with `--no-access-log`; application failures

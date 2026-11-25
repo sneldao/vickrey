@@ -122,6 +122,17 @@ forge test
 QIE_DEPLOYER_PRIVATE_KEY=0x... ./deploy-qie.sh testnet
 ```
 
+### Operator-controlled proof runner
+
+`scripts/run_qie_flow.py` runs one complete HTTP workflow without embedding
+credentials in the browser. It reads role tokens and the verifier private key
+only from environment variables, creates the same one-entry local Vickrey seal
+as the browser flow, sends only commitment plus bounded public metadata, signs
+the explicit demo policy verdict, and prints the public transaction/receipt
+links. It refuses `qie_mainnet` or `real_funds=true` unless `--approve-mainnet`
+is passed. This is intended for controlled testnet/mainnet proof runs; it is
+not a public credential distribution mechanism.
+
 ## Verdict signing
 
 Sign the canonical JSON object for schema `reality-receipts.verifier-verdict.v1`. The object contains `schema`, `verdict_id`, `challenge_id`, `submission_id`, `submission_version`, `commitment`, `criteria_hash`, `verdict`, `policy_id`, `policy_version`, `reason`, and `issued_at`. Use sorted keys, compact separators, UTF-8, lowercase hex bindings, surrounding-whitespace-trimmed reasons, and UTC timestamps formatted `YYYY-MM-DDTHH:MM:SS.ffffffZ`. The strict HTTP request body omits `schema` and contains the other canonical fields plus `signature` (a 128-hex Ed25519 signature). `app/signing.py` is the normative implementation.

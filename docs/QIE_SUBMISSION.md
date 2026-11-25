@@ -55,6 +55,14 @@ transaction explorer links.
   view, network-aware settlement labels and explorer links.
 - `docker-compose.demo.yml` and `services/demo/nginx.conf` — same-origin public
   demo deployment with allowlisted `/healthz` and `/v1/` proxy routes.
+- `docker-compose.mainnet.yml` — optional operator-controlled mainnet proof
+  service. Its mutation port is localhost-only; public nginx exposes only
+  health and receipt GETs under `/mainnet/`, so documented demo credentials
+  cannot be used to move real funds.
+- `services/receipts/scripts/run_qie_flow.py` — non-secret-writing operator
+  runner for a controlled end-to-end proof. It was validated against the
+  public testnet service with challenge `9dded837-fb53-482f-8795-d06fbc00052f`
+  and three mined testnet transactions.
 
 ## Verification evidence
 
@@ -112,10 +120,14 @@ network-aware browser receipt surface, deployment and public testnet evidence.
    0.00037 QIE for one create/evidence/resolve lifecycle, before a safety
    margin. Funding 0.01 QIE would leave ample room for deployment, one proof
    run, and a small 0.001 QIE escrowed payout.
-2. If mainnet is approved and funded, deploy a fresh mainnet escrow contract,
-   configure a fresh mainnet operator key, run one small end-to-end mainnet
-   receipt, and add its contract/transaction links here.
-3. Commit and publish the final source to the public GitHub repository.
+2. Mainnet deployment has been explicitly approved once funded. When funding
+   is confirmed, deploy a fresh mainnet escrow contract, configure the strong-token
+   operator proof service, run one small end-to-end mainnet receipt with
+   `scripts/run_qie_flow.py --approve-mainnet`, and add its contract/transaction
+   links here.
+3. Commit and publish the final source to the public GitHub repository. The
+   initial implementation is published; republish the remaining mainnet-proof
+   infrastructure and evidence before submission.
 4. Final submission text must include the live demo URL, contract address,
    transaction links, track selection, limitations and prior-work disclosure.
 5. Keep 2026-11-30 for breakage repair only; the implementation target is to

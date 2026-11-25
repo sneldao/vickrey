@@ -105,7 +105,13 @@ network-aware browser receipt surface, deployment and public testnet evidence.
    operator address has been generated outside the repo:
    `0xb96232679f3688F7e3450Ac34f3e2C456F50B3DA` (balance currently zero). It
    needs a small amount of real QIE before deployment. Do not reuse testnet keys
-   on mainnet.
+   on mainnet. Mainnet is chain ID 1990 (`0x7c6`), RPC
+   `https://rpc1mainnet.qie.digital/`, explorer <https://mainnet.qie.digital/>.
+   At the gas price observed on 2026-11-25 (1.125 gwei), the testnet-measured
+   deployment gas implies roughly 0.00104 QIE for deployment and roughly
+   0.00037 QIE for one create/evidence/resolve lifecycle, before a safety
+   margin. Funding 0.01 QIE would leave ample room for deployment, one proof
+   run, and a small 0.001 QIE escrowed payout.
 2. If mainnet is approved and funded, deploy a fresh mainnet escrow contract,
    configure a fresh mainnet operator key, run one small end-to-end mainnet
    receipt, and add its contract/transaction links here.

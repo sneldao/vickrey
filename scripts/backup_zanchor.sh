@@ -43,15 +43,12 @@ done
 for v in vickrey-regtest-data vickrey-demo_vickrey_demo_receipts; do
   docker volume inspect "$v" >/dev/null 2>&1 || { echo "expected volume missing: $v" >&2; exit 1; }
 done
-NODE_IMAGE="$(docker inspect vickrey-zcashd-regtest --format '{{.Config.Image}}')"
 API_IMAGE="$(docker inspect vickrey-demo-api --format '{{.Config.Image}}')"
 # The configured tag may not exist locally (container built/retagged from
-# elsewhere) — fall back to the immutable image id, which always resolves.
-docker image inspect "$NODE_IMAGE" >/dev/null 2>&1 || \
-  NODE_IMAGE="$(docker inspect vickrey-zcashd-regtest --format '{{.Image}}')"
+# elsewhere) — fall back to the immutable image id recorded on the container.
 docker image inspect "$API_IMAGE" >/dev/null 2>&1 || \
   API_IMAGE="$(docker inspect vickrey-demo-api --format '{{.Image}}')"
-[ -n "$NODE_IMAGE" ] && [ -n "$API_IMAGE" ] || { echo "images unresolved" >&2; exit 1; }
+docker image inspect "$API_IMAGE" >/dev/null 2>&1 || { echo "api image unresolved" >&2; exit 1; }
 
 # WORK sits beside OUTPUT so the atomic hardlink never crosses filesystems.
 WORK="$(mktemp -d "$OUTDIR/.vickrey-backup.XXXXXX")"
@@ -125,12 +122,12 @@ fi
 
 # -- archive -> encrypt -> atomic place -------------------------------------
 OUT_TMP="$WORK/backup.gpg"
-docker run --rm --network none \
+docker run --rm --network none --user 0 \
   -v vickrey-regtest-data:/node:ro \
   -v vickrey-demo_vickrey_demo_receipts:/receipts:ro \
   -v /home/linuxuser/.config/vickrey/demo.env:/settings/demo.env:ro \
   -v "$WORK/metadata":/metadata:ro \
-  --entrypoint tar "$NODE_IMAGE" -czf - -C / node receipts settings/demo.env metadata \
+  --entrypoint tar "$API_IMAGE" -czf - -C / node receipts settings/demo.env metadata \
   | gpg --batch --pinentry-mode loopback --no-symkey-cache \
         --passphrase-file "$KEY_FILE" \
         --symmetric --cipher-algo AES256 \

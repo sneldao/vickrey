@@ -1,10 +1,12 @@
-# Vickrey demo — private regtest showcase. NOT for production.
+# Vickrey demo — QIE receipts showcase. NOT for production.
 # Env comes from ${VICKREY_DEMO_ENV} (an untracked file): ZANCHOR_RPC (with
 # credentials), ZANCHOR_ANCHOR_ZADDR, ZANCHOR_RECIPIENT_ZADDR, CORS origins.
-# Old containers (vickrey-zanchor-test, vickrey-zcashd-regtest) are untouched.
+# Legacy regtest services are profile-gated; restore their cold backup before
+# enabling the legacy-zcash profile.
 
 services:
   api:
+    profiles: [legacy-zcash]
     build:
       context: services/zanchor
     container_name: vickrey-demo-api
@@ -22,6 +24,7 @@ services:
     restart: unless-stopped
 
   miner:
+    profiles: [legacy-zcash]
     build:
       context: services/zanchor
     container_name: vickrey-demo-miner
